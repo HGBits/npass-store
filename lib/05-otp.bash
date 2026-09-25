@@ -225,6 +225,7 @@ cmd_otp_code() {
 		fi
 		local new_content; new_content="$(npass_otp_replace_or_append_uri "$content" "$new_uri")"
 		npass_blob_write "$dir" "$logical" "$new_content"
+		npass_git_commit "$id" "otp-counter"
 	fi
 	printf '%s\n' "$code"
 }
@@ -293,6 +294,7 @@ cmd_otp_insert() {
 		new_content="$otp_uri"
 	fi
 	npass_blob_write "$dir" "$logical" "$new_content"
+	npass_git_commit "$id" "otp-insert"
 	printf '%s: %s (OTP) salvo.\n' "$id" "$logical"
 }
 

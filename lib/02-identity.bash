@@ -34,6 +34,7 @@ npass_identity_init() {
 	printf '%s\n' "${recipients[@]}" >"$dir/.gpg-id"
 	NPASS_RECIPIENTS=("${recipients[@]}")
 	npass_map_save "$dir" ""
+	npass_git_commit "$id" "init"
 	printf 'Identidade "%s" criada para: %s\n' "$id" "${recipients[*]}"
 }
 

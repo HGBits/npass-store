@@ -111,10 +111,12 @@ cmd_update() {
 			echo
 			[[ "$newpw" == "$newpw2" ]] || npass_die "as senhas não coincidem"
 			npass_blob_write "$dir" "$logical" "$(npass_replace_first_line "$content" "$newpw")"
+			npass_git_commit "$id" "update-provide"
 		elif [[ $multiline -eq 1 ]]; then
 			echo "Digite o novo conteúdo de $logical e pressione Ctrl+D quando terminar:"
 			local newcontent; newcontent="$(cat)"
 			npass_blob_write "$dir" "$logical" "$newcontent"
+			npass_git_commit "$id" "update-multiline"
 		else
 			local len="${length:-$NPASS_GENERATED_LENGTH}"
 			[[ $autolength -eq 1 ]] && { len="${#oldpw}"; echo "Usando o comprimento da senha antiga: $len"; }

@@ -15,6 +15,9 @@ npass_main() {
 	generate | gen) cmd_generate "$@" ;;
 	edit) cmd_edit "$@" ;;
 	update) cmd_update "$@" ;;
+	find) cmd_find "$@" ;;
+	grep) cmd_grep "$@" ;;
+	git) cmd_git "$@" ;;
 	clip)
 		local id="$1" logical="$2"
 		local secret; secret="$(cmd_show "$id" "$logical")" || exit 1
@@ -48,6 +51,9 @@ npass_main() {
 			  generate [-n|-c|-f] [--in-place] ID DIR/PASS [LEN]   gera senha aleatória
 			  edit ID DIR/PASS         edita o conteúdo bruto no \$EDITOR
 			  update [opts] ID PATTERN...   rotaciona senhas em massa (veja 'npass update -h')
+			  find ID PADRÃO           busca caminhos lógicos que casam PADRÃO
+			  grep ID [OPÇÕES] PADRÃO decifra e busca PADRÃO no conteúdo de cada entrada
+			  git ARGS...              passthrough para git dentro do store (ex.: npass git init)
 			  otp ID DIR/PASS          gera o código OTP (TOTP/HOTP) do segredo
 			  otp insert [-f] ID DIR/PASS   insere/atualiza a URI OTP (interativo)
 			  otp uri [-c|-q] ID DIR/PASS   mostra a URI OTP, copia, ou exibe QR

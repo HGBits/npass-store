@@ -58,6 +58,7 @@ cmd_insert() {
 	[[ "$secret" == "$secret2" ]] || npass_die "as senhas não coincidem"
 
 	npass_blob_write "$dir" "$logical" "$secret"
+	npass_git_commit "$id" "insert"
 	printf '%s: %s salvo.\n' "$id" "$logical"
 }
 
@@ -86,6 +87,7 @@ cmd_rm() {
 	if [[ -f "$blob" ]]; then
 		shred -u -- "$blob" 2>/dev/null || rm -f -- "$blob"
 	fi
+	npass_git_commit "$id" "rm"
 	printf '%s: %s removido.\n' "$id" "$logical"
 }
 
@@ -108,12 +110,15 @@ cmd_mv() {
 		local old_physical; old_physical="$(npass_map_delete "$dir" "$from")"
 		local old_blob; old_blob="$(npass_blob_path "$dir" "$old_physical")"
 		[[ -f "$old_blob" ]] && shred -u -- "$old_blob" 2>/dev/null
+		npass_git_commit "$dst_id" "mv-in"
+		npass_git_commit "$id" "mv-out"
 		printf '%s: %s -> %s: %s\n' "$id" "$from" "$dst_id" "$dst_logical"
 	else
 		# same-identity rename: map-only, ciphertext untouched
 		local to="$a"
 		[[ -z "$to" ]] && npass_die "uso: npass mv ID DIR/PASS DIR2/PASS2"
 		npass_map_rename "$dir" "$from" "$to"
+		npass_git_commit "$id" "mv"
 		printf '%s: %s -> %s\n' "$id" "$from" "$to"
 	fi
 }
@@ -172,6 +177,7 @@ cmd_generate() {
 		new_content="$pw"
 	fi
 	npass_blob_write "$dir" "$logical" "$new_content"
+	npass_git_commit "$id" "generate"
 
 	if [[ $clip -eq 1 ]]; then
 		npass_clip "$pw" "$id: $logical"
@@ -194,6 +200,7 @@ cmd_edit() {
 		return 0
 	fi
 	npass_blob_write "$dir" "$logical" "$new_content"
+	npass_git_commit "$id" "edit"
 	printf '%s: %s atualizado.\n' "$id" "$logical"
 }
 
@@ -208,4 +215,43 @@ cmd_ls() {
 	fi
 	printf '%s\n' "$id"
 	sed 's/^/  /' <<<"$entries"
+}
+
+cmd_find() {
+	local id="$1" pattern="$2"
+	[[ -z "$id" || -z "$pattern" ]] && npass_die "uso: npass find ID PADRÃO"
+	local dir; dir="$(npass_identity_dir "$id")"
+	local matches; matches="$(npass_map_list "$dir" | grep -i -- "$pattern")"
+	if [[ -z "$matches" ]]; then
+		return 1
+	fi
+	printf '%s\n' "$id"
+	sed 's/^/  /' <<<"$matches"
+}
+
+# npass grep ID [GREP-OPTIONS] PADRÃO
+# Decrypts every entry in the identity to search its content - this is
+# inherently O(n) in the number of secrets, same as upstream pass grep;
+# there's no way to grep ciphertext.
+cmd_grep() {
+	local id="$1"; shift
+	[[ -z "$id" || $# -eq 0 ]] && npass_die "uso: npass grep ID [OPÇÕES-DO-GREP] PADRÃO"
+	local -a grepopts=()
+	while [[ $# -gt 1 ]]; do
+		grepopts+=("$1"); shift
+	done
+	local pattern="$1"
+	local dir; dir="$(npass_identity_dir "$id")"
+	local logical content matches found=0
+	while IFS= read -r logical; do
+		[[ -z "$logical" ]] && continue
+		content="$(cmd_show "$id" "$logical" 2>/dev/null)" || continue
+		matches="$(printf '%s\n' "$content" | grep -n "${grepopts[@]}" -- "$pattern" 2>/dev/null)"
+		if [[ -n "$matches" ]]; then
+			found=1
+			printf '%s: %s\n' "$id" "$logical"
+			sed 's/^/  /' <<<"$matches"
+		fi
+	done < <(npass_map_list "$dir")
+	[[ $found -eq 1 ]]
 }
