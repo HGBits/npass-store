@@ -1,0 +1,1047 @@
+#!/usr/bin/env bash
+# GENERATED FILE - built by build.sh from lib/*.bash. Do not edit directly.
+# npass - core: config, errors, gpg wrapper, secure temp files
+# No `set -e`: every fallible call is checked explicitly, because npass
+# is sourced by the entry point and a stray -e must never leak into the
+# caller's shell (this was a real bug in pass-update.bash).
+
+: "${NPASS_STORE:="${XDG_DATA_HOME:-$HOME/.local/share}/npass"}"
+: "${NPASS_GPG:="gpg"}"
+: "${NPASS_LANG:="${LANG%%.*}"}"
+readonly NPASS_VERSION="0.1.0-m1"
+
+# Defense in depth: bash 5.2+ turns on `patsub_replacement`, which makes
+# `&` inside the replacement half of ${var/pattern/replacement} mean
+# "the matched text" (sed-style), silently changing the result of any
+# such substitution that happens to touch a literal `&` (e.g. any URI
+# query string). We don't rely on the sed-style behavior anywhere in
+# npass; disabling it here means a future ${var/pat/repl} someone adds
+# behaves the same on bash 4.x and 5.2+ instead of differing quietly.
+shopt -u patsub_replacement 2>/dev/null || true
+
+npass_die() {
+	printf 'npass: %s\n' "$*" >&2
+	exit 1
+}
+
+npass_warn() {
+	printf 'npass: aviso: %s\n' "$*" >&2
+}
+
+# Reject any path component that could escape the store via .. or an
+# absolute path. Applied to every identity id and every logical path
+# before it touches the filesystem.
+npass_check_sneaky_path() {
+	local p="$1"
+	case "$p" in
+	'' | . | .. | */../* | ../* | */.. | /*)
+		npass_die "caminho inválido: '$p'"
+		;;
+	esac
+	if [[ "$p" == *$'\t'* || "$p" == *$'\n'* ]]; then
+		npass_die "caminho inválido (contém tab/newline): '$p'"
+	fi
+}
+
+# Secure scratch file: 0600, private tmpfs-preferred dir, shredded on exit
+# via a trap the caller installs with npass_mktemp_trap.
+NPASS_TMPDIR="${XDG_RUNTIME_DIR:-/tmp}/npass.$$"
+npass_tmp_init() {
+	umask 077
+	mkdir -p "$NPASS_TMPDIR" || npass_die "não foi possível criar diretório temporário seguro"
+	chmod 700 "$NPASS_TMPDIR"
+}
+
+npass_tmp_cleanup() {
+	if [[ -d "$NPASS_TMPDIR" ]]; then
+		find "$NPASS_TMPDIR" -type f -exec shred -u -- {} + 2>/dev/null
+		rm -rf -- "$NPASS_TMPDIR"
+	fi
+}
+trap npass_tmp_cleanup EXIT INT TERM
+
+npass_mktemp() {
+	local name="$1"
+	mktemp "$NPASS_TMPDIR/${name}.XXXXXX"
+}
+
+# --- GPG wrapper ---------------------------------------------------------
+# Every call is explicit about stderr: we never silently swallow it,
+# unlike the pass-secrets extension this replaces, which hid the real
+# decryption failure reason.
+
+npass_gpg_decrypt() {
+	local file="$1" err
+	if ! [[ -f "$file" ]]; then
+		npass_die "arquivo não encontrado: $file"
+	fi
+	local errfile
+	errfile="$(npass_mktemp gpgerr)"
+	if ! "$NPASS_GPG" --quiet --batch --use-agent -d -o - "$file" 2>"$errfile"; then
+		err="$(cat "$errfile")"
+		npass_die "falha ao descriptografar '$file': ${err:-erro desconhecido do gpg}"
+	fi
+}
+
+# npass_gpg_encrypt <recipients_array_name> <out_file>
+# reads plaintext from stdin
+npass_gpg_encrypt() {
+	local -n _recipients="$1"
+	local out="$2" tmp errfile
+	[[ ${#_recipients[@]} -eq 0 ]] && npass_die "nenhum destinatário GPG definido (.gpg-id ausente ou vazio)"
+	tmp="$(npass_mktemp gpgenc)"
+	errfile="$(npass_mktemp gpgerr)"
+	local rcpt_args=()
+	local r
+	for r in "${_recipients[@]}"; do
+		rcpt_args+=(-r "$r")
+	done
+	if ! "$NPASS_GPG" --quiet --batch --yes --use-agent \
+		--trust-model always "${rcpt_args[@]}" -e -o "$tmp" 2>"$errfile"; then
+		local err
+		err="$(cat "$errfile")"
+		npass_die "falha ao criptografar para '$out': ${err:-erro desconhecido do gpg}"
+	fi
+	mv -f -- "$tmp" "$out" || npass_die "falha ao mover arquivo cifrado para '$out'"
+}
+
+npass_read_gpg_id() {
+	local dir="$1"
+	local f="$dir/.gpg-id"
+	[[ -f "$f" ]] || npass_die "identidade sem .gpg-id: $dir"
+	mapfile -t NPASS_RECIPIENTS <"$f"
+	# drop blank lines
+	local -a filtered=()
+	local l
+	for l in "${NPASS_RECIPIENTS[@]}"; do
+		[[ -n "$l" ]] && filtered+=("$l")
+	done
+	NPASS_RECIPIENTS=("${filtered[@]}")
+	if [[ ${#NPASS_RECIPIENTS[@]} -eq 0 ]]; then
+		npass_die "$f está vazio"
+	fi
+	return 0
+}
+
+# npass - identity resolution and the logical->physical secret map (v2).
+#
+# An "identity" is a directory under $NPASS_STORE containing .gpg-id.
+# Its map (.map.gpg) is an encrypted TSV binding arbitrary logical paths
+# ("email/gmail", "aws/root") to opaque physical filenames under
+# blobs/. Renaming or moving a secret WITHIN an identity only edits the
+# map — the ciphertext blob and its mtime never change. Moving BETWEEN
+# identities is the one case that must decrypt+recrypt, because the
+# recipient set changes.
+#
+# Every operation on the command line looks like: npass CMD ID DIR/PASS
+# There is no classic "bare path" mode. ID is mandatory.
+
+readonly NPASS_MAP_MAGIC="NPASS-MAP-1"
+
+npass_identity_dir() {
+	local id="$1"
+	npass_check_sneaky_path "$id"
+	local dir="$NPASS_STORE/$id"
+	[[ -d "$dir" ]] || npass_die "identidade não encontrada: $id"
+	[[ -f "$dir/.gpg-id" ]] || npass_die "'$id' não é uma identidade (sem .gpg-id)"
+	printf '%s\n' "$dir"
+}
+
+npass_identity_init() {
+	local id="$1" ; shift
+	local -a recipients=("$@")
+	npass_check_sneaky_path "$id"
+	[[ ${#recipients[@]} -eq 0 ]] && npass_die "informe ao menos um destinatário GPG"
+	local dir="$NPASS_STORE/$id"
+	[[ -e "$dir/.gpg-id" ]] && npass_die "identidade já existe: $id"
+	mkdir -p -- "$dir/blobs" || npass_die "falha ao criar identidade: $id"
+	printf '%s\n' "${recipients[@]}" >"$dir/.gpg-id"
+	NPASS_RECIPIENTS=("${recipients[@]}")
+	npass_map_save "$dir" ""
+	printf 'Identidade "%s" criada para: %s\n' "$id" "${recipients[*]}"
+}
+
+# --- map: load / save -----------------------------------------------------
+
+# Decrypted map body on stdout, WITHOUT the magic header line.
+# Empty (no .map.gpg yet) is valid and yields nothing.
+npass_map_load() {
+	local dir="$1" body
+	local map="$dir/.map.gpg"
+	[[ -f "$map" ]] || return 0
+	body="$(npass_gpg_decrypt "$map")" || return 1
+	local magic="${body%%$'\n'*}"
+	if [[ "$magic" != "$NPASS_MAP_MAGIC" ]]; then
+		npass_die "mapa corrompido ou de versão desconhecida em $dir"
+	fi
+	printf '%s\n' "${body#*$'\n'}"
+}
+
+# npass_map_save <id_dir> <body-without-header>
+# Atomic: temp file + rename, serialized with flock so two concurrent
+# `pass insert` on the same identity can't race and drop each other's
+# entry (the original pass-secrets extension re-encrypted the whole
+# mapfile with no locking at all).
+npass_map_save() {
+	local dir="$1" body="$2"
+	local lock="$dir/.map.lock"
+	npass_read_gpg_id "$dir"
+	(
+		exec {fd}>"$lock" || npass_die "falha ao abrir lock: $lock"
+		flock -x "$fd" || npass_die "falha ao obter lock: $lock"
+		local tmp
+		tmp="$(npass_mktemp map)"
+		{
+			printf '%s\n' "$NPASS_MAP_MAGIC"
+			[[ -n "$body" ]] && printf '%s\n' "$body"
+		} >"$tmp"
+		npass_gpg_encrypt NPASS_RECIPIENTS "$dir/.map.gpg" <"$tmp"
+	)
+}
+
+# --- map: queries ----------------------------------------------------------
+
+# Physical blob filename (without .gpg) for a logical path, or empty.
+npass_map_resolve() {
+	local dir="$1" logical="$2" body
+	body="$(npass_map_load "$dir")" || return 1
+	while IFS=$'\t' read -r l p; do
+		[[ "$l" == "$logical" ]] && { printf '%s\n' "$p"; return 0; }
+	done <<<"$body"
+	return 1
+}
+
+# All logical paths in an identity, one per line, sorted.
+npass_map_list() {
+	local dir="$1" body
+	body="$(npass_map_load "$dir")" || return 1
+	[[ -z "$body" ]] && return 0
+	cut -f1 <<<"$body" | sort
+}
+
+npass_map_list_prefix() {
+	local dir="$1" prefix="$2"
+	if [[ -n "$prefix" ]]; then
+		npass_map_list "$dir" | grep -F -- "${prefix%/}/"
+		return 0
+	fi
+	npass_map_list "$dir"
+}
+
+npass_new_blob_name() {
+	head -c16 /dev/urandom | od -An -tx1 | tr -d ' \n'
+}
+
+# --- map: mutations ----------------------------------------------------------
+
+npass_map_set() {
+	local dir="$1" logical="$2" physical="$3"
+	local lock="$dir/.map.lock"
+	npass_check_sneaky_path "$logical"
+	exec {fd}>"$lock" || npass_die "falha ao obter lock: $lock"
+	flock -x "$fd"
+	local body new_body="" found=0 l p
+	body="$(npass_map_load "$dir")"
+	while IFS=$'\t' read -r l p; do
+		[[ -z "$l" ]] && continue
+		if [[ "$l" == "$logical" ]]; then
+			p="$physical"
+			found=1
+		fi
+		new_body+="$l"$'\t'"$p"$'\n'
+	done <<<"$body"
+	[[ $found -eq 0 ]] && new_body+="$logical"$'\t'"$physical"$'\n'
+	npass_read_gpg_id "$dir"
+	local tmp
+	tmp="$(npass_mktemp map)"
+	{ printf '%s\n' "$NPASS_MAP_MAGIC"; printf '%s' "$new_body"; } >"$tmp"
+	npass_gpg_encrypt NPASS_RECIPIENTS "$dir/.map.gpg" <"$tmp"
+	exec {fd}>&-
+}
+
+npass_map_delete() {
+	local dir="$1" logical="$2"
+	local lock="$dir/.map.lock"
+	exec {fd}>"$lock" || npass_die "falha ao obter lock: $lock"
+	flock -x "$fd"
+	local body new_body="" l p removed_physical=""
+	body="$(npass_map_load "$dir")"
+	while IFS=$'\t' read -r l p; do
+		[[ -z "$l" ]] && continue
+		if [[ "$l" == "$logical" ]]; then
+			removed_physical="$p"
+			continue
+		fi
+		new_body+="$l"$'\t'"$p"$'\n'
+	done <<<"$body"
+	npass_read_gpg_id "$dir"
+	local tmp
+	tmp="$(npass_mktemp map)"
+	{ printf '%s\n' "$NPASS_MAP_MAGIC"; printf '%s' "$new_body"; } >"$tmp"
+	npass_gpg_encrypt NPASS_RECIPIENTS "$dir/.map.gpg" <"$tmp"
+	exec {fd}>&-
+	printf '%s\n' "$removed_physical"
+}
+
+# Rename within the SAME identity: map-only edit, ciphertext untouched.
+npass_map_rename() {
+	local dir="$1" old="$2" new="$3"
+	local lock="$dir/.map.lock"
+	npass_check_sneaky_path "$new"
+	exec {fd}>"$lock" || npass_die "falha ao obter lock: $lock"
+	flock -x "$fd"
+	local body new_body="" l p found=0
+	body="$(npass_map_load "$dir")"
+	while IFS=$'\t' read -r l p; do
+		[[ -z "$l" ]] && continue
+		if [[ "$l" == "$new" ]]; then
+			npass_die "já existe uma entrada em '$new'"
+		fi
+		if [[ "$l" == "$old" ]]; then
+			l="$new"
+			found=1
+		fi
+		new_body+="$l"$'\t'"$p"$'\n'
+	done <<<"$body"
+	[[ $found -eq 0 ]] && npass_die "'$old' não encontrado"
+	npass_read_gpg_id "$dir"
+	local tmp
+	tmp="$(npass_mktemp map)"
+	{ printf '%s\n' "$NPASS_MAP_MAGIC"; printf '%s' "$new_body"; } >"$tmp"
+	npass_gpg_encrypt NPASS_RECIPIENTS "$dir/.map.gpg" <"$tmp"
+	exec {fd}>&-
+}
+
+# npass - store commands operating through the identity map.
+# Every command takes ID DIR/PASS. There is no bare-path mode.
+
+npass_blob_path() {
+	local dir="$1" physical="$2"
+	printf '%s\n' "$dir/blobs/$physical.gpg"
+}
+
+# npass_blob_write ID_DIR LOGICAL CONTENT
+# Writes CONTENT (full file body, may be multi-line) to the logical path,
+# reusing its existing physical blob name if it already exists (so a
+# content update never touches the map or the blob's identity - only the
+# ciphertext bytes change). Creates a new blob+map entry otherwise.
+npass_blob_write() {
+	local dir="$1" logical="$2" content="$3"
+	local existing; existing="$(npass_map_resolve "$dir" "$logical" 2>/dev/null)"
+	local physical="${existing:-$(npass_new_blob_name)}"
+	npass_read_gpg_id "$dir"
+	npass_gpg_encrypt NPASS_RECIPIENTS "$(npass_blob_path "$dir" "$physical")" <<<"$content"
+	if [[ -z "$existing" ]]; then
+		npass_map_set "$dir" "$logical" "$physical"
+	fi
+	return 0
+}
+
+cmd_show() {
+	local id="$1" logical="$2"
+	[[ -z "$id" || -z "$logical" ]] && npass_die "uso: npass show ID DIR/PASS"
+	local dir physical
+	dir="$(npass_identity_dir "$id")"
+	physical="$(npass_map_resolve "$dir" "$logical")" || npass_die "$id: $logical não encontrado"
+	[[ -z "$physical" ]] && npass_die "$id: $logical não encontrado"
+	npass_gpg_decrypt "$(npass_blob_path "$dir" "$physical")"
+}
+
+cmd_insert() {
+	local force=0
+	while [[ "$1" == -* ]]; do
+		case "$1" in
+		-f | --force) force=1; shift ;;
+		--) shift; break ;;
+		*) npass_die "opção desconhecida: $1" ;;
+		esac
+	done
+	local id="$1" logical="$2"
+	[[ -z "$id" || -z "$logical" ]] && npass_die "uso: npass insert [-f] ID DIR/PASS"
+	local dir existing
+	dir="$(npass_identity_dir "$id")"
+	existing="$(npass_map_resolve "$dir" "$logical" 2>/dev/null)"
+	if [[ -n "$existing" && $force -eq 0 ]]; then
+		read -r -p "Sobrescrever $id: $logical? [y/N] " reply
+		[[ "$reply" == [yY] ]] || { echo "Cancelado."; return 1; }
+	fi
+	local secret secret2
+	read -r -s -p "Senha para $id: $logical: " secret; echo
+	read -r -s -p "Repita a senha: " secret2; echo
+	[[ "$secret" == "$secret2" ]] || npass_die "as senhas não coincidem"
+
+	npass_blob_write "$dir" "$logical" "$secret"
+	printf '%s: %s salvo.\n' "$id" "$logical"
+}
+
+cmd_rm() {
+	local force=0
+	while [[ "$1" == -* ]]; do
+		case "$1" in
+		-f | --force) force=1; shift ;;
+		--) shift; break ;;
+		*) npass_die "opção desconhecida: $1" ;;
+		esac
+	done
+	local id="$1" logical="$2"
+	[[ -z "$id" || -z "$logical" ]] && npass_die "uso: npass rm [-f] ID DIR/PASS"
+	local dir
+	dir="$(npass_identity_dir "$id")"
+	if [[ $force -eq 0 ]]; then
+		read -r -p "Remover $id: $logical? [y/N] " reply
+		[[ "$reply" == [yY] ]] || { echo "Cancelado."; return 1; }
+	fi
+	local physical
+	physical="$(npass_map_delete "$dir" "$logical")"
+	[[ -z "$physical" ]] && npass_die "$id: $logical não encontrado"
+	local blob
+	blob="$(npass_blob_path "$dir" "$physical")"
+	if [[ -f "$blob" ]]; then
+		shred -u -- "$blob" 2>/dev/null || rm -f -- "$blob"
+	fi
+	printf '%s: %s removido.\n' "$id" "$logical"
+}
+
+# npass mv ID DIR/PASS ID2 DIR2/PASS2   -> cross-identity: decrypt+recrypt
+# npass mv ID DIR/PASS DIR2/PASS2       -> same identity: map-only rename
+cmd_mv() {
+	local id="$1" from="$2" a="$3" b="$4"
+	[[ -z "$id" || -z "$from" ]] && npass_die "uso: npass mv ID DIR/PASS [ID2] DIR2/PASS2"
+	local dir; dir="$(npass_identity_dir "$id")"
+	if [[ -n "$b" ]]; then
+		# cross-identity move: id from -> a (dest id) b (dest logical)
+		local dst_id="$a" dst_logical="$b"
+		local dst_dir; dst_dir="$(npass_identity_dir "$dst_id")"
+		local plaintext
+		plaintext="$(cmd_show "$id" "$from")" || return 1
+		local existing
+		existing="$(npass_map_resolve "$dst_dir" "$dst_logical" 2>/dev/null)"
+		[[ -n "$existing" ]] && npass_die "$dst_id: $dst_logical já existe"
+		npass_blob_write "$dst_dir" "$dst_logical" "$plaintext"
+		local old_physical; old_physical="$(npass_map_delete "$dir" "$from")"
+		local old_blob; old_blob="$(npass_blob_path "$dir" "$old_physical")"
+		[[ -f "$old_blob" ]] && shred -u -- "$old_blob" 2>/dev/null
+		printf '%s: %s -> %s: %s\n' "$id" "$from" "$dst_id" "$dst_logical"
+	else
+		# same-identity rename: map-only, ciphertext untouched
+		local to="$a"
+		[[ -z "$to" ]] && npass_die "uso: npass mv ID DIR/PASS DIR2/PASS2"
+		npass_map_rename "$dir" "$from" "$to"
+		printf '%s: %s -> %s\n' "$id" "$from" "$to"
+	fi
+}
+
+# Replace only the first line of a multi-line blob, preserving the rest
+# (an otpauth:// line, notes, etc.) untouched. Used by generate --in-place
+# and by update's password rotation, so rotating a password never drops
+# the OTP secret that lives alongside it.
+npass_replace_first_line() {
+	local content="$1" newline="$2" rest
+	rest="$(tail -n +2 <<<"$content")"
+	if [[ -n "$rest" ]]; then
+		printf '%s\n%s' "$newline" "$rest"
+	else
+		printf '%s' "$newline"
+	fi
+}
+
+: "${NPASS_GENERATED_LENGTH:=25}"
+
+cmd_generate() {
+	local no_symbols=0 clip=0 inplace=0 force=0 length=""
+	while [[ "$1" == -* ]]; do
+		case "$1" in
+		-n | --no-symbols) no_symbols=1; shift ;;
+		-c | --clip) clip=1; shift ;;
+		-f | --force) force=1; shift ;;
+		--in-place) inplace=1; shift ;;
+		--) shift; break ;;
+		*) npass_die "opção desconhecida: $1" ;;
+		esac
+	done
+	local id="$1" logical="$2"
+	[[ -n "$3" ]] && length="$3"
+	length="${length:-$NPASS_GENERATED_LENGTH}"
+	[[ "$length" =~ ^[0-9]+$ && "$length" -gt 0 ]] || npass_die "comprimento inválido: $length"
+
+	[[ -z "$id" || -z "$logical" ]] && npass_die "uso: npass generate [-n] [-c] [-f] [--in-place] ID DIR/PASS [LENGTH]"
+	local dir; dir="$(npass_identity_dir "$id")"
+	local existing; existing="$(cmd_show "$id" "$logical" 2>/dev/null || true)"
+	if [[ -n "$existing" && $inplace -eq 0 && $force -eq 0 ]]; then
+		read -r -p "$id: $logical já existe. Sobrescrever? [y/N] " reply
+		[[ "$reply" == [yY] ]] || { echo "Cancelado."; return 1; }
+	fi
+
+	local charset='A-Za-z0-9'
+	[[ $no_symbols -eq 0 ]] && charset+='!@#$%^&*()_+=-'
+	local pw
+	pw="$(LC_ALL=C tr -dc "$charset" </dev/urandom | head -c "$length")"
+	[[ "${#pw}" -eq "$length" ]] || npass_die "falha ao gerar senha (entropia insuficiente lida de /dev/urandom)"
+
+	local new_content
+	if [[ $inplace -eq 1 && -n "$existing" ]]; then
+		new_content="$(npass_replace_first_line "$existing" "$pw")"
+	else
+		new_content="$pw"
+	fi
+	npass_blob_write "$dir" "$logical" "$new_content"
+
+	if [[ $clip -eq 1 ]]; then
+		npass_clip "$pw" "$id: $logical"
+	else
+		printf '%s\n' "$pw"
+	fi
+}
+
+cmd_edit() {
+	local id="$1" logical="$2"
+	[[ -z "$id" || -z "$logical" ]] && npass_die "uso: npass edit ID DIR/PASS"
+	local dir; dir="$(npass_identity_dir "$id")"
+	local existing; existing="$(cmd_show "$id" "$logical" 2>/dev/null || true)"
+	local tmp; tmp="$(npass_mktemp edit)"
+	[[ -n "$existing" ]] && printf '%s' "$existing" >"$tmp"
+	"${EDITOR:-vi}" "$tmp" || npass_die "editor saiu com erro, nada foi salvo"
+	local new_content; new_content="$(cat "$tmp")"
+	if [[ "$new_content" == "$existing" ]]; then
+		echo "Sem alterações."
+		return 0
+	fi
+	npass_blob_write "$dir" "$logical" "$new_content"
+	printf '%s: %s atualizado.\n' "$id" "$logical"
+}
+
+cmd_ls() {
+	local id="$1" prefix="$2"
+	[[ -z "$id" ]] && npass_die "uso: npass ls ID [DIR]"
+	local dir; dir="$(npass_identity_dir "$id")"
+	local entries; entries="$(npass_map_list_prefix "$dir" "$prefix")"
+	if [[ -z "$entries" ]]; then
+		printf '%s: (vazio)\n' "$id"
+		return 0
+	fi
+	printf '%s\n' "$id"
+	sed 's/^/  /' <<<"$entries"
+}
+
+# npass - Wayland-only clipboard. No X11 fallback, no xclip, no xdotool,
+# no klipper/qdbus branch. If there's no Wayland compositor, npass says
+# so and stops instead of silently doing nothing.
+
+: "${NPASS_CLIP_TIME:=45}"
+
+npass_clip() {
+	local secret="$1" label="${2:-segredo}"
+	command -v wl-copy >/dev/null 2>&1 || npass_die "wl-copy não encontrado (wl-clipboard). npass é Wayland-only."
+	[[ -n "$WAYLAND_DISPLAY" ]] || npass_die "sem sessão Wayland ativa (\$WAYLAND_DISPLAY vazio)."
+
+	# --sensitive: hints clipboard managers (cliphist, etc.) not to persist
+	# this entry to disk. --paste-once: served exactly once then cleared,
+	# so a stray extra paste elsewhere doesn't leave it sitting around.
+	# We still additionally clear after NPASS_CLIP_TIME as a backstop for
+	# compositors/managers that ignore both hints.
+	printf '%s' "$secret" | wl-copy --paste-once --sensitive &
+	local copier=$!
+	disown "$copier" 2>/dev/null
+
+	(
+		sleep "$NPASS_CLIP_TIME"
+		# Only clear if nothing else has claimed the clipboard meanwhile.
+		if [[ "$(wl-paste --no-newline 2>/dev/null)" == "$secret" ]]; then
+			wl-copy --clear 2>/dev/null
+		fi
+	) & disown
+
+	printf 'Copiado (%s). Limpa em %ss ou no primeiro paste.\n' "$label" "$NPASS_CLIP_TIME" >&2
+}
+
+# npass - OTP (pass-otp equivalent), ported onto identity resolution.
+#
+# Hard security rule, non-negotiable: the raw OTP secret NEVER appears
+# as a command-line argument to any external process. Upstream pass-otp
+# has a fallback path that does exactly that when oathtool is "too old",
+# and the version check guarding that fallback used `sort -n` on a
+# dotted version string - which misorders as soon as any component
+# reaches two digits (2.6.5 vs 2.6.11: sort -n puts 2.6.11 first). We
+# tested this: it makes pass-otp take the unsafe argv path on ANY
+# oathtool 2.6.10+, even though those versions support reading the
+# secret from stdin. We do not carry that fallback at all: if neither
+# otptool nor a stdin-capable oathtool is available, npass refuses.
+
+readonly NPASS_OATH_MIN_STDIN_VERSION="2.6.5"
+OATH="$(command -v oathtool || true)"
+OTPTOOL="$(command -v otptool || true)"
+
+# Robust dotted-version compare, replacing the sort -n bug outright.
+# Returns 0 (true) if $1 >= $2.
+npass_version_ge() {
+	local a="$1" b="$2"
+	local -a av bv
+	IFS=. read -r -a av <<<"$a"
+	IFS=. read -r -a bv <<<"$b"
+	local i n=${#av[@]}
+	[[ ${#bv[@]} -gt $n ]] && n=${#bv[@]}
+	for ((i = 0; i < n; i++)); do
+		local x="${av[i]:-0}" y="${bv[i]:-0}"
+		x="${x//[!0-9]/}"; y="${y//[!0-9]/}"
+		x="${x:-0}"; y="${y:-0}"
+		((10#$x > 10#$y)) && return 0
+		((10#$x < 10#$y)) && return 1
+	done
+	return 0
+}
+
+# source: https://gist.github.com/cdown/1163649
+npass_urlencode() {
+	local s="$1" l=${#1} i c
+	for ((i = 0; i < l; i++)); do
+		c="${s:i:1}"
+		case "$c" in
+		[a-zA-Z0-9.~_-]) printf '%c' "$c" ;;
+		' ') printf + ;;
+		*) printf '%%%.2X' "'$c" ;;
+		esac
+	done
+}
+
+npass_urldecode() {
+	local enc="${1//+/ }"
+	printf '%b' "${enc//%/\\x}"
+}
+
+# Parse an otpauth:// URI. Sets otp_type, otp_label, otp_accountname,
+# otp_issuer, otp_secret, otp_digits, otp_algorithm, otp_period,
+# otp_counter, otp_uri. Consumed by the caller as globals, same
+# contract as upstream pass-otp.
+# shellcheck disable=SC2034
+otp_parse_uri() {
+	local uri="$1"
+	uri="${uri//\`/%60}"
+	uri="${uri//\"/%22}"
+
+	local pattern='^otpauth:\/\/(totp|hotp)(\/(([^:?]+)?(:([^:?]*))?)(:([0-9]+))?)?\?(.+)$'
+	[[ "$uri" =~ $pattern ]] || npass_die "não foi possível interpretar a URI OTP"
+
+	otp_uri="${BASH_REMATCH[0]}"
+	otp_type="${BASH_REMATCH[1]}"
+	otp_label="${BASH_REMATCH[3]}"
+	otp_secret="" otp_digits="" otp_algorithm="" otp_period="" otp_counter="" otp_issuer=""
+
+	otp_accountname="$(npass_urldecode "${BASH_REMATCH[6]}")"
+	if [[ -z "$otp_accountname" ]]; then
+		otp_accountname="$(npass_urldecode "${BASH_REMATCH[4]}")"
+	else
+		otp_issuer="$(npass_urldecode "${BASH_REMATCH[4]}")"
+	fi
+	[[ -z "$otp_accountname" ]] && npass_die "URI OTP inválida (sem accountname)"
+
+	local p="${BASH_REMATCH[9]}"
+	local -a params
+	IFS='&' read -r -a params <<<"$p"
+	pattern='^([^=]+)=(.+)$'
+	local param
+	for param in "${params[@]}"; do
+		[[ "$param" =~ $pattern ]] || continue
+		case "${BASH_REMATCH[1]}" in
+		secret) otp_secret="${BASH_REMATCH[2]}" ;;
+		digits) otp_digits="${BASH_REMATCH[2]}" ;;
+		algorithm) otp_algorithm="${BASH_REMATCH[2]}" ;;
+		period) otp_period="${BASH_REMATCH[2]}" ;;
+		counter) otp_counter="${BASH_REMATCH[2]}" ;;
+		issuer) otp_issuer="$(npass_urldecode "${BASH_REMATCH[2]}")" ;;
+		esac
+	done
+
+	[[ -z "$otp_secret" ]] && npass_die "URI OTP inválida (sem secret)"
+	if [[ "$otp_type" == hotp && ! "$otp_counter" =~ ^[0-9]+$ ]]; then
+		npass_die "URI OTP inválida (hotp sem counter)"
+	fi
+}
+
+npass_otp_read_uri() {
+	local prompt="$1" uri uri2
+	read -r -s -p "URI otpauth:// para $prompt: " uri || exit 1
+	echo
+	read -r -s -p "Repita a URI: " uri2 || exit 1
+	echo
+	[[ "$uri" == "$uri2" ]] || npass_die "as URIs não coincidem"
+	otp_parse_uri "$uri"
+}
+
+npass_otp_read_secret() {
+	local prompt="$1" issuer="$2" account="$3" secret secret2
+	read -r -s -p "Secret TOTP para $prompt: " secret || exit 1
+	echo
+	read -r -s -p "Repita o secret: " secret2 || exit 1
+	echo
+	[[ "$secret" == "$secret2" ]] || npass_die "os secrets não coincidem"
+	local sep=""
+	[[ -n "$issuer" && -n "$account" ]] && sep=":"
+	local uri
+	uri="otpauth://totp/$(npass_urlencode "$issuer")${sep}$(npass_urlencode "$account")?secret=$(npass_urlencode "$secret")"
+	[[ -n "$issuer" ]] && uri="${uri}&issuer=$(npass_urlencode "$issuer")"
+	otp_parse_uri "$uri"
+}
+
+# Pick how to invoke the code generator WITHOUT ever putting the secret
+# on argv. Sets NPASS_OTP_CMD (array) and NPASS_OTP_STDIN (0/1: whether
+# the secret must be piped to it).
+npass_otp_pick_backend() {
+	if [[ -n "$OTPTOOL" ]]; then
+		NPASS_OTP_CMD=("$OTPTOOL" "$otp_uri")
+		NPASS_OTP_STDIN=0
+		return 0
+	fi
+	[[ -z "$OATH" ]] && npass_die "nenhum gerador de OTP disponível (instale oathtool ou otptool)"
+	local ver
+	ver="$("$OATH" --version | head -n1 | awk '{print $NF}')"
+	if ! npass_version_ge "$ver" "$NPASS_OATH_MIN_STDIN_VERSION"; then
+		npass_die "oathtool $ver é antigo demais para ler o secret via stdin com segurança (mínimo $NPASS_OATH_MIN_STDIN_VERSION); npass não expõe o secret na linha de comando. Atualize o oathtool ou instale otptool."
+	fi
+	NPASS_OTP_CMD=("$OATH" --base32)
+	case "$otp_type" in
+	totp)
+		if [[ -n "$otp_algorithm" ]]; then
+			NPASS_OTP_CMD+=(--totp="$(tr '[:upper:]' '[:lower:]' <<<"$otp_algorithm")")
+		else
+			NPASS_OTP_CMD+=(--totp)
+		fi
+		[[ -n "$otp_period" ]] && NPASS_OTP_CMD+=(--time-step-size="${otp_period}s")
+		;;
+	hotp)
+		NPASS_OTP_CMD+=(--hotp --counter="$((otp_counter + 1))")
+		;;
+	esac
+	[[ -n "$otp_digits" ]] && NPASS_OTP_CMD+=(--digits="$otp_digits")
+	NPASS_OTP_CMD+=(-) # secret read from stdin, never from argv
+	NPASS_OTP_STDIN=1
+}
+
+npass_otp_generate() {
+	npass_otp_pick_backend
+	local out
+	if [[ $NPASS_OTP_STDIN -eq 1 ]]; then
+		out="$("${NPASS_OTP_CMD[@]}" <<<"$otp_secret")" || npass_die "falha ao gerar código OTP"
+	else
+		out="$("${NPASS_OTP_CMD[@]}")" || npass_die "falha ao gerar código OTP"
+	fi
+	printf '%s\n' "$out"
+}
+
+# --- content helpers: an OTP URI lives as an "otpauth://" line inside
+# the same multi-line blob a normal password uses (line 1 = password,
+# if any; any otpauth:// line = the OTP key). ---------------------------
+
+npass_otp_extract_uri() {
+	local content="$1" line
+	while IFS= read -r line; do
+		[[ "$line" == otpauth://* ]] && { printf '%s\n' "$line"; return 0; }
+	done <<<"$content"
+	return 1
+}
+
+npass_otp_replace_or_append_uri() {
+	local content="$1" new_uri="$2" found=0 out="" line
+	while IFS= read -r line; do
+		if [[ "$line" == otpauth://* ]]; then
+			line="$new_uri"
+			found=1
+		fi
+		out+="$line"$'\n'
+	done <<<"$content"
+	[[ $found -eq 0 ]] && out+="$new_uri"$'\n'
+	printf '%s' "$out"
+}
+
+# --- commands --------------------------------------------------------------
+
+cmd_otp_code() {
+	local id="$1" logical="$2"
+	[[ -z "$id" || -z "$logical" ]] && npass_die "uso: npass otp ID DIR/PASS"
+	local dir; dir="$(npass_identity_dir "$id")"
+	local content; content="$(cmd_show "$id" "$logical")" || return 1
+	local uri; uri="$(npass_otp_extract_uri "$content")" || npass_die "$id: $logical não tem segredo OTP"
+	otp_parse_uri "$uri"
+	local code; code="$(npass_otp_generate)"
+
+	if [[ "$otp_type" == hotp ]]; then
+		local new_counter=$((otp_counter + 1))
+		local new_uri
+		# NOT ${uri/&counter=$otp_counter/&counter=$new_counter}: on bash
+		# 5.2+, `patsub_replacement` is on by default and makes `&` in
+		# the REPLACEMENT mean "the matched text", exactly like sed. That
+		# turns this into "&counter=5counter=6" - a silently corrupted
+		# URI that breaks HOTP sync on the next call. Confirmed against
+		# bash 5.2.21. Rebuild the URI via regex capture instead, which
+		# has no dependency on that shopt.
+		if [[ "$uri" =~ ^(.*)\&counter=[0-9]+(.*)$ ]]; then
+			new_uri="${BASH_REMATCH[1]}&counter=${new_counter}${BASH_REMATCH[2]}"
+		else
+			npass_die "$id: $logical: URI HOTP sem parâmetro counter"
+		fi
+		local new_content; new_content="$(npass_otp_replace_or_append_uri "$content" "$new_uri")"
+		npass_blob_write "$dir" "$logical" "$new_content"
+	fi
+	printf '%s\n' "$code"
+}
+
+cmd_otp_clip() {
+	local id="$1" logical="$2"
+	local code; code="$(cmd_otp_code "$id" "$logical")" || return 1
+	npass_clip "$code" "OTP $id: $logical"
+}
+
+cmd_otp_uri() {
+	local mode="show" id logical
+	while [[ "$1" == -* ]]; do
+		case "$1" in
+		-c | --clip) mode="clip"; shift ;;
+		-q | --qrcode) mode="qrcode"; shift ;;
+		*) npass_die "opção desconhecida: $1" ;;
+		esac
+	done
+	id="$1" logical="$2"
+	[[ -z "$id" || -z "$logical" ]] && npass_die "uso: npass otp-uri [-c|-q] ID DIR/PASS"
+	local content; content="$(cmd_show "$id" "$logical")" || return 1
+	local uri; uri="$(npass_otp_extract_uri "$content")" || npass_die "$id: $logical não tem segredo OTP"
+	case "$mode" in
+	clip) npass_clip "$uri" "URI OTP $id: $logical" ;;
+	qrcode)
+		command -v qrencode >/dev/null 2>&1 || npass_die "qrencode não encontrado"
+		qrencode -t ANSIUTF8 <<<"$uri"
+		;;
+	*) printf '%s\n' "$uri" ;;
+	esac
+}
+
+cmd_otp_insert() {
+	local force=0 from_secret=0 issuer="" account=""
+	while [[ "$1" == -* ]]; do
+		case "$1" in
+		-f | --force) force=1; shift ;;
+		-s | --secret) from_secret=1; shift ;;
+		-i | --issuer) issuer="$2"; shift 2 ;;
+		-a | --account) account="$2"; shift 2 ;;
+		--) shift; break ;;
+		*) npass_die "opção desconhecida: $1" ;;
+		esac
+	done
+	local id="$1" logical="$2"
+	[[ -z "$id" || -z "$logical" ]] && npass_die "uso: npass otp-insert [-f] [-s -i issuer -a account] ID DIR/PASS"
+	local dir; dir="$(npass_identity_dir "$id")"
+	local existing; existing="$(cmd_show "$id" "$logical" 2>/dev/null || true)"
+	if [[ -n "$existing" ]] && npass_otp_extract_uri "$existing" >/dev/null 2>&1 && [[ $force -eq 0 ]]; then
+		read -r -p "$id: $logical já tem um segredo OTP. Sobrescrever? [y/N] " reply
+		[[ "$reply" == [yY] ]] || { echo "Cancelado."; return 1; }
+	fi
+
+	if [[ $from_secret -eq 1 ]]; then
+		[[ -z "$issuer" && -z "$account" ]] && npass_die "informe --issuer ou --account"
+		npass_otp_read_secret "$id: $logical" "$issuer" "$account"
+	else
+		npass_otp_read_uri "$id: $logical"
+	fi
+
+	local new_content
+	if [[ -n "$existing" ]]; then
+		new_content="$(npass_otp_replace_or_append_uri "$existing" "$otp_uri")"
+	else
+		new_content="$otp_uri"
+	fi
+	npass_blob_write "$dir" "$logical" "$new_content"
+	printf '%s: %s (OTP) salvo.\n' "$id" "$logical"
+}
+
+cmd_otp_validate() {
+	otp_parse_uri "$1"
+	printf 'URI OTP válida: tipo=%s conta=%s\n' "$otp_type" "$otp_accountname"
+}
+
+# npass - update: bulk password rotation, ported from pass-update onto
+# identity resolution. Usage: npass update [opts] ID PATTERN...
+# A PATTERN is either an exact logical path or a prefix ending in "/"
+# (expanded against the identity's map to every entry under it).
+# There is no filesystem glob support here (the map isn't a filesystem
+# tree), by design - see the M1 discussion of why the map is a flat,
+# encrypted, atomically-written index rather than a directory layout.
+
+cmd_update_usage() {
+	cat <<-_EOF
+		Uso: npass update [opts] ID PATTERN...
+
+		  -c, --clip         copia a senha antiga para a área de transferência
+		  -n, --no-symbols   gera sem símbolos
+		  -l, --length N     comprimento da senha gerada
+		  -a, --auto-length  usa o comprimento da senha antiga
+		  -p, --provide      digita a nova senha manualmente
+		  -m, --multiline    substitui o conteúdo inteiro (Ctrl+D para terminar)
+		  -i, --include RE   só atualiza entradas cuja senha antiga casa RE
+		  -e, --exclude RE   pula entradas cuja senha antiga casa RE
+		  -E, --edit         abre cada entrada no \$EDITOR, ignora as opções acima
+		  -f, --force        não pede confirmação
+
+		PATTERN é um caminho lógico exato ou um prefixo terminado em "/".
+	_EOF
+}
+
+npass_update_expand_patterns() {
+	local dir="$1"; shift
+	local -a out=()
+	local pat physical
+	for pat in "$@"; do
+		if physical="$(npass_map_resolve "$dir" "$pat" 2>/dev/null)" && [[ -n "$physical" ]]; then
+			out+=("$pat")
+		elif [[ "$pat" == */ || -n "$(npass_map_list_prefix "$dir" "$pat")" ]]; then
+			while IFS= read -r l; do
+				[[ -n "$l" ]] && out+=("$l")
+			done < <(npass_map_list_prefix "$dir" "$pat")
+		else
+			npass_warn "$pat não encontrado, ignorando."
+		fi
+	done
+	printf '%s\n' "${out[@]}" | sort -u
+}
+
+cmd_update() {
+	local clip=0 no_symbols=0 length="" autolength=0 provided=0 multiline=0
+	local include="" exclude="" edit=0 force=0
+	while [[ "$1" == -* ]]; do
+		case "$1" in
+		-c | --clip) clip=1; shift ;;
+		-n | --no-symbols) no_symbols=1; shift ;;
+		-l | --length) length="$2"; shift 2 ;;
+		-a | --auto-length) autolength=1; shift ;;
+		-p | --provide) provided=1; shift ;;
+		-m | --multiline) multiline=1; shift ;;
+		-i | --include) include="$2"; shift 2 ;;
+		-e | --exclude) exclude="$2"; shift 2 ;;
+		-E | --edit) edit=1; shift ;;
+		-f | --force) force=1; shift ;;
+		-h | --help) cmd_update_usage; return 0 ;;
+		--) shift; break ;;
+		*) npass_die "opção desconhecida: $1" ;;
+		esac
+	done
+	[[ $provided -eq 1 && $multiline -eq 1 ]] && npass_die "--provide e --multiline são mutuamente exclusivos"
+
+	local id="$1"; shift
+	[[ -z "$id" || $# -eq 0 ]] && { cmd_update_usage; npass_die "informe ID e ao menos um PATTERN"; }
+	local dir; dir="$(npass_identity_dir "$id")"
+
+	local -a targets=()
+	while IFS= read -r l; do
+		[[ -n "$l" ]] && targets+=("$l")
+	done < <(npass_update_expand_patterns "$dir" "$@")
+	[[ ${#targets[@]} -eq 0 ]] && npass_die "nenhuma entrada correspondente em $id"
+
+	local logical content oldpw
+	for logical in "${targets[@]}"; do
+		if [[ $edit -eq 1 ]]; then
+			cmd_edit "$id" "$logical"
+			continue
+		fi
+
+		content="$(cmd_show "$id" "$logical")" || { npass_warn "$logical: falha ao decifrar, pulando"; continue; }
+		oldpw="$(head -n1 <<<"$content")"
+
+		[[ -n "$include" && ! "$oldpw" =~ $include ]] && continue
+		[[ -n "$exclude" && "$oldpw" =~ $exclude ]] && continue
+
+		printf '\033[1mAtualizando %s: %s\033[0m\n' "$id" "$logical"
+		if [[ $clip -eq 0 ]]; then
+			printf '%s\n' "$content"
+		else
+			npass_clip "$oldpw" "$id: $logical (senha antiga)"
+		fi
+
+		if [[ $force -eq 0 ]]; then
+			local verb="gerar"
+			[[ $provided -eq 1 || $multiline -eq 1 ]] && verb="fornecer"
+			read -r -p "Pronto para $verb uma nova senha? [y/N] " reply
+			[[ "$reply" == [yY] ]] || continue
+		fi
+
+		if [[ $provided -eq 1 ]]; then
+			local newpw newpw2
+			read -r -s -p "Nova senha para $id: $logical: " newpw || exit 1
+			echo
+			read -r -s -p "Repita: " newpw2 || exit 1
+			echo
+			[[ "$newpw" == "$newpw2" ]] || npass_die "as senhas não coincidem"
+			npass_blob_write "$dir" "$logical" "$(npass_replace_first_line "$content" "$newpw")"
+		elif [[ $multiline -eq 1 ]]; then
+			echo "Digite o novo conteúdo de $logical e pressione Ctrl+D quando terminar:"
+			local newcontent; newcontent="$(cat)"
+			npass_blob_write "$dir" "$logical" "$newcontent"
+		else
+			local len="${length:-$NPASS_GENERATED_LENGTH}"
+			[[ $autolength -eq 1 ]] && { len="${#oldpw}"; echo "Usando o comprimento da senha antiga: $len"; }
+			local -a genopts=(--in-place --force)
+			[[ $no_symbols -eq 1 ]] && genopts+=(--no-symbols)
+			[[ $clip -eq 1 ]] && genopts+=(--clip)
+			cmd_generate "${genopts[@]}" "$id" "$logical" "$len"
+		fi
+	done
+}
+
+# npass - entry point and command dispatch.
+
+npass_main() {
+	npass_tmp_init
+	local cmd="$1"
+	[[ $# -gt 0 ]] && shift
+	case "$cmd" in
+	init) npass_identity_init "$@" ;;
+	show) cmd_show "$@" ;;
+	insert | add) cmd_insert "$@" ;;
+	rm | remove | delete) cmd_rm "$@" ;;
+	mv | rename) cmd_mv "$@" ;;
+	ls | list) cmd_ls "$@" ;;
+	generate | gen) cmd_generate "$@" ;;
+	edit) cmd_edit "$@" ;;
+	update) cmd_update "$@" ;;
+	clip)
+		local id="$1" logical="$2"
+		local secret; secret="$(cmd_show "$id" "$logical")" || exit 1
+		npass_clip "$secret" "$id: $logical"
+		;;
+	otp)
+		local sub="$1"; shift
+		case "$sub" in
+		insert | add) cmd_otp_insert "$@" ;;
+		uri) cmd_otp_uri "$@" ;;
+		clip) cmd_otp_clip "$@" ;;
+		validate) cmd_otp_validate "$@" ;;
+		code | show) cmd_otp_code "$@" ;;
+		'') npass_die "uso: npass otp [insert|uri|clip|validate] ID DIR/PASS" ;;
+		*) cmd_otp_code "$sub" "$@" ;; # `npass otp ID DIR/PASS` (default action)
+		esac
+		;;
+	'' | help | -h | --help)
+		cat <<-_EOF
+			npass $NPASS_VERSION - Wayland-native password store com resolução de identidade
+
+			Uso: npass COMANDO ID DIR/PASS [...]
+
+			  init ID RECIPIENT...     cria uma identidade nova
+			  show ID DIR/PASS         mostra um segredo
+			  clip ID DIR/PASS         copia para a área de transferência (Wayland)
+			  insert [-f] ID DIR/PASS  insere/atualiza um segredo
+			  rm [-f] ID DIR/PASS      remove um segredo
+			  mv ID DIR/PASS DEST      renomeia (mesma identidade) ou move (entre identidades)
+			  ls ID [DIR]              lista os caminhos lógicos de uma identidade
+			  generate [-n|-c|-f] [--in-place] ID DIR/PASS [LEN]   gera senha aleatória
+			  edit ID DIR/PASS         edita o conteúdo bruto no \$EDITOR
+			  update [opts] ID PATTERN...   rotaciona senhas em massa (veja 'npass update -h')
+			  otp ID DIR/PASS          gera o código OTP (TOTP/HOTP) do segredo
+			  otp insert [-f] ID DIR/PASS   insere/atualiza a URI OTP (interativo)
+			  otp uri [-c|-q] ID DIR/PASS   mostra a URI OTP, copia, ou exibe QR
+			  otp clip ID DIR/PASS     copia o código OTP para a área de transferência
+
+			Não existe modo de caminho físico "clássico": todo comando exige ID.
+		_EOF
+		;;
+	*) npass_die "comando desconhecido: $cmd (veja 'npass help')" ;;
+	esac
+}
+
+npass_main "$@"
