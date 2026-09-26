@@ -64,7 +64,7 @@ otp_parse_uri() {
 	uri="${uri//\"/%22}"
 
 	local pattern='^otpauth:\/\/(totp|hotp)(\/(([^:?]+)?(:([^:?]*))?)(:([0-9]+))?)?\?(.+)$'
-	[[ "$uri" =~ $pattern ]] || npass_die "não foi possível interpretar a URI OTP"
+	[[ "$uri" =~ $pattern ]] || npass_die "$(npass_t erro_otp_parse)"
 
 	otp_uri="${BASH_REMATCH[0]}"
 	otp_type="${BASH_REMATCH[1]}"
@@ -77,7 +77,7 @@ otp_parse_uri() {
 	else
 		otp_issuer="$(npass_urldecode "${BASH_REMATCH[4]}")"
 	fi
-	[[ -z "$otp_accountname" ]] && npass_die "URI OTP inválida (sem accountname)"
+	[[ -z "$otp_accountname" ]] && npass_die "$(npass_t erro_otp_sem_conta)"
 
 	local p="${BASH_REMATCH[9]}"
 	local -a params
@@ -96,29 +96,29 @@ otp_parse_uri() {
 		esac
 	done
 
-	[[ -z "$otp_secret" ]] && npass_die "URI OTP inválida (sem secret)"
+	[[ -z "$otp_secret" ]] && npass_die "$(npass_t erro_otp_sem_secret)"
 	if [[ "$otp_type" == hotp && ! "$otp_counter" =~ ^[0-9]+$ ]]; then
-		npass_die "URI OTP inválida (hotp sem counter)"
+		npass_die "$(npass_t erro_otp_sem_counter)"
 	fi
 }
 
 npass_otp_read_uri() {
 	local prompt="$1" uri uri2
-	read -r -s -p "URI otpauth:// para $prompt: " uri || exit 1
+	read -r -s -p "$(npass_t prompt_uri_otp "$prompt")" uri || exit 1
 	echo
-	read -r -s -p "Repita a URI: " uri2 || exit 1
+	read -r -s -p "$(npass_t prompt_repita_uri)" uri2 || exit 1
 	echo
-	[[ "$uri" == "$uri2" ]] || npass_die "as URIs não coincidem"
+	[[ "$uri" == "$uri2" ]] || npass_die "$(npass_t erro_uris_diferentes)"
 	otp_parse_uri "$uri"
 }
 
 npass_otp_read_secret() {
 	local prompt="$1" issuer="$2" account="$3" secret secret2
-	read -r -s -p "Secret TOTP para $prompt: " secret || exit 1
+	read -r -s -p "$(npass_t prompt_secret_totp "$prompt")" secret || exit 1
 	echo
-	read -r -s -p "Repita o secret: " secret2 || exit 1
+	read -r -s -p "$(npass_t prompt_repita_secret)" secret2 || exit 1
 	echo
-	[[ "$secret" == "$secret2" ]] || npass_die "os secrets não coincidem"
+	[[ "$secret" == "$secret2" ]] || npass_die "$(npass_t erro_secrets_diferentes)"
 	local sep=""
 	[[ -n "$issuer" && -n "$account" ]] && sep=":"
 	local uri
@@ -136,11 +136,11 @@ npass_otp_pick_backend() {
 		NPASS_OTP_STDIN=0
 		return 0
 	fi
-	[[ -z "$OATH" ]] && npass_die "nenhum gerador de OTP disponível (instale oathtool ou otptool)"
+	[[ -z "$OATH" ]] && npass_die "$(npass_t erro_sem_gerador_otp)"
 	local ver
 	ver="$("$OATH" --version | head -n1 | awk '{print $NF}')"
 	if ! npass_version_ge "$ver" "$NPASS_OATH_MIN_STDIN_VERSION"; then
-		npass_die "oathtool $ver é antigo demais para ler o secret via stdin com segurança (mínimo $NPASS_OATH_MIN_STDIN_VERSION); npass não expõe o secret na linha de comando. Atualize o oathtool ou instale otptool."
+		npass_die "$(npass_t erro_oathtool_antigo "$ver" "$NPASS_OATH_MIN_STDIN_VERSION")"
 	fi
 	NPASS_OTP_CMD=("$OATH" --base32)
 	case "$otp_type" in
@@ -165,9 +165,9 @@ npass_otp_generate() {
 	npass_otp_pick_backend
 	local out
 	if [[ $NPASS_OTP_STDIN -eq 1 ]]; then
-		out="$("${NPASS_OTP_CMD[@]}" <<<"$otp_secret")" || npass_die "falha ao gerar código OTP"
+		out="$("${NPASS_OTP_CMD[@]}" <<<"$otp_secret")" || npass_die "$(npass_t erro_gerar_otp)"
 	else
-		out="$("${NPASS_OTP_CMD[@]}")" || npass_die "falha ao gerar código OTP"
+		out="$("${NPASS_OTP_CMD[@]}")" || npass_die "$(npass_t erro_gerar_otp)"
 	fi
 	printf '%s\n' "$out"
 }
@@ -204,7 +204,7 @@ cmd_otp_code() {
 	[[ -z "$id" || -z "$logical" ]] && npass_die "uso: npass otp ID DIR/PASS"
 	local dir; dir="$(npass_identity_dir "$id")"
 	local content; content="$(cmd_show "$id" "$logical")" || return 1
-	local uri; uri="$(npass_otp_extract_uri "$content")" || npass_die "$id: $logical não tem segredo OTP"
+	local uri; uri="$(npass_otp_extract_uri "$content")" || npass_die "$(npass_t erro_sem_otp "$id" "$logical")"
 	otp_parse_uri "$uri"
 	local code; code="$(npass_otp_generate)"
 
@@ -221,7 +221,7 @@ cmd_otp_code() {
 		if [[ "$uri" =~ ^(.*)\&counter=[0-9]+(.*)$ ]]; then
 			new_uri="${BASH_REMATCH[1]}&counter=${new_counter}${BASH_REMATCH[2]}"
 		else
-			npass_die "$id: $logical: URI HOTP sem parâmetro counter"
+			npass_die "$(npass_t erro_hotp_sem_counter "$id" "$logical")"
 		fi
 		local new_content; new_content="$(npass_otp_replace_or_append_uri "$content" "$new_uri")"
 		npass_blob_write "$dir" "$logical" "$new_content"
@@ -242,17 +242,17 @@ cmd_otp_uri() {
 		case "$1" in
 		-c | --clip) mode="clip"; shift ;;
 		-q | --qrcode) mode="qrcode"; shift ;;
-		*) npass_die "opção desconhecida: $1" ;;
+		*) npass_die "$(npass_t erro_opcao_desconhecida "$1")" ;;
 		esac
 	done
 	id="$1" logical="$2"
 	[[ -z "$id" || -z "$logical" ]] && npass_die "uso: npass otp-uri [-c|-q] ID DIR/PASS"
 	local content; content="$(cmd_show "$id" "$logical")" || return 1
-	local uri; uri="$(npass_otp_extract_uri "$content")" || npass_die "$id: $logical não tem segredo OTP"
+	local uri; uri="$(npass_otp_extract_uri "$content")" || npass_die "$(npass_t erro_sem_otp "$id" "$logical")"
 	case "$mode" in
 	clip) npass_clip "$uri" "URI OTP $id: $logical" ;;
 	qrcode)
-		command -v qrencode >/dev/null 2>&1 || npass_die "qrencode não encontrado"
+		command -v qrencode >/dev/null 2>&1 || npass_die "$(npass_t erro_qrencode)"
 		qrencode -t ANSIUTF8 <<<"$uri"
 		;;
 	*) printf '%s\n' "$uri" ;;
@@ -268,7 +268,7 @@ cmd_otp_insert() {
 		-i | --issuer) issuer="$2"; shift 2 ;;
 		-a | --account) account="$2"; shift 2 ;;
 		--) shift; break ;;
-		*) npass_die "opção desconhecida: $1" ;;
+		*) npass_die "$(npass_t erro_opcao_desconhecida "$1")" ;;
 		esac
 	done
 	local id="$1" logical="$2"
@@ -276,12 +276,12 @@ cmd_otp_insert() {
 	local dir; dir="$(npass_identity_dir "$id")"
 	local existing; existing="$(cmd_show "$id" "$logical" 2>/dev/null || true)"
 	if [[ -n "$existing" ]] && npass_otp_extract_uri "$existing" >/dev/null 2>&1 && [[ $force -eq 0 ]]; then
-		read -r -p "$id: $logical já tem um segredo OTP. Sobrescrever? [y/N] " reply
-		[[ "$reply" == [yY] ]] || { echo "Cancelado."; return 1; }
+		read -r -p "$(npass_t prompt_otp_sobrescrever "$id" "$logical")" reply
+		[[ "$reply" == [yY] ]] || { npass_t msg_cancelado; return 1; }
 	fi
 
 	if [[ $from_secret -eq 1 ]]; then
-		[[ -z "$issuer" && -z "$account" ]] && npass_die "informe --issuer ou --account"
+		[[ -z "$issuer" && -z "$account" ]] && npass_die "$(npass_t erro_issuer_ou_account)"
 		npass_otp_read_secret "$id: $logical" "$issuer" "$account"
 	else
 		npass_otp_read_uri "$id: $logical"
@@ -295,7 +295,7 @@ cmd_otp_insert() {
 	fi
 	npass_blob_write "$dir" "$logical" "$new_content"
 	npass_git_commit "$id" "otp-insert"
-	printf '%s: %s (OTP) salvo.\n' "$id" "$logical"
+	npass_t msg_otp_salvo "$id" "$logical"
 }
 
 cmd_otp_validate() {

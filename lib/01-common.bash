@@ -24,7 +24,7 @@ npass_die() {
 }
 
 npass_warn() {
-	printf 'npass: aviso: %s\n' "$*" >&2
+	printf 'npass: %s: %s\n' "$(npass_t rotulo_aviso)" "$*" >&2
 }
 
 # Reject any path component that could escape the store via .. or an
@@ -34,11 +34,11 @@ npass_check_sneaky_path() {
 	local p="$1"
 	case "$p" in
 	'' | . | .. | */../* | ../* | */.. | /*)
-		npass_die "caminho inválido: '$p'"
+		npass_die "$(npass_t erro_caminho_invalido "$p")"
 		;;
 	esac
 	if [[ "$p" == *$'\t'* || "$p" == *$'\n'* ]]; then
-		npass_die "caminho inválido (contém tab/newline): '$p'"
+		npass_die "$(npass_t erro_caminho_tab "$p")"
 	fi
 }
 
@@ -47,7 +47,7 @@ npass_check_sneaky_path() {
 NPASS_TMPDIR="${XDG_RUNTIME_DIR:-/tmp}/npass.$$"
 npass_tmp_init() {
 	umask 077
-	mkdir -p "$NPASS_TMPDIR" || npass_die "não foi possível criar diretório temporário seguro"
+	mkdir -p "$NPASS_TMPDIR" || npass_die "$(npass_t erro_tmp_dir)"
 	chmod 700 "$NPASS_TMPDIR"
 }
 
@@ -72,13 +72,13 @@ npass_mktemp() {
 npass_gpg_decrypt() {
 	local file="$1" err
 	if ! [[ -f "$file" ]]; then
-		npass_die "arquivo não encontrado: $file"
+		npass_die "$(npass_t erro_arquivo_nao_encontrado "$file")"
 	fi
 	local errfile
 	errfile="$(npass_mktemp gpgerr)"
 	if ! "$NPASS_GPG" --quiet --batch --use-agent -d -o - "$file" 2>"$errfile"; then
 		err="$(cat "$errfile")"
-		npass_die "falha ao descriptografar '$file': ${err:-erro desconhecido do gpg}"
+		npass_die "$(npass_t erro_decrypt "$file" "${err:-$(npass_t erro_gpg_desconhecido)}")"
 	fi
 }
 
@@ -87,7 +87,7 @@ npass_gpg_decrypt() {
 npass_gpg_encrypt() {
 	local -n _recipients="$1"
 	local out="$2" tmp errfile
-	[[ ${#_recipients[@]} -eq 0 ]] && npass_die "nenhum destinatário GPG definido (.gpg-id ausente ou vazio)"
+	[[ ${#_recipients[@]} -eq 0 ]] && npass_die "$(npass_t erro_sem_destinatarios)"
 	tmp="$(npass_mktemp gpgenc)"
 	errfile="$(npass_mktemp gpgerr)"
 	local rcpt_args=()
@@ -99,15 +99,15 @@ npass_gpg_encrypt() {
 		--trust-model always "${rcpt_args[@]}" -e -o "$tmp" 2>"$errfile"; then
 		local err
 		err="$(cat "$errfile")"
-		npass_die "falha ao criptografar para '$out': ${err:-erro desconhecido do gpg}"
+		npass_die "$(npass_t erro_encrypt "$out" "${err:-$(npass_t erro_gpg_desconhecido)}")"
 	fi
-	mv -f -- "$tmp" "$out" || npass_die "falha ao mover arquivo cifrado para '$out'"
+	mv -f -- "$tmp" "$out" || npass_die "$(npass_t erro_mv_cifrado "$out")"
 }
 
 npass_read_gpg_id() {
 	local dir="$1"
 	local f="$dir/.gpg-id"
-	[[ -f "$f" ]] || npass_die "identidade sem .gpg-id: $dir"
+	[[ -f "$f" ]] || npass_die "$(npass_t erro_sem_gpgid "$dir")"
 	mapfile -t NPASS_RECIPIENTS <"$f"
 	# drop blank lines
 	local -a filtered=()
@@ -117,7 +117,7 @@ npass_read_gpg_id() {
 	done
 	NPASS_RECIPIENTS=("${filtered[@]}")
 	if [[ ${#NPASS_RECIPIENTS[@]} -eq 0 ]]; then
-		npass_die "$f está vazio"
+		npass_die "$(npass_t erro_gpgid_vazio "$f")"
 	fi
 	return 0
 }

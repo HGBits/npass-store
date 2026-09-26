@@ -7,8 +7,8 @@
 
 npass_clip() {
 	local secret="$1" label="${2:-segredo}"
-	command -v wl-copy >/dev/null 2>&1 || npass_die "wl-copy não encontrado (wl-clipboard). npass é Wayland-only."
-	[[ -n "$WAYLAND_DISPLAY" ]] || npass_die "sem sessão Wayland ativa (\$WAYLAND_DISPLAY vazio)."
+	command -v wl-copy >/dev/null 2>&1 || npass_die "$(npass_t erro_wlcopy)"
+	[[ -n "$WAYLAND_DISPLAY" ]] || npass_die "$(npass_t erro_sem_wayland)"
 
 	# --sensitive: hints clipboard managers (cliphist, etc.) not to persist
 	# this entry to disk. --paste-once: served exactly once then cleared,
@@ -27,5 +27,5 @@ npass_clip() {
 		fi
 	) & disown
 
-	printf 'Copiado (%s). Limpa em %ss ou no primeiro paste.\n' "$label" "$NPASS_CLIP_TIME" >&2
+	npass_t msg_copiado "$label" "$NPASS_CLIP_TIME" >&2
 }

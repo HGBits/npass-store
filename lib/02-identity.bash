@@ -18,8 +18,8 @@ npass_identity_dir() {
 	local id="$1"
 	npass_check_sneaky_path "$id"
 	local dir="$NPASS_STORE/$id"
-	[[ -d "$dir" ]] || npass_die "identidade não encontrada: $id"
-	[[ -f "$dir/.gpg-id" ]] || npass_die "'$id' não é uma identidade (sem .gpg-id)"
+	[[ -d "$dir" ]] || npass_die "$(npass_t erro_id_nao_encontrada "$id")"
+	[[ -f "$dir/.gpg-id" ]] || npass_die "$(npass_t erro_id_sem_gpgid "$id")"
 	printf '%s\n' "$dir"
 }
 
@@ -27,15 +27,15 @@ npass_identity_init() {
 	local id="$1" ; shift
 	local -a recipients=("$@")
 	npass_check_sneaky_path "$id"
-	[[ ${#recipients[@]} -eq 0 ]] && npass_die "informe ao menos um destinatário GPG"
+	[[ ${#recipients[@]} -eq 0 ]] && npass_die "$(npass_t erro_informe_destinatario)"
 	local dir="$NPASS_STORE/$id"
-	[[ -e "$dir/.gpg-id" ]] && npass_die "identidade já existe: $id"
-	mkdir -p -- "$dir/blobs" || npass_die "falha ao criar identidade: $id"
+	[[ -e "$dir/.gpg-id" ]] && npass_die "$(npass_t erro_id_ja_existe "$id")"
+	mkdir -p -- "$dir/blobs" || npass_die "$(npass_t erro_falha_criar_id "$id")"
 	printf '%s\n' "${recipients[@]}" >"$dir/.gpg-id"
 	NPASS_RECIPIENTS=("${recipients[@]}")
 	npass_map_save "$dir" ""
 	npass_git_commit "$id" "init"
-	printf 'Identidade "%s" criada para: %s\n' "$id" "${recipients[*]}"
+	npass_t msg_id_criada "$id" "${recipients[*]}"
 }
 
 # --- map: load / save -----------------------------------------------------
@@ -49,7 +49,7 @@ npass_map_load() {
 	body="$(npass_gpg_decrypt "$map")" || return 1
 	local magic="${body%%$'\n'*}"
 	if [[ "$magic" != "$NPASS_MAP_MAGIC" ]]; then
-		npass_die "mapa corrompido ou de versão desconhecida em $dir"
+		npass_die "$(npass_t erro_mapa_corrompido "$dir")"
 	fi
 	printf '%s\n' "${body#*$'\n'}"
 }
@@ -64,8 +64,8 @@ npass_map_save() {
 	local lock="$dir/.map.lock"
 	npass_read_gpg_id "$dir"
 	(
-		exec {fd}>"$lock" || npass_die "falha ao abrir lock: $lock"
-		flock -x "$fd" || npass_die "falha ao obter lock: $lock"
+		exec {fd}>"$lock" || npass_die "$(npass_t erro_lock_abrir "$lock")"
+		flock -x "$fd" || npass_die "$(npass_t erro_lock_obter "$lock")"
 		local tmp
 		tmp="$(npass_mktemp map)"
 		{
@@ -115,7 +115,7 @@ npass_map_set() {
 	local dir="$1" logical="$2" physical="$3"
 	local lock="$dir/.map.lock"
 	npass_check_sneaky_path "$logical"
-	exec {fd}>"$lock" || npass_die "falha ao obter lock: $lock"
+	exec {fd}>"$lock" || npass_die "$(npass_t erro_lock_obter "$lock")"
 	flock -x "$fd"
 	local body new_body="" found=0 l p
 	body="$(npass_map_load "$dir")"
@@ -139,7 +139,7 @@ npass_map_set() {
 npass_map_delete() {
 	local dir="$1" logical="$2"
 	local lock="$dir/.map.lock"
-	exec {fd}>"$lock" || npass_die "falha ao obter lock: $lock"
+	exec {fd}>"$lock" || npass_die "$(npass_t erro_lock_obter "$lock")"
 	flock -x "$fd"
 	local body new_body="" l p removed_physical=""
 	body="$(npass_map_load "$dir")"
@@ -165,14 +165,14 @@ npass_map_rename() {
 	local dir="$1" old="$2" new="$3"
 	local lock="$dir/.map.lock"
 	npass_check_sneaky_path "$new"
-	exec {fd}>"$lock" || npass_die "falha ao obter lock: $lock"
+	exec {fd}>"$lock" || npass_die "$(npass_t erro_lock_obter "$lock")"
 	flock -x "$fd"
 	local body new_body="" l p found=0
 	body="$(npass_map_load "$dir")"
 	while IFS=$'\t' read -r l p; do
 		[[ -z "$l" ]] && continue
 		if [[ "$l" == "$new" ]]; then
-			npass_die "já existe uma entrada em '$new'"
+			npass_die "$(npass_t erro_entrada_existe "$new")"
 		fi
 		if [[ "$l" == "$old" ]]; then
 			l="$new"
@@ -180,7 +180,7 @@ npass_map_rename() {
 		fi
 		new_body+="$l"$'\t'"$p"$'\n'
 	done <<<"$body"
-	[[ $found -eq 0 ]] && npass_die "'$old' não encontrado"
+	[[ $found -eq 0 ]] && npass_die "$(npass_t erro_nao_encontrado "$old")"
 	npass_read_gpg_id "$dir"
 	local tmp
 	tmp="$(npass_mktemp map)"

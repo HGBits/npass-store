@@ -62,7 +62,7 @@ npass_main() {
 			Não existe modo de caminho físico "clássico": todo comando exige ID.
 		_EOF
 		;;
-	*) npass_die "comando desconhecido: $cmd (veja 'npass help')" ;;
+	*) npass_die "$(npass_t erro_comando_desconhecido "$cmd")" ;;
 	esac
 }
 

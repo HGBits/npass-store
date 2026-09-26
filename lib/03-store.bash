@@ -29,8 +29,8 @@ cmd_show() {
 	[[ -z "$id" || -z "$logical" ]] && npass_die "uso: npass show ID DIR/PASS"
 	local dir physical
 	dir="$(npass_identity_dir "$id")"
-	physical="$(npass_map_resolve "$dir" "$logical")" || npass_die "$id: $logical não encontrado"
-	[[ -z "$physical" ]] && npass_die "$id: $logical não encontrado"
+	physical="$(npass_map_resolve "$dir" "$logical")" || npass_die "$(npass_t erro_logico_nao_encontrado "$id" "$logical")"
+	[[ -z "$physical" ]] && npass_die "$(npass_t erro_logico_nao_encontrado "$id" "$logical")"
 	npass_gpg_decrypt "$(npass_blob_path "$dir" "$physical")"
 }
 
@@ -40,7 +40,7 @@ cmd_insert() {
 		case "$1" in
 		-f | --force) force=1; shift ;;
 		--) shift; break ;;
-		*) npass_die "opção desconhecida: $1" ;;
+		*) npass_die "$(npass_t erro_opcao_desconhecida "$1")" ;;
 		esac
 	done
 	local id="$1" logical="$2"
@@ -49,17 +49,17 @@ cmd_insert() {
 	dir="$(npass_identity_dir "$id")"
 	existing="$(npass_map_resolve "$dir" "$logical" 2>/dev/null)"
 	if [[ -n "$existing" && $force -eq 0 ]]; then
-		read -r -p "Sobrescrever $id: $logical? [y/N] " reply
-		[[ "$reply" == [yY] ]] || { echo "Cancelado."; return 1; }
+		read -r -p "$(npass_t prompt_sobrescrever "$id" "$logical")" reply
+		[[ "$reply" == [yY] ]] || { npass_t msg_cancelado; return 1; }
 	fi
 	local secret secret2
-	read -r -s -p "Senha para $id: $logical: " secret; echo
-	read -r -s -p "Repita a senha: " secret2; echo
-	[[ "$secret" == "$secret2" ]] || npass_die "as senhas não coincidem"
+	read -r -s -p "$(npass_t prompt_senha_para "$id" "$logical")" secret; echo
+	read -r -s -p "$(npass_t prompt_repita_senha)" secret2; echo
+	[[ "$secret" == "$secret2" ]] || npass_die "$(npass_t erro_senhas_diferentes)"
 
 	npass_blob_write "$dir" "$logical" "$secret"
 	npass_git_commit "$id" "insert"
-	printf '%s: %s salvo.\n' "$id" "$logical"
+	npass_t msg_salvo "$id" "$logical"
 }
 
 cmd_rm() {
@@ -68,7 +68,7 @@ cmd_rm() {
 		case "$1" in
 		-f | --force) force=1; shift ;;
 		--) shift; break ;;
-		*) npass_die "opção desconhecida: $1" ;;
+		*) npass_die "$(npass_t erro_opcao_desconhecida "$1")" ;;
 		esac
 	done
 	local id="$1" logical="$2"
@@ -76,19 +76,19 @@ cmd_rm() {
 	local dir
 	dir="$(npass_identity_dir "$id")"
 	if [[ $force -eq 0 ]]; then
-		read -r -p "Remover $id: $logical? [y/N] " reply
-		[[ "$reply" == [yY] ]] || { echo "Cancelado."; return 1; }
+		read -r -p "$(npass_t prompt_remover "$id" "$logical")" reply
+		[[ "$reply" == [yY] ]] || { npass_t msg_cancelado; return 1; }
 	fi
 	local physical
 	physical="$(npass_map_delete "$dir" "$logical")"
-	[[ -z "$physical" ]] && npass_die "$id: $logical não encontrado"
+	[[ -z "$physical" ]] && npass_die "$(npass_t erro_logico_nao_encontrado "$id" "$logical")"
 	local blob
 	blob="$(npass_blob_path "$dir" "$physical")"
 	if [[ -f "$blob" ]]; then
 		shred -u -- "$blob" 2>/dev/null || rm -f -- "$blob"
 	fi
 	npass_git_commit "$id" "rm"
-	printf '%s: %s removido.\n' "$id" "$logical"
+	npass_t msg_removido "$id" "$logical"
 }
 
 # npass mv ID DIR/PASS ID2 DIR2/PASS2   -> cross-identity: decrypt+recrypt
@@ -105,7 +105,7 @@ cmd_mv() {
 		plaintext="$(cmd_show "$id" "$from")" || return 1
 		local existing
 		existing="$(npass_map_resolve "$dst_dir" "$dst_logical" 2>/dev/null)"
-		[[ -n "$existing" ]] && npass_die "$dst_id: $dst_logical já existe"
+		[[ -n "$existing" ]] && npass_die "$(npass_t erro_dest_ja_existe "$dst_id" "$dst_logical")"
 		npass_blob_write "$dst_dir" "$dst_logical" "$plaintext"
 		local old_physical; old_physical="$(npass_map_delete "$dir" "$from")"
 		local old_blob; old_blob="$(npass_blob_path "$dir" "$old_physical")"
@@ -148,27 +148,27 @@ cmd_generate() {
 		-f | --force) force=1; shift ;;
 		--in-place) inplace=1; shift ;;
 		--) shift; break ;;
-		*) npass_die "opção desconhecida: $1" ;;
+		*) npass_die "$(npass_t erro_opcao_desconhecida "$1")" ;;
 		esac
 	done
 	local id="$1" logical="$2"
 	[[ -n "$3" ]] && length="$3"
 	length="${length:-$NPASS_GENERATED_LENGTH}"
-	[[ "$length" =~ ^[0-9]+$ && "$length" -gt 0 ]] || npass_die "comprimento inválido: $length"
+	[[ "$length" =~ ^[0-9]+$ && "$length" -gt 0 ]] || npass_die "$(npass_t erro_comprimento_invalido "$length")"
 
 	[[ -z "$id" || -z "$logical" ]] && npass_die "uso: npass generate [-n] [-c] [-f] [--in-place] ID DIR/PASS [LENGTH]"
 	local dir; dir="$(npass_identity_dir "$id")"
 	local existing; existing="$(cmd_show "$id" "$logical" 2>/dev/null || true)"
 	if [[ -n "$existing" && $inplace -eq 0 && $force -eq 0 ]]; then
-		read -r -p "$id: $logical já existe. Sobrescrever? [y/N] " reply
-		[[ "$reply" == [yY] ]] || { echo "Cancelado."; return 1; }
+		read -r -p "$(npass_t prompt_sobrescrever_existe "$id" "$logical")" reply
+		[[ "$reply" == [yY] ]] || { npass_t msg_cancelado; return 1; }
 	fi
 
 	local charset='A-Za-z0-9'
 	[[ $no_symbols -eq 0 ]] && charset+='!@#$%^&*()_+=-'
 	local pw
 	pw="$(LC_ALL=C tr -dc "$charset" </dev/urandom | head -c "$length")"
-	[[ "${#pw}" -eq "$length" ]] || npass_die "falha ao gerar senha (entropia insuficiente lida de /dev/urandom)"
+	[[ "${#pw}" -eq "$length" ]] || npass_die "$(npass_t erro_entropia)"
 
 	local new_content
 	if [[ $inplace -eq 1 && -n "$existing" ]]; then
@@ -193,15 +193,15 @@ cmd_edit() {
 	local existing; existing="$(cmd_show "$id" "$logical" 2>/dev/null || true)"
 	local tmp; tmp="$(npass_mktemp edit)"
 	[[ -n "$existing" ]] && printf '%s' "$existing" >"$tmp"
-	"${EDITOR:-vi}" "$tmp" || npass_die "editor saiu com erro, nada foi salvo"
+	"${EDITOR:-vi}" "$tmp" || npass_die "$(npass_t erro_editor)"
 	local new_content; new_content="$(cat "$tmp")"
 	if [[ "$new_content" == "$existing" ]]; then
-		echo "Sem alterações."
+		npass_t msg_sem_alteracoes
 		return 0
 	fi
 	npass_blob_write "$dir" "$logical" "$new_content"
 	npass_git_commit "$id" "edit"
-	printf '%s: %s atualizado.\n' "$id" "$logical"
+	npass_t msg_atualizado "$id" "$logical"
 }
 
 cmd_ls() {

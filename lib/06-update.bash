@@ -38,7 +38,7 @@ npass_update_expand_patterns() {
 				[[ -n "$l" ]] && out+=("$l")
 			done < <(npass_map_list_prefix "$dir" "$pat")
 		else
-			npass_warn "$pat não encontrado, ignorando."
+			npass_warn "$(npass_t warn_pattern_nao_encontrado "$pat")"
 		fi
 	done
 	printf '%s\n' "${out[@]}" | sort -u
@@ -61,20 +61,20 @@ cmd_update() {
 		-f | --force) force=1; shift ;;
 		-h | --help) cmd_update_usage; return 0 ;;
 		--) shift; break ;;
-		*) npass_die "opção desconhecida: $1" ;;
+		*) npass_die "$(npass_t erro_opcao_desconhecida "$1")" ;;
 		esac
 	done
-	[[ $provided -eq 1 && $multiline -eq 1 ]] && npass_die "--provide e --multiline são mutuamente exclusivos"
+	[[ $provided -eq 1 && $multiline -eq 1 ]] && npass_die "$(npass_t erro_provide_multiline)"
 
 	local id="$1"; shift
-	[[ -z "$id" || $# -eq 0 ]] && { cmd_update_usage; npass_die "informe ID e ao menos um PATTERN"; }
+	[[ -z "$id" || $# -eq 0 ]] && { cmd_update_usage; npass_die "$(npass_t erro_informe_id_pattern)"; }
 	local dir; dir="$(npass_identity_dir "$id")"
 
 	local -a targets=()
 	while IFS= read -r l; do
 		[[ -n "$l" ]] && targets+=("$l")
 	done < <(npass_update_expand_patterns "$dir" "$@")
-	[[ ${#targets[@]} -eq 0 ]] && npass_die "nenhuma entrada correspondente em $id"
+	[[ ${#targets[@]} -eq 0 ]] && npass_die "$(npass_t erro_nenhuma_entrada "$id")"
 
 	local logical content oldpw
 	for logical in "${targets[@]}"; do
@@ -83,7 +83,7 @@ cmd_update() {
 			continue
 		fi
 
-		content="$(cmd_show "$id" "$logical")" || { npass_warn "$logical: falha ao decifrar, pulando"; continue; }
+		content="$(cmd_show "$id" "$logical")" || { npass_warn "$(npass_t warn_falha_decifrar "$logical")"; continue; }
 		oldpw="$(head -n1 <<<"$content")"
 
 		[[ -n "$include" && ! "$oldpw" =~ $include ]] && continue
@@ -97,29 +97,29 @@ cmd_update() {
 		fi
 
 		if [[ $force -eq 0 ]]; then
-			local verb="gerar"
-			[[ $provided -eq 1 || $multiline -eq 1 ]] && verb="fornecer"
-			read -r -p "Pronto para $verb uma nova senha? [y/N] " reply
+			local verb; verb="$(npass_t verbo_gerar)"
+			[[ $provided -eq 1 || $multiline -eq 1 ]] && verb="$(npass_t verbo_fornecer)"
+			read -r -p "$(npass_t prompt_pronto "$verb")" reply
 			[[ "$reply" == [yY] ]] || continue
 		fi
 
 		if [[ $provided -eq 1 ]]; then
 			local newpw newpw2
-			read -r -s -p "Nova senha para $id: $logical: " newpw || exit 1
+			read -r -s -p "$(npass_t prompt_nova_senha "$id" "$logical")" newpw || exit 1
 			echo
-			read -r -s -p "Repita: " newpw2 || exit 1
+			read -r -s -p "$(npass_t prompt_repita)" newpw2 || exit 1
 			echo
-			[[ "$newpw" == "$newpw2" ]] || npass_die "as senhas não coincidem"
+			[[ "$newpw" == "$newpw2" ]] || npass_die "$(npass_t erro_senhas_diferentes)"
 			npass_blob_write "$dir" "$logical" "$(npass_replace_first_line "$content" "$newpw")"
 			npass_git_commit "$id" "update-provide"
 		elif [[ $multiline -eq 1 ]]; then
-			echo "Digite o novo conteúdo de $logical e pressione Ctrl+D quando terminar:"
+			npass_t msg_digite_conteudo "$logical"
 			local newcontent; newcontent="$(cat)"
 			npass_blob_write "$dir" "$logical" "$newcontent"
 			npass_git_commit "$id" "update-multiline"
 		else
 			local len="${length:-$NPASS_GENERATED_LENGTH}"
-			[[ $autolength -eq 1 ]] && { len="${#oldpw}"; echo "Usando o comprimento da senha antiga: $len"; }
+			[[ $autolength -eq 1 ]] && { len="${#oldpw}"; npass_t msg_usando_comprimento "$len"; }
 			local -a genopts=(--in-place --force)
 			[[ $no_symbols -eq 1 ]] && genopts+=(--no-symbols)
 			[[ $clip -eq 1 ]] && genopts+=(--clip)
