@@ -18,6 +18,7 @@ npass_main() {
 	find) cmd_find "$@" ;;
 	grep) cmd_grep "$@" ;;
 	git) cmd_git "$@" ;;
+	migrate) cmd_migrate "$@" ;;
 	clip)
 		local id="$1" logical="$2"
 		local secret; secret="$(cmd_show "$id" "$logical")" || exit 1
@@ -54,6 +55,7 @@ npass_main() {
 			  find ID PADRÃO           busca caminhos lógicos que casam PADRÃO
 			  grep ID [OPÇÕES] PADRÃO decifra e busca PADRÃO no conteúdo de cada entrada
 			  git ARGS...              passthrough para git dentro do store (ex.: npass git init)
+			  migrate [-f] [--delete-source] ID DIR_ANTIGO   importa um store pass tradicional
 			  otp ID DIR/PASS          gera o código OTP (TOTP/HOTP) do segredo
 			  otp insert [-f] ID DIR/PASS   insere/atualiza a URI OTP (interativo)
 			  otp uri [-c|-q] ID DIR/PASS   mostra a URI OTP, copia, ou exibe QR
