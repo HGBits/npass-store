@@ -1,0 +1,396 @@
+.TH NPASS 1 "2026" "npass 0.1.0-m1" "npass manual"
+.SH NAME
+npass \- Wayland\-native password store with identity\-based name resolution
+.SH SYNOPSIS
+.B npass
+.I COMMAND
+.I ID
+.RI [ DIR/PASS " ...]"
+.SH DESCRIPTION
+.B npass
+is a rewrite of
+.BR pass (1)
+built around two decisions that change its on\-disk shape and its
+day\-to\-day command line, compared to the standard tool.
+.PP
+First, every operation requires an
+.IR ID :
+an
+.IR identity ,
+which is a directory under
+.B $NPASS_STORE
+containing its own
+.B .gpg\-id
+and its own encrypted lookup map. There is no "bare path" mode and no
+implicit root store \- a lone
+.I DIR/PASS
+argument is never resolved on its own. This is a deliberate removal,
+not an omission: identities give a natural, memorable unit
+(\c
+.IR personal ", " work ", " client\-acme )
+instead of one long, hard\-to\-recall path, and they let each group of
+secrets have its own GPG recipient set.
+.PP
+Second, within an identity, a secret's
+.I logical path
+(what you type, e.g.
+.IR email/gmail )
+is never the name of a file on disk. Each identity keeps a
+.B .map.gpg
+file: an encrypted table binding logical paths to opaque,
+randomly\-named ciphertext blobs under
+.BR blobs/ .
+Renaming or moving a secret within one identity only edits this map \-
+the ciphertext blob and its mtime never change. Moving a secret
+.I between
+identities is the one operation that must decrypt and re\-encrypt,
+because the recipient set changes. This means anyone who can list your
+store's files (a backup tool, a synced folder, a compromised git
+remote) sees only random hex filenames, never your service names.
+.PP
+.B npass
+is Wayland\-only for clipboard operations: it uses
+.BR wl\-copy (1)
+with
+.B \-\-sensitive
+and
+.BR \-\-paste\-once ,
+and refuses outright if no Wayland session is active. There is no X11
+fallback, by design.
+.SH COMMANDS
+.TP
+.BI "init " ID " " RECIPIENT ...
+Create a new identity, encrypting its map to the given GPG recipients
+(key IDs, fingerprints, or email addresses \- anything
+.BR gpg (1)
+accepts after \c
+.BR \-r ).
+.TP
+.BI "show " ID " " DIR/PASS
+Decrypt and print a secret.
+.TP
+.BI "clip " ID " " DIR/PASS
+Decrypt a secret and copy it to the Wayland clipboard. Cleared after
+.B $NPASS_CLIP_TIME
+seconds (default 45) or on first paste, whichever comes first.
+.TP
+.BI "insert " "[\-f] " ID " " DIR/PASS
+Prompt twice (no echo) for a new secret and store it. With an existing
+entry, prompts to overwrite unless
+.B \-f
+is given.
+.TP
+.BI "generate " "[\-n] [\-c] [\-f] [\-\-in\-place] " ID " " DIR/PASS " [" LENGTH ]
+Generate a random password (default length: 25).
+.B \-n
+drops symbols (alphanumeric only).
+.B \-c
+copies it to the clipboard instead of printing it.
+.B \-\-in\-place
+replaces only the first line of an existing multi\-line entry,
+preserving any following lines (notably an OTP URI) untouched.
+.TP
+.BI "edit " ID " " DIR/PASS
+Open the entry's raw content in
+.BR $EDITOR " (default " vi )
+and save it back if changed.
+.TP
+.BI "rm " "[\-f] " ID " " DIR/PASS
+Remove an entry: deletes its map row and shreds its ciphertext blob.
+.TP
+.BI "mv " ID " " DIR/PASS " " DIR2/PASS2
+Rename within the same identity: a map\-only edit, the ciphertext blob
+is untouched.
+.TP
+.BI "mv " ID " " DIR/PASS " " ID2 " " DIR2/PASS2
+Move to a different identity: decrypts, re\-encrypts to the
+destination identity's recipients, and removes the source entry.
+.TP
+.BI "ls " ID " [" DIR ]
+List logical paths in an identity, optionally filtered to those under
+a given prefix.
+.TP
+.BI "find " ID " " PATTERN
+List logical paths whose name matches
+.I PATTERN
+(case\-insensitive substring/regex via
+.BR grep (1)).
+.TP
+.BI "grep " ID " [" GREP\-OPTIONS "] " PATTERN
+Decrypt every entry in the identity and search its content for
+.IR PATTERN .
+Inherently O(n) in the number of secrets \- there is no way to search
+ciphertext without decrypting it.
+.TP
+.BI "update " "[opts] " ID " " PATTERN ...
+Bulk password rotation. Each
+.I PATTERN
+is an exact logical path or a prefix ending in
+.RI "\(dq/\(dq" ,
+expanded against the identity's map. Options:
+.RS
+.TP
+.B \-c, \-\-clip
+copy the old password to the clipboard before rotating
+.TP
+.B \-n, \-\-no\-symbols
+generate without symbols
+.TP
+.BI "\-l, \-\-length " N
+generated password length
+.TP
+.B \-a, \-\-auto\-length
+match the old password's length
+.TP
+.B \-p, \-\-provide
+type the new password by hand instead of generating one
+.TP
+.B \-m, \-\-multiline
+replace the entire entry content (read until EOF)
+.TP
+.BI "\-i, \-\-include " REGEX
+only rotate entries whose old password matches
+.I REGEX
+.TP
+.BI "\-e, \-\-exclude " REGEX
+skip entries whose old password matches
+.I REGEX
+.TP
+.B \-E, \-\-edit
+open each matched entry in
+.B $EDITOR
+instead, ignoring every option above
+.TP
+.B \-f, \-\-force
+skip the confirmation prompt
+.RE
+.TP
+.BI "otp " ID " " DIR/PASS
+Generate the current TOTP/HOTP code for an entry. For HOTP, also
+increments and persists the stored counter. The OTP secret is never
+passed as a command\-line argument to the code generator (see
+.B SECURITY
+below); if neither
+.B otptool
+nor a sufficiently recent
+.B oathtool
+is available,
+.B npass
+refuses rather than falling back to an unsafe method.
+.TP
+.BI "otp insert " "[\-f] [\-s \-i " ISSUER " \-a " ACCOUNT "] " ID " " DIR/PASS
+Prompt for an
+.B otpauth://
+URI (or, with
+.BR \-s ,
+just the base32 secret plus issuer/account) and store it alongside any
+existing password in the same entry.
+.TP
+.BI "otp uri " "[\-c|\-q] " ID " " DIR/PASS
+Show the stored OTP URI, copy it to the clipboard, or render it as a
+QR code in the terminal via
+.BR qrencode (1)
+(no image viewer, no display server needed).
+.TP
+.BI "otp clip " ID " " DIR/PASS
+Generate the current code and copy it to the clipboard.
+.TP
+.BI "otp validate " URI
+Check whether a string is a well\-formed
+.B otpauth://
+URI.
+.TP
+.BI "migrate " "[\-f] [\-\-delete\-source] " ID " " OLD_DIR
+Import a legacy, vanilla
+.BR pass (1)
+store (a real directory tree where names are plaintext) into
+.IR ID ,
+obscuring every imported name behind the map. If
+.I ID
+does not exist yet and
+.I OLD_DIR
+has a
+.BR .gpg\-id ,
+the identity is created automatically with the same recipients.
+.B \-\-delete\-source
+shreds each old file after it is successfully imported (off by
+default \- migration is non\-destructive unless asked otherwise).
+.TP
+.BI "git " ARGS ...
+Passthrough to
+.BI "git \-C " $NPASS_STORE " " ARGS .
+Run
+.B npass git init
+once to opt in to automatic commits; see
+.B SECURITY
+for exactly what those commits do and do not contain.
+.TP
+.B help
+Show a command summary.
+.SH ENVIRONMENT
+.TP
+.B NPASS_STORE
+Root of the store. Default:
+.BR $XDG_DATA_HOME/npass ", or " ~/.local/share/npass .
+.TP
+.B NPASS_GPG
+The
+.B gpg
+binary to invoke. Default:
+.BR gpg .
+.TP
+.B NPASS_LANG
+Selects the message language for runtime feedback (errors, warnings,
+success confirmations, prompts). A value starting with
+.B en
+selects English; anything else, including unset, selects Portuguese
+(the tool's default/core language). Command usage text and this man
+page are not affected by this variable.
+.TP
+.B NPASS_CLIP_TIME
+Seconds before a clipboard copy is cleared. Default: 45.
+.TP
+.B NPASS_GENERATED_LENGTH
+Default length for
+.B generate
+and for
+.B update
+\&'s generated passwords when
+.B \-l
+is not given. Default: 25.
+.TP
+.B EDITOR
+Used by
+.B edit
+and by
+.BR "update \-E" .
+Default:
+.BR vi .
+.TP
+.B WAYLAND_DISPLAY
+Must be set (i.e. a Wayland session must be active) for
+.B clip
+and
+.B otp clip
+to work.
+.SH FILES
+.TP
+.I $NPASS_STORE/ID/.gpg\-id
+One GPG recipient per line for identity
+.IR ID .
+.TP
+.I $NPASS_STORE/ID/.map.gpg
+Encrypted TSV: logical path, tab, opaque blob name. Rewritten
+atomically (temp file + rename) under an
+.BR flock (1)
+held on
+.IR .map.lock ,
+so two concurrent writers to the same identity cannot silently drop
+each other's entry.
+.TP
+.I $NPASS_STORE/ID/blobs/*.gpg
+Individual encrypted secrets, named with 32 random hex characters. The
+filename carries no information about what it contains.
+.SH SECURITY
+.TP
+.B Commit messages never contain a logical path.
+When git integration is enabled
+.RB ( "npass git init" ),
+every mutating command commits automatically with a message of the
+exact form \(dq\c
+.IR ACTION : " ID" \c
+\(dq (e.g. \(dqinsert: personal\(dq), where
+.I ACTION
+is a fixed generic verb. The secret's logical path
+.RI ( "email/gmail-personal-account" ,
+say) never appears in a commit message. This matters because upstream
+.BR pass (1)
+writes the plaintext pass\-name directly into its commit messages,
+which defeats any name obscuring the moment someone runs
+.BR "git log" .
+The git tree itself will still show which opaque blob filenames
+changed under which identity directory \- that is unavoidable and
+carries no information, since blob names are random.
+.TP
+.B The OTP secret never touches a process's command\-line arguments.
+Command\-line arguments are visible to every user on the system via
+.IR /proc/*/cmdline " or " ps .
+.B npass
+always pipes the OTP secret to the code generator over stdin. If
+.B otptool
+is unavailable and the installed
+.B oathtool
+is too old to read a base32 secret from stdin,
+.B npass
+refuses to generate a code rather than falling back to passing the
+secret as an argument.
+.TP
+.B Clipboard entries are marked sensitive and single\-use where supported.
+.B clip
+and
+.B otp clip
+invoke
+.B wl\-copy
+with
+.B \-\-sensitive
+(a hint to clipboard managers such as
+.B cliphist
+not to persist the entry to disk) and
+.B \-\-paste\-once
+(served exactly once, then cleared). A background timeout
+.RB ( $NPASS_CLIP_TIME )
+additionally clears the clipboard for compositors or managers that
+ignore both hints, but only if the clipboard still holds exactly what
+was copied.
+.TP
+.B The map is never written non\-atomically.
+Every map mutation is: decrypt current map, apply the change in
+memory, encrypt to a temp file, then
+.B mv
+that temp file over
+.IR .map.gpg ,
+all while holding an exclusive
+.BR flock (1)
+on a separate lock file. A crash or a concurrent writer can therefore
+never leave the map partially written or silently overwritten.
+.SH LIMITATIONS
+There is no "classic" bare\-path mode: an
+.I ID
+is always required, even for a single, ungrouped secret \- you still
+need at least one identity to hold it. This is intentional (see
+.BR DESCRIPTION ),
+not a missing feature.
+.PP
+.B find
+and
+.B grep
+are O(n) in the number of entries in an identity, since a logical
+path's name doesn't reveal which physical file to search and content
+search requires decrypting every candidate. This matches the
+inherent cost of searching an encrypted store and is not specific to
+.BR npass .
+.PP
+.B migrate
+only understands a vanilla
+.BR pass (1)
+directory\-tree layout. A store produced by a different
+name\-obscuring extension, with its own lookup\-table format, needs
+its own dedicated importer.
+.SH EXAMPLES
+.EX
+npass init personal 1B95\&...940B7AE4E
+npass insert personal email/gmail
+npass otp insert \-f personal email/gmail
+npass show personal email/gmail
+npass clip personal email/gmail
+npass otp personal email/gmail
+npass update \-a \-f personal email/
+npass git init
+npass migrate personal ~/.password\-store
+.EE
+.SH SEE ALSO
+.BR pass (1),
+.BR gpg (1),
+.BR wl\-copy (1),
+.BR oathtool (1),
+.BR qrencode (1)
