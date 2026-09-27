@@ -226,7 +226,19 @@ does not exist yet and
 .I OLD_DIR
 has a
 .BR .gpg\-id ,
-the identity is created automatically with the same recipients.
+the identity is created automatically with the same recipients, and
+signed on the spot
+.RB ( "as if by " "init \-\-sign" )
+if
+.I OLD_DIR
+also has a
+.BR .gpg\-id.sig .
+Migrating into an
+.I ID
+that already exists never signs it as a side effect \- that stays an
+explicit
+.B sign
+call.
 .B \-\-delete\-source
 shreds each old file after it is successfully imported (off by
 default \- migration is non\-destructive unless asked otherwise).
@@ -253,7 +265,10 @@ inside the already\-encrypted blob itself, never in the map, in a git
 commit, or on the command line: see
 .B SECURITY
 for why the codename, not the real name, had to stay the CLI\-visible
-value.
+value. Auto\-creates and auto\-signs the destination identity under
+the same rule as
+.B migrate
+above.
 .TP
 .BI "git " ARGS ...
 Passthrough to
