@@ -60,6 +60,7 @@ npass_main() {
 			  grep ID [OPÇÕES] PADRÃO decifra e busca PADRÃO no conteúdo de cada entrada
 			  git ARGS...              passthrough para git dentro do store (ex.: npass git init)
 			  migrate [-f] [--delete-source] ID DIR_ANTIGO   importa um store pass tradicional
+			  migrate-secrets [-f] [--delete-source] ID DIR_IDENTIDADE_ANTIGA   importa layout pass-secrets-redesign
 			  otp ID DIR/PASS          gera o código OTP (TOTP/HOTP) do segredo
 			  otp insert [-f] ID DIR/PASS   insere/atualiza a URI OTP (interativo)
 			  otp uri [-c|-q] ID DIR/PASS   mostra a URI OTP, copia, ou exibe QR
