@@ -49,7 +49,15 @@ cmd_migrate() {
 		if [[ -f "$old_dir/.gpg-id" ]]; then
 			local -a recipients
 			mapfile -t recipients <"$old_dir/.gpg-id"
-			npass_identity_init "$id" "${recipients[@]}"
+			# If the source identity was signed, the auto-created
+			# destination is born signed too - preserving that intent
+			# is the point, not an afterthought. If the identity
+			# already existed (no auto-create), we never sign it as a
+			# side effect of migrating into it: that decision stays
+			# explicit via `npass sign`.
+			local -a init_args=()
+			[[ -f "$old_dir/.gpg-id.sig" ]] && init_args+=(--sign)
+			npass_identity_init "${init_args[@]}" "$id" "${recipients[@]}"
 		else
 			npass_die "$(npass_t erro_id_sem_auto_criar "$id" "$old_dir")"
 		fi
@@ -186,7 +194,15 @@ cmd_migrate_secrets() {
 		if [[ -f "$old_dir/.gpg-id" ]]; then
 			local -a recipients
 			mapfile -t recipients <"$old_dir/.gpg-id"
-			npass_identity_init "$id" "${recipients[@]}"
+			# If the source identity was signed, the auto-created
+			# destination is born signed too - preserving that intent
+			# is the point, not an afterthought. If the identity
+			# already existed (no auto-create), we never sign it as a
+			# side effect of migrating into it: that decision stays
+			# explicit via `npass sign`.
+			local -a init_args=()
+			[[ -f "$old_dir/.gpg-id.sig" ]] && init_args+=(--sign)
+			npass_identity_init "${init_args[@]}" "$id" "${recipients[@]}"
 		else
 			npass_die "$(npass_t erro_id_sem_auto_criar "$id" "$old_dir")"
 		fi

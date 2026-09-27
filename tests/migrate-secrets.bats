@@ -136,6 +136,21 @@ setup() {
 	[ "$status" -eq 0 ]
 }
 
+@test "migrate-secrets com .gpg-id.sig na origem assina a identidade nova automaticamente" {
+	gpg --batch --yes --default-key "$FPR" --detach-sign -o "$OLD/.gpg-id.sig" "$OLD/.gpg-id"
+	run "$NPASS" migrate-secrets personal "$OLD"
+	[ "$status" -eq 0 ]
+	[ -f "$NPASS_STORE/personal/.gpg-id.sig" ]
+	run gpg --batch --verify "$NPASS_STORE/personal/.gpg-id.sig" "$NPASS_STORE/personal/.gpg-id"
+	[ "$status" -eq 0 ]
+}
+
+@test "migrate-secrets sem .gpg-id.sig na origem nao assina a identidade nova" {
+	[ ! -f "$OLD/.gpg-id.sig" ]
+	"$NPASS" migrate-secrets personal "$OLD" >/dev/null
+	[ ! -f "$NPASS_STORE/personal/.gpg-id.sig" ]
+}
+
 @test "migracao para identidade com chave diferente recifra corretamente" {
 	"$NPASS" init work "$FPR2"
 	run "$NPASS" migrate-secrets work "$OLD"

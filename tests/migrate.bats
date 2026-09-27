@@ -78,6 +78,30 @@ setup() {
 	[ "$output" = "senhaGmail1" ]
 }
 
+@test "migracao com .gpg-id.sig na origem assina a identidade nova automaticamente" {
+	printf '%s\n' "$FPR" > "$OLD_STORE/.gpg-id"
+	gpg --batch --yes --default-key "$FPR" --detach-sign -o "$OLD_STORE/.gpg-id.sig" "$OLD_STORE/.gpg-id"
+	run "$NPASS" migrate personal "$OLD_STORE"
+	[ "$status" -eq 0 ]
+	[ -f "$NPASS_STORE/personal/.gpg-id.sig" ]
+	run gpg --batch --verify "$NPASS_STORE/personal/.gpg-id.sig" "$NPASS_STORE/personal/.gpg-id"
+	[ "$status" -eq 0 ]
+}
+
+@test "migracao sem .gpg-id.sig na origem nao assina a identidade nova" {
+	[ ! -f "$OLD_STORE/.gpg-id.sig" ]
+	"$NPASS" migrate personal "$OLD_STORE" >/dev/null
+	[ ! -f "$NPASS_STORE/personal/.gpg-id.sig" ]
+}
+
+@test "migracao para identidade JA EXISTENTE nunca assina como efeito colateral, mesmo com .gpg-id.sig na origem" {
+	"$NPASS" init personal "$FPR"
+	printf '%s\n' "$FPR" > "$OLD_STORE/.gpg-id"
+	gpg --batch --yes --default-key "$FPR" --detach-sign -o "$OLD_STORE/.gpg-id.sig" "$OLD_STORE/.gpg-id"
+	"$NPASS" migrate personal "$OLD_STORE" >/dev/null
+	[ ! -f "$NPASS_STORE/personal/.gpg-id.sig" ]
+}
+
 @test "migrate para identidade que ja existe com chave diferente recifra corretamente" {
 	"$NPASS" init work "$FPR2"
 	run "$NPASS" migrate work "$OLD_STORE"
