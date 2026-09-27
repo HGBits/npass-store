@@ -24,6 +24,13 @@ npass_identity_dir() {
 }
 
 npass_identity_init() {
+	local sign=0 sign_keyid=""
+	while [[ "$1" == --sign* ]]; do
+		case "$1" in
+		--sign) sign=1; shift ;;
+		--sign=*) sign=1; sign_keyid="${1#--sign=}"; shift ;;
+		esac
+	done
 	local id="$1" ; shift
 	local -a recipients=("$@")
 	npass_check_sneaky_path "$id"
@@ -34,6 +41,7 @@ npass_identity_init() {
 	printf '%s\n' "${recipients[@]}" >"$dir/.gpg-id"
 	NPASS_RECIPIENTS=("${recipients[@]}")
 	npass_map_save "$dir" ""
+	[[ $sign -eq 1 ]] && npass_sign_gpgid "$dir" "$sign_keyid"
 	npass_git_commit "$id" "init"
 	npass_t msg_id_criada "$id" "${recipients[*]}"
 }

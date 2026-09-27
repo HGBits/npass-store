@@ -108,6 +108,7 @@ npass_read_gpg_id() {
 	local dir="$1"
 	local f="$dir/.gpg-id"
 	[[ -f "$f" ]] || npass_die "$(npass_t erro_sem_gpgid "$dir")"
+	npass_verify_gpgid_if_signed "$dir"
 	mapfile -t NPASS_RECIPIENTS <"$f"
 	# drop blank lines
 	local -a filtered=()

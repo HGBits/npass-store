@@ -102,6 +102,11 @@ declare -gA NPASS_MSG_PT=(
 	[msg_digite_conteudo]="Digite o novo conteúdo de %s e pressione Ctrl+D quando terminar:\n"
 	[msg_usando_comprimento]="Usando o comprimento da senha antiga: %s\n"
 	[msg_nenhum_arquivo_gpg]="Nenhum arquivo .gpg encontrado em %s.\n"
+	[erro_assinar_gpgid]="falha ao assinar .gpg-id em %s: %s"
+	[erro_assinatura_invalida]="assinatura de .gpg-id inválida em %s - possível adulteração do destinatário GPG: %s"
+	[msg_assinado]="Identidade \"%s\" assinada.\n"
+	[warn_secrets_sem_decifrar]=".secrets.gpg falhou ao decifrar - importando sem nomes reais"
+	[warn_mask_sem_decifrar]=".mask.gpg falhou ao decifrar - importando sem aliases de email"
 )
 
 declare -gA NPASS_MSG_EN=(
@@ -193,6 +198,11 @@ declare -gA NPASS_MSG_EN=(
 	[msg_digite_conteudo]="Type the new content for %s and press Ctrl+D when done:\n"
 	[msg_usando_comprimento]="Using the old password's length: %s\n"
 	[msg_nenhum_arquivo_gpg]="No .gpg files found in %s.\n"
+	[erro_assinar_gpgid]="failed to sign .gpg-id in %s: %s"
+	[erro_assinatura_invalida]="invalid .gpg-id signature in %s - possible tampering with the GPG recipient: %s"
+	[msg_assinado]="Identity \"%s\" signed.\n"
+	[warn_secrets_sem_decifrar]=".secrets.gpg failed to decrypt - importing without real names"
+	[warn_mask_sem_decifrar]=".mask.gpg failed to decrypt - importing without email aliases"
 )
 
 # npass_t KEY [ARGS...]

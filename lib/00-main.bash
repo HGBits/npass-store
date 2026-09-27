@@ -19,6 +19,8 @@ npass_main() {
 	grep) cmd_grep "$@" ;;
 	git) cmd_git "$@" ;;
 	migrate) cmd_migrate "$@" ;;
+	migrate-secrets) cmd_migrate_secrets "$@" ;;
+	sign) cmd_sign "$@" ;;
 	clip)
 		local id="$1" logical="$2"
 		local secret; secret="$(cmd_show "$id" "$logical")" || exit 1
@@ -43,6 +45,8 @@ npass_main() {
 			Uso: npass COMANDO ID DIR/PASS [...]
 
 			  init ID RECIPIENT...     cria uma identidade nova
+			  init --sign[=KEYID] ID RECIPIENT...   idem, já assinando o .gpg-id
+			  sign ID [KEYID]          assina (ou reassina) o .gpg-id de uma identidade
 			  show ID DIR/PASS         mostra um segredo
 			  clip ID DIR/PASS         copia para a área de transferência (Wayland)
 			  insert [-f] ID DIR/PASS  insere/atualiza um segredo
