@@ -66,6 +66,21 @@ Create a new identity, encrypting its map to the given GPG recipients
 accepts after \c
 .BR \-r ).
 .TP
+.BI "init \-\-sign" "[=" KEYID "] " ID " " RECIPIENT ...
+Same, additionally writing a detached signature
+.RB ( .gpg\-id.sig )
+over the new
+.BR .gpg\-id .
+See
+.B SECURITY
+for exactly what this does and does not protect against.
+.TP
+.BI "sign " ID " [" KEYID ]
+(Re)sign an existing identity's
+.BR .gpg\-id ,
+e.g. after rotating its recipients, or to opt an identity created
+before this feature existed into verification.
+.TP
 .BI "show " ID " " DIR/PASS
 Decrypt and print a secret.
 .TP
@@ -216,6 +231,30 @@ the identity is created automatically with the same recipients.
 shreds each old file after it is successfully imported (off by
 default \- migration is non\-destructive unless asked otherwise).
 .TP
+.BI "migrate\-secrets " "[\-f] [\-\-delete\-source] " ID " " OLD_IDENTITY_DIR
+Import an identity from the
+.I pass\-secrets\-redesign
+layout: a tree where both the category (directory) and the file are
+already codenames, with a separate
+.B .secrets.gpg
+translating \c
+.RI \(dq CODENAME " = Real Name" \(dq
+per line, and optionally a
+.B .mask.gpg
+translating \c
+.RI \(dq CATEGORY " = email\-alias" \(dq .
+The codename (e.g.
+.IR IST/Bvop )
+becomes the npass logical path unchanged \- typing habits don't
+change. The real name and email alias, when present, are appended as
+plain note lines
+.RI ( "# nome\-real: ..." ", " "# email\-alias: ..." )
+inside the already\-encrypted blob itself, never in the map, in a git
+commit, or on the command line: see
+.B SECURITY
+for why the codename, not the real name, had to stay the CLI\-visible
+value.
+.TP
 .BI "git " ARGS ...
 Passthrough to
 .BI "git \-C " $NPASS_STORE " " ARGS .
@@ -353,6 +392,45 @@ all while holding an exclusive
 .BR flock (1)
 on a separate lock file. A crash or a concurrent writer can therefore
 never leave the map partially written or silently overwritten.
+.TP
+.B Signed identities catch silent recipient tampering on WRITE, not on read.
+An identity created with
+.B init \-\-sign
+(or opted in later via
+.BR sign )
+gets a detached signature over its
+.BR .gpg\-id .
+Every subsequent write \- insert, generate, edit, otp insert, an
+update rotation, a migration \- verifies that signature first and
+refuses outright if it's missing content or doesn't verify. This
+matters because
+.B npass
+never signs by default: an attacker with only write access to the
+store (a compromised sync target, a malicious git remote, a shared
+backup you don't fully trust) could otherwise replace
+.B .gpg\-id
+with their own key, and every secret you write from then on would
+silently be encrypted to them too. Decrypting an existing secret
+.RB ( show ", " clip ", " grep )
+never reads
+.B .gpg\-id
+at all \- it uses your private key regardless of what the file
+claims \- so tampering with it cannot expose secrets you already
+have; it can only try to hijack secrets you haven't written yet, and
+that is exactly the attempt this catches.
+.TP
+.B migrate\-secrets keeps the codename as the logical path on purpose.
+The npass logical path is passed as a literal command\-line argument
+on every
+.BR show / edit / generate " etc. call \- it lands in shell history and"
+.IR /proc/*/cmdline ,
+and could be correlated against git commit timestamps to infer which
+service a given commit touched even though the commit message itself
+never names it (see the point above on commit messages). Using the
+real service name as the logical path during migration would reopen
+exactly that leak one layer up; keeping the codename closes it, at
+the cost of the real name only being visible after a secret is
+already decrypted.
 .SH LIMITATIONS
 There is no "classic" bare\-path mode: an
 .I ID
@@ -373,9 +451,11 @@ inherent cost of searching an encrypted store and is not specific to
 .B migrate
 only understands a vanilla
 .BR pass (1)
-directory\-tree layout. A store produced by a different
-name\-obscuring extension, with its own lookup\-table format, needs
-its own dedicated importer.
+directory\-tree layout;
+.B migrate\-secrets
+only understands the specific pass\-secrets\-redesign layout described
+above. A store from any other name\-obscuring scheme needs its own
+dedicated importer.
 .SH EXAMPLES
 .EX
 npass init personal 1B95\&...940B7AE4E
@@ -387,6 +467,8 @@ npass otp personal email/gmail
 npass update \-a \-f personal email/
 npass git init
 npass migrate personal ~/.password\-store
+npass init \-\-sign personal 1B95\&...940B7AE4E
+npass migrate\-secrets personal ~/old\-store/ID\-Pessoal/HG
 .EE
 .SH SEE ALSO
 .BR pass (1),
