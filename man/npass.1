@@ -279,9 +279,51 @@ once to opt in to automatic commits; see
 .B SECURITY
 for exactly what those commits do and do not contain.
 .TP
+.BI "extension sign " PATH " [" KEYID ]
+Write a detached signature
+.RI ( PATH .sig)
+over an extension executable with your own key. Required before that
+extension will run \- see
+.B EXTENSIONS
+below.
+.TP
+.B "extension list"
+List every
+.B npass\-*
+file in the extensions directory with its status: \c
+.BR ok " if it would run right now, or " "recusada (" REASON )
+naming the specific gate that failed. Checks only \- never executes
+anything.
+.TP
 .B help
 Show a command summary.
 .SH ENVIRONMENT
+.TP
+.B NPASS_ENABLE_EXTENSIONS
+Must be exactly
+.B 1
+for
+.BI "npass " NAME
+to look for an
+.BI npass\- NAME
+extension when
+.I NAME
+isn't a built\-in command. Unset or any other value: extensions are
+never even looked up, and an unrecognized command is always just an
+error. Default: unset (off).
+.TP
+.B NPASS_EXTENSIONS_DIR
+Directory
+.B npass
+looks in for
+.B npass\-*
+extension executables. Default:
+.BR $XDG_DATA_HOME/npass/extensions ", or " ~/.local/share/npass/extensions .
+Deliberately not a
+.B $PATH
+scan \- see
+.B EXTENSIONS
+below.
 .TP
 .B NPASS_STORE
 Root of the store. Default:
@@ -345,6 +387,86 @@ each other's entry.
 .I $NPASS_STORE/ID/blobs/*.gpg
 Individual encrypted secrets, named with 32 random hex characters. The
 filename carries no information about what it contains.
+.SH EXTENSIONS
+.B npass
+supports third\-party commands as external executables, off by
+default. This is Model A (a separate process, any language) rather
+than the sourced\-bash\-file model upstream
+.BR pass (1)
+actually uses \- a deliberate choice made when this was designed, not
+a misunderstanding of what
+.B pass
+does: it trades direct access to npass's internal functions for a
+much smaller, more auditable trust boundary (one directory, one
+subprocess, checked fresh on every invocation).
+.PP
+.BI "npass " NAME " " ARGS ...
+that don't match a built\-in command:
+.IP 1. 4
+does nothing unless
+.B NPASS_ENABLE_EXTENSIONS=1
+is set \- with it unset, this whole mechanism doesn't exist as far as
+.B npass
+is concerned, and an unknown command is always just an error;
+.IP 2. 4
+looks for an executable named
+.BI npass\- NAME
+in
+.B $NPASS_EXTENSIONS_DIR
+(never on
+.BR $PATH ,
+so the trust boundary is exactly one directory you control, not every
+directory on your
+.BR $PATH );
+.IP 3. 4
+if found, refuses to run it unless it passes every one of:
+.RS 4
+.IP \(bu 2
+regular file, not a symlink;
+.IP \(bu 2
+not group\- or other\-writable;
+.IP \(bu 2
+a detached signature
+.RI ( NAME .sig,
+made with
+.BR "npass extension sign" )
+exists and cryptographically verifies against the exact file;
+.IP \(bu 2
+.B and the signing key's fingerprint is among your OWN secret keys
+.RB ( "gpg \-\-list\-secret\-keys" ),
+not merely a key gpg can verify against.
+.RE
+.PP
+That last gate is the actual point, confirmed against a real forged
+case while this was built: an attacker with write access to the
+extensions directory (a compromised sync target, a shared machine, a
+malicious package) can plant a file and sign it with their own key \-
+the signature verifies cryptographically just fine, gate 3 passes
+outright. Gate 4 is what stops it, because it doesn't ask "is this
+signature valid", it asks "did I sign this" \- unless the attacker
+also holds the private key behind one of the fingerprints already in
+your own secret keyring (meaning they've already stolen a key of
+yours, a far higher bar than write access to one directory), the
+extension is refused. A signature made by a key you've only ever
+imported the
+.I public
+half of \- exactly what you'd hold for someone else's key, including
+an attacker's, if you'd ever received anything signed by them \- fails
+this gate even though
+.BR gpg (1)
+reports the signature itself as good.
+.PP
+Any other failure (missing signature, tampered file, unsafe
+permissions, a symlink) is loud, not a silent fall\-through to
+"unknown command": a file existing in the extensions directory at all
+means something is really there, and pretending otherwise would hide
+a real tampering attempt instead of surfacing it.
+.PP
+On success, npass
+.BR exec (1)
+\&'s the extension directly (no wrapper process) with
+.BR NPASS_STORE ", " NPASS_GPG ", and " NPASS_LANG
+exported, and the extension's exit code becomes npass's own.
 .SH SECURITY
 .TP
 .B Commit messages never contain a logical path.
@@ -484,6 +606,8 @@ npass git init
 npass migrate personal ~/.password\-store
 npass init \-\-sign personal 1B95\&...940B7AE4E
 npass migrate\-secrets personal ~/old\-store/ID\-Pessoal/HG
+npass extension sign ~/.local/share/npass/extensions/npass\-mycmd
+NPASS_ENABLE_EXTENSIONS=1 npass mycmd
 .EE
 .SH SEE ALSO
 .BR pass (1),
