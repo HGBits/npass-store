@@ -104,6 +104,20 @@ npass_gpg_encrypt() {
 	mv -f -- "$tmp" "$out" || npass_die "$(npass_t erro_mv_cifrado "$out")"
 }
 
+# npass_gpg_detach_sign FILE SIG_OUT [KEYID]
+# Shared by .gpg-id signing and extension signing - same operation,
+# different target file.
+npass_gpg_detach_sign() {
+	local file="$1" sig_out="$2" keyid="$3"
+	[[ -f "$file" ]] || npass_die "$(npass_t erro_arquivo_nao_encontrado "$file")"
+	local -a keyargs=()
+	[[ -n "$keyid" ]] && keyargs=(--default-key "$keyid")
+	local errfile; errfile="$(npass_mktemp gpgerr)"
+	if ! "$NPASS_GPG" --batch --yes --quiet "${keyargs[@]}" --detach-sign -o "$sig_out" "$file" 2>"$errfile"; then
+		npass_die "$(npass_t erro_assinar_gpgid "$file" "$(cat "$errfile")")"
+	fi
+}
+
 npass_read_gpg_id() {
 	local dir="$1"
 	local f="$dir/.gpg-id"

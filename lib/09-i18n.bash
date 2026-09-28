@@ -107,6 +107,13 @@ declare -gA NPASS_MSG_PT=(
 	[msg_assinado]="Identidade \"%s\" assinada.\n"
 	[warn_secrets_sem_decifrar]=".secrets.gpg falhou ao decifrar - importando sem nomes reais"
 	[warn_mask_sem_decifrar]=".mask.gpg falhou ao decifrar - importando sem aliases de email"
+	[erro_extensao_symlink]="extensão '%s' recusada: é um link simbólico, não um arquivo regular"
+	[erro_extensao_permissao]="extensão '%s' recusada: arquivo gravável por outro usuário/grupo (permissões inseguras)"
+	[erro_extensao_sem_sig]="extensão '%s' recusada: sem assinatura (.sig) - assine com 'npass extension sign'"
+	[erro_extensao_assinatura_invalida]="extensão '%s' recusada: assinatura GPG ausente ou inválida"
+	[erro_extensao_chave_nao_e_sua]="extensão '%s' recusada: assinada por uma chave que não é sua (fpr %s não está entre suas chaves secretas)"
+	[msg_extensao_assinada]="Extensão \"%s\" assinada.\n"
+	[msg_extensoes_dir_ausente]="Diretório de extensões não existe: %s\n"
 )
 
 declare -gA NPASS_MSG_EN=(
@@ -203,6 +210,13 @@ declare -gA NPASS_MSG_EN=(
 	[msg_assinado]="Identity \"%s\" signed.\n"
 	[warn_secrets_sem_decifrar]=".secrets.gpg failed to decrypt - importing without real names"
 	[warn_mask_sem_decifrar]=".mask.gpg failed to decrypt - importing without email aliases"
+	[erro_extensao_symlink]="extension '%s' refused: it's a symlink, not a regular file"
+	[erro_extensao_permissao]="extension '%s' refused: file is writable by another user/group (unsafe permissions)"
+	[erro_extensao_sem_sig]="extension '%s' refused: no signature (.sig) - sign it with 'npass extension sign'"
+	[erro_extensao_assinatura_invalida]="extension '%s' refused: missing or invalid GPG signature"
+	[erro_extensao_chave_nao_e_sua]="extension '%s' refused: signed by a key that isn't yours (fpr %s is not among your secret keys)"
+	[msg_extensao_assinada]="Extension \"%s\" signed.\n"
+	[msg_extensoes_dir_ausente]="Extensions directory does not exist: %s\n"
 )
 
 # npass_t KEY [ARGS...]

@@ -21,6 +21,7 @@ npass_main() {
 	migrate) cmd_migrate "$@" ;;
 	migrate-secrets) cmd_migrate_secrets "$@" ;;
 	sign) cmd_sign "$@" ;;
+	extension) cmd_extension "$@" ;;
 	clip)
 		local id="$1" logical="$2"
 		local secret; secret="$(cmd_show "$id" "$logical")" || exit 1
@@ -47,6 +48,8 @@ npass_main() {
 			  init ID RECIPIENT...     cria uma identidade nova
 			  init --sign[=KEYID] ID RECIPIENT...   idem, já assinando o .gpg-id
 			  sign ID [KEYID]          assina (ou reassina) o .gpg-id de uma identidade
+			  extension sign CAMINHO [KEYID]   assina um executável de extensão
+			  extension list           lista extensões e se cada uma passaria nas checagens
 			  show ID DIR/PASS         mostra um segredo
 			  clip ID DIR/PASS         copia para a área de transferência (Wayland)
 			  insert [-f] ID DIR/PASS  insere/atualiza um segredo
@@ -69,7 +72,7 @@ npass_main() {
 			Não existe modo de caminho físico "clássico": todo comando exige ID.
 		_EOF
 		;;
-	*) npass_die "$(npass_t erro_comando_desconhecido "$cmd")" ;;
+	*) npass_try_extension "$cmd" "$@" || npass_die "$(npass_t erro_comando_desconhecido "$cmd")" ;;
 	esac
 }
 

@@ -1,2 +1,3 @@
 tests/gnupg_test/
+tests/gnupg_atacante/
 bin/

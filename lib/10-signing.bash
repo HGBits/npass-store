@@ -24,13 +24,7 @@ npass_sign_gpgid() {
 	local dir="$1" keyid="$2"
 	local f="$dir/.gpg-id"
 	local sig; sig="$(npass_gpgid_sig_path "$dir")"
-	[[ -f "$f" ]] || npass_die "$(npass_t erro_sem_gpgid "$dir")"
-	local -a keyargs=()
-	[[ -n "$keyid" ]] && keyargs=(--default-key "$keyid")
-	local errfile; errfile="$(npass_mktemp gpgerr)"
-	if ! "$NPASS_GPG" --batch --yes --quiet "${keyargs[@]}" --detach-sign -o "$sig" "$f" 2>"$errfile"; then
-		npass_die "$(npass_t erro_assinar_gpgid "$dir" "$(cat "$errfile")")"
-	fi
+	npass_gpg_detach_sign "$f" "$sig" "$keyid"
 }
 
 # Called from npass_read_gpg_id before its content is trusted. A no-op
