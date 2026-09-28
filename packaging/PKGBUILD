@@ -1,0 +1,59 @@
+# Maintainer: Henrique <TROQUE_PELO_SEU_EMAIL_OU_HANDLE>
+#
+# Pacote -git: não existe release/tag ainda neste repositório, então
+# pkgver() segue HEAD via git describe (com fallback para
+# rcontagem.hash quando não há tag nenhuma, que é o caso hoje).
+# Quando um dia existir uma tag de versão, isso passa a funcionar sem
+# nenhuma mudança neste arquivo.
+#
+# NÃO TESTADO com makepkg/namcap de verdade - este ambiente de build
+# não tem ferramentas Arch disponíveis. Rode `makepkg -si` e
+# `namcap PKGBUILD` (e `namcap npass-git-*.pkg.tar.zst` depois de
+# empacotar) antes de publicar. Dois campos abaixo são placeholder
+# de propósito e PRECISAM ser preenchidos por você:
+#   - url=: o endereço público do seu Forgejo/repositório
+#   - license=: este projeto não tem nenhum arquivo LICENSE ainda -
+#     escolha uma (GPL-3.0-or-later seria a mais próxima do pass/
+#     pass-otp originais que foram usados como base de partida, mas a
+#     decisão é sua) e crie o arquivo LICENSE no repo antes de publicar.
+
+pkgname=npass-git
+pkgver=r0.0
+pkgrel=1
+pkgdesc="Wayland-native password store com resolução de identidade (fork reescrito do pass)"
+arch=('any')
+url="TROQUE_PELA_URL_DO_SEU_REPOSITORIO"
+license=('TROQUE_PELA_LICENCA_ESCOLHIDA')
+depends=('bash' 'gnupg')
+optdepends=(
+	'git: para "npass git" e commits automáticos por identidade'
+	'wl-clipboard: para "npass clip" e "npass otp clip" (Wayland-only, sem fallback X11)'
+	'oathtool: para "npass otp" (ou otptool)'
+	'otptool: alternativa ao oathtool para "npass otp"'
+	'qrencode: para "npass otp uri -q" (QR code no terminal)'
+)
+makedepends=('git')
+provides=('npass')
+conflicts=('npass')
+source=("$pkgname::git+$url.git")
+sha256sums=('SKIP')
+
+pkgver() {
+	cd "$pkgname" || exit 1
+	local ver
+	if ver="$(git describe --long --tags 2>/dev/null)"; then
+		printf '%s' "$ver" | sed 's/^v//; s/\([^-]*-g\)/r\1/; s/-/./g'
+	else
+		printf 'r%s.%s' "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+	fi
+}
+
+build() {
+	cd "$pkgname" || exit 1
+	bash build.sh
+}
+
+package() {
+	cd "$pkgname" || exit 1
+	PREFIX=/usr DESTDIR="$pkgdir" ./install.sh
+}
