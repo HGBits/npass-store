@@ -22,8 +22,8 @@ pkgver=r0.0
 pkgrel=1
 pkgdesc="Wayland-native password store com resolução de identidade (fork reescrito do pass)"
 arch=('any')
-url="TROQUE_PELA_URL_DO_SEU_REPOSITORIO"
-license=('TROQUE_PELA_LICENCA_ESCOLHIDA')
+url="https://github.com/HGBits/npass-store.git"
+license=('gplv3')
 depends=('bash' 'gnupg')
 optdepends=(
 	'git: para "npass git" e commits automáticos por identidade'
