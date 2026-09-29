@@ -85,3 +85,20 @@ setup() {
 	[ "$status" -eq 0 ]
 	[[ "$output" != *"não está no seu"*"PATH"* ]]
 }
+
+@test "PREFIX padrao e /usr (mesmo destino do PKGBUILD)" {
+	local destdir="$BATS_TEST_TMPDIR/stage"
+	run env -u PREFIX DESTDIR="$destdir" "$PROJECT_DIR/install.sh"
+	[ "$status" -eq 0 ]
+	[ -x "$destdir/usr/bin/npass" ]
+	[ -f "$destdir/usr/share/man/man1/npass.1" ]
+}
+
+@test "--bindir=/usr/sbin coloca o binario em sbin e --uninstall o remove" {
+	local destdir="$BATS_TEST_TMPDIR/stage"
+	run env -u PREFIX DESTDIR="$destdir" "$PROJECT_DIR/install.sh" --bindir=/usr/sbin
+	[ "$status" -eq 0 ]
+	[ -x "$destdir/usr/sbin/npass" ]
+	run env -u PREFIX DESTDIR="$destdir" "$PROJECT_DIR/install.sh" --bindir=/usr/sbin --uninstall
+	[ ! -e "$destdir/usr/sbin/npass" ]
+}

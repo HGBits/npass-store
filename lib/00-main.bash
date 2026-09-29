@@ -3,10 +3,12 @@
 
 npass_main() {
 	npass_tmp_init
+	npass_legacy_store_hint
 	local cmd="$1"
 	[[ $# -gt 0 ]] && shift
 	case "$cmd" in
 	init) npass_identity_init "$@" ;;
+	identities | ids) cmd_identities "$@" ;;
 	show) cmd_show "$@" ;;
 	insert | add) cmd_insert "$@" ;;
 	rm | remove | delete) cmd_rm "$@" ;;
@@ -22,11 +24,7 @@ npass_main() {
 	migrate-secrets) cmd_migrate_secrets "$@" ;;
 	sign) cmd_sign "$@" ;;
 	extension) cmd_extension "$@" ;;
-	clip)
-		local id="$1" logical="$2"
-		local secret; secret="$(cmd_show "$id" "$logical")" || exit 1
-		npass_clip "$secret" "$id: $logical"
-		;;
+	clip) cmd_clip "$@" ;;
 	otp)
 		local sub="$1"; shift
 		case "$sub" in
@@ -47,11 +45,12 @@ npass_main() {
 
 			  init ID RECIPIENT...     cria uma identidade nova
 			  init --sign[=KEYID] ID RECIPIENT...   idem, já assinando o .gpg-id
+			  identities               lista as identidades e quantas senhas cada uma tem
 			  sign ID [KEYID]          assina (ou reassina) o .gpg-id de uma identidade
 			  extension sign CAMINHO [KEYID]   assina um executável de extensão
 			  extension list           lista extensões e se cada uma passaria nas checagens
 			  show ID DIR/PASS         mostra um segredo
-			  clip ID DIR/PASS         copia para a área de transferência (Wayland)
+			  clip [CAMPO] ID DIR/PASS copia a senha (padrão), 'all' ou um campo 'chave: valor'
 			  insert [-f] ID DIR/PASS  insere/atualiza um segredo
 			  rm [-f] ID DIR/PASS      remove um segredo
 			  mv ID DIR/PASS DEST      renomeia (mesma identidade) ou move (entre identidades)
@@ -61,7 +60,7 @@ npass_main() {
 			  update [opts] ID PATTERN...   rotaciona senhas em massa (veja 'npass update -h')
 			  find ID PADRÃO           busca caminhos lógicos que casam PADRÃO
 			  grep ID [OPÇÕES] PADRÃO decifra e busca PADRÃO no conteúdo de cada entrada
-			  git ARGS...              passthrough para git dentro do store (ex.: npass git init)
+			  git ARGS...              passthrough para git dentro do store (repositório criado no primeiro init)
 			  migrate [-f] [--delete-source] ID DIR_ANTIGO   importa um store pass tradicional
 			  migrate-secrets [-f] [--delete-source] ID DIR_IDENTIDADE_ANTIGA   importa layout pass-secrets-redesign
 			  otp ID DIR/PASS          gera o código OTP (TOTP/HOTP) do segredo

@@ -62,10 +62,10 @@ setup() {
 
 # --- git ---------------------------------------------------------------------
 
-@test "sem git init, operacoes normais nao falham (git e opcional)" {
+@test "o store nasce como repositorio git (init cria o repo sem 'npass git init')" {
 	run bash -c "printf 'a\na\n' | '$NPASS' insert personal email/gmail"
 	[ "$status" -eq 0 ]
-	[ ! -d "$NPASS_STORE/.git" ]
+	[ -d "$NPASS_STORE/.git" ]
 }
 
 @test "npass git init habilita repositorio dentro do store" {

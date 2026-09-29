@@ -1,4 +1,4 @@
-.TH NPASS 1 "2026" "npass 0.1.0-m1" "npass manual"
+.TH NPASS 1 "2026" "npass 0.1.0-m2" "npass manual"
 .SH NAME
 npass \- Wayland\-native password store with identity\-based name resolution
 .SH SYNOPSIS
@@ -46,7 +46,7 @@ the ciphertext blob and its mtime never change. Moving a secret
 identities is the one operation that must decrypt and re\-encrypt,
 because the recipient set changes. This means anyone who can list your
 store's files (a backup tool, a synced folder, a compromised git
-remote) sees only random hex filenames, never your service names.
+remote) sees only random readable filenames (pseudonyms such as Bavodu.gpg), never your service names.
 .PP
 .B npass
 is Wayland\-only for clipboard operations: it uses
@@ -84,8 +84,25 @@ before this feature existed into verification.
 .BI "show " ID " " DIR/PASS
 Decrypt and print a secret.
 .TP
-.BI "clip " ID " " DIR/PASS
-Decrypt a secret and copy it to the Wayland clipboard. Cleared after
+.BI "identities"
+List the identities and how many secrets each holds
+.RI ( "NAME \- N senhas" ).
+The count is the number of blob files on disk; nothing is decrypted.
+Alias:
+.BR ids .
+.TP
+.BI "clip " "[FIELD] " ID " " DIR/PASS
+Decrypt a secret and copy part of it to the Wayland clipboard. With two
+arguments (ID and path) the password (first line) is copied. With three,
+the first is
+.IR FIELD :
+.B pass
+(the password),
+.B all
+(the whole entry), or the key of a
+.I key: value
+line in the entry, matched case\-insensitively, exact key first, then a
+unique prefix. Cleared after
 .B $NPASS_CLIP_TIME
 seconds (default 45) or on first paste, whichever comes first.
 .TP
@@ -327,7 +344,8 @@ below.
 .TP
 .B NPASS_STORE
 Root of the store. Default:
-.BR $XDG_DATA_HOME/npass ", or " ~/.local/share/npass .
+.B ~/.npass
+(per user; the program itself is installed system\-wide).
 .TP
 .B NPASS_GPG
 The
@@ -385,7 +403,7 @@ so two concurrent writers to the same identity cannot silently drop
 each other's entry.
 .TP
 .I $NPASS_STORE/ID/blobs/*.gpg
-Individual encrypted secrets, named with 32 random hex characters. The
+Individual encrypted secrets, named with random pronounceable pseudonyms. The
 filename carries no information about what it contains.
 .SH EXTENSIONS
 .B npass

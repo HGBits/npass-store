@@ -15,7 +15,7 @@ npass_blob_path() {
 npass_blob_write() {
 	local dir="$1" logical="$2" content="$3"
 	local existing; existing="$(npass_map_resolve "$dir" "$logical" 2>/dev/null)"
-	local physical="${existing:-$(npass_new_blob_name)}"
+	local physical="${existing:-$(npass_new_blob_name "$dir")}"
 	npass_read_gpg_id "$dir"
 	npass_gpg_encrypt NPASS_RECIPIENTS "$(npass_blob_path "$dir" "$physical")" <<<"$content"
 	if [[ -z "$existing" ]]; then

@@ -4,7 +4,7 @@ Gerenciador de senhas para Linux baseado em **Bash + GPG**, com armazenamento po
 
 ## Status
 
-**Versão:** `0.1.0-m1`
+**Versão:** `0.1.0-m2`
 **Estado:** desenvolvimento
 
 ## Principais características
@@ -40,8 +40,14 @@ pessoal/
 ├── .gpg-id
 ├── .map.gpg
 └── blobs/
-    └── 8f2a91c4....gpg
+    └── Bavodu.gpg
 ```
+
+Os nomes dos blobs são pseudônimos legíveis e aleatórios (`Azaus.gpg`,
+`Kelitum.gpg`). Não derivam do caminho lógico e não revelam nada sobre o
+conteúdo; servem só para o humano reconhecer que são blobs. Stores criados
+antes desta mudança continuam funcionando: blobs antigos (hex) e novos
+podem coexistir na mesma identidade.
 
 O `.map.gpg` mantém a relação entre o caminho lógico e o blob físico.
 
@@ -63,17 +69,17 @@ O clipboard atualmente utiliza **Wayland**.
 
 ## Configuração
 
-O store padrão é:
-
-```text
-${XDG_DATA_HOME:-$HOME/.local/share}/npass
-```
+O store padrão é `$HOME/.npass` (por usuário). O programa é global
+(`/usr/bin/npass`, acessível a todos os usuários); os dados não.
 
 Pode ser alterado com:
 
 ```bash
-export NPASS_STORE="$HOME/.local/share/npass"
+export NPASS_STORE="$HOME/.npass"
 ```
+
+Se existir um store no local antigo (`$XDG_DATA_HOME/npass`), o npass avisa
+como movê-lo; nunca move nada sozinho.
 
 Outras variáveis:
 
@@ -106,10 +112,25 @@ Mostrar:
 npass show pessoal email/gmail
 ```
 
-Copiar para o clipboard:
+Copiar para o clipboard (só a senha, por padrão):
 
 ```bash
-npass clip pessoal email/gmail
+npass clip pessoal email/gmail          # senha (1ª linha)
+npass clip pass pessoal email/gmail     # idem, explícito
+npass clip email pessoal email/gmail    # valor da linha "email: ..."
+npass clip all pessoal email/gmail      # entrada inteira
+```
+
+Com 2 argumentos é `ID CAMINHO`; com 3, `CAMPO ID CAMINHO`. O campo é
+comparado sem diferenciar maiúsculas e aceita prefixo único (`email` acha
+`email-alias` se for a única chave começando com `email`).
+
+Listar as identidades (conta os blobs em disco, sem decifrar nada):
+
+```bash
+npass identities
+# HG - 100 senhas
+# Vupon - 25 senhas
 ```
 
 Gerar uma senha:
@@ -172,13 +193,14 @@ O npass suporta **TOTP e HOTP** através de URIs `otpauth://`.
 
 ## Git
 
-O Git é opcional e pode ser inicializado diretamente no store:
+Todo store nasce como repositório Git: o primeiro `npass init` cria o
+repositório em `$NPASS_STORE`, e cada comando que altera algo commita sozinho
+(escopo por identidade). Se não houver `user.name`/`user.email` configurados,
+o npass usa uma identidade local `npass <npass@localhost>` só nesse repo.
+Stores antigos, sem repositório, ganham um no primeiro comando que os altere.
 
-```bash
-npass git init
-```
-
-Quando o store é um repositório Git, alterações podem gerar commits automáticos.
+Atenção: o histórico do Git guarda os blobs antigos. Remover ou rotacionar
+uma senha não a apaga do histórico.
 
 Os caminhos lógicos das senhas não são utilizados nas mensagens desses commits.
 

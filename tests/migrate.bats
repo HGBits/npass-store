@@ -34,7 +34,7 @@ setup() {
 @test "migrate obscurece o nome fisico do blob (gmail nao aparece no nome do arquivo)" {
 	"$NPASS" migrate personal "$OLD_STORE" >/dev/null
 	run find "$NPASS_STORE/personal/blobs" -type f
-	[[ "$output" =~ blobs/[0-9a-f]{32}\.gpg ]]
+	[[ "$output" =~ blobs/[A-Z][a-z]{5,8}\.gpg ]]
 	[[ "$output" != *gmail* ]]
 	[[ "$output" != *outlook* ]]
 	[[ "$output" != *aws* ]]

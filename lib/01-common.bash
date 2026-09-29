@@ -4,10 +4,10 @@
 # is sourced by the entry point and a stray -e must never leak into the
 # caller's shell (this was a real bug in pass-update.bash).
 
-: "${NPASS_STORE:="${XDG_DATA_HOME:-$HOME/.local/share}/npass"}"
+: "${NPASS_STORE:="$HOME/.npass"}"
 : "${NPASS_GPG:="gpg"}"
 : "${NPASS_LANG:="${LANG%%.*}"}"
-readonly NPASS_VERSION="0.1.0-m1"
+readonly NPASS_VERSION="0.1.0-m2"
 
 # Defense in depth: bash 5.2+ turns on `patsub_replacement`, which makes
 # `&` inside the replacement half of ${var/pattern/replacement} mean
@@ -25,6 +25,22 @@ npass_die() {
 
 npass_warn() {
 	printf 'npass: %s: %s\n' "$(npass_t rotulo_aviso)" "$*" >&2
+}
+
+# One-time hint for people upgrading from the old default location
+# ($XDG_DATA_HOME/npass). We never move a password store behind the
+# user's back - only say where it is and how to move it. Silent when
+# NPASS_STORE was set explicitly or when the new store already exists.
+npass_legacy_store_hint() {
+	local old="${XDG_DATA_HOME:-$HOME/.local/share}/npass"
+	[[ "$NPASS_STORE" == "$HOME/.npass" && ! -e "$NPASS_STORE" && -d "$old" ]] || return 0
+	local d
+	for d in "$old"/*/; do
+		if [[ -f "${d}.gpg-id" ]]; then
+			npass_warn "$(npass_t warn_store_legado "$old" "$NPASS_STORE" "$NPASS_STORE" "$old" "$NPASS_STORE")"
+			return 0
+		fi
+	done
 }
 
 # Reject any path component that could escape the store via .. or an

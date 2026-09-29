@@ -38,6 +38,7 @@ npass_identity_init() {
 	local dir="$NPASS_STORE/$id"
 	[[ -e "$dir/.gpg-id" ]] && npass_die "$(npass_t erro_id_ja_existe "$id")"
 	mkdir -p -- "$dir/blobs" || npass_die "$(npass_t erro_falha_criar_id "$id")"
+	npass_git_ensure || npass_warn "$(npass_t warn_sem_git)"
 	printf '%s\n' "${recipients[@]}" >"$dir/.gpg-id"
 	NPASS_RECIPIENTS=("${recipients[@]}")
 	npass_map_save "$dir" ""
@@ -113,8 +114,80 @@ npass_map_list_prefix() {
 	npass_map_list "$dir"
 }
 
+# --- readable blob names -----------------------------------------------------
+#
+# Physical blob names are pronounceable pseudonyms ("Bavodu.gpg",
+# "Kelitum.gpg"), not hex. They are drawn from /dev/urandom and carry NO
+# information about the entry: never derived from the logical path, so
+# they leak nothing a random hex name would not. The point is that a
+# human looking at the directory (or `git log --stat`) can tell the files
+# apart and see they are blobs, without decrypting anything.
+
+NPASS_SYL_C=(b c d f g h j k l m n p r s t v w x y z)
+NPASS_SYL_V=(a e i o u)
+NPASS_RPOOL=()
+NPASS_RPOS=0
+
+# Unbiased random integer in [0, n), n <= 256, returned in $REPLY
+# (not on stdout: the byte pool must survive between calls, and a
+# command substitution would throw that state away). Rejection sampling
+# avoids the modulo bias of a plain `byte % n`.
+npass_rand_below() {
+	local n="$1" b lim=$((256 - 256 % $1))
+	while :; do
+		if ((NPASS_RPOS >= ${#NPASS_RPOOL[@]})); then
+			read -r -d '' -a NPASS_RPOOL < <(head -c 64 /dev/urandom | od -An -v -tu1) || true
+			NPASS_RPOS=0
+		fi
+		b="${NPASS_RPOOL[NPASS_RPOS]}"
+		((NPASS_RPOS++))
+		if ((b < lim)); then
+			REPLY=$((b % n))
+			return 0
+		fi
+	done
+}
+
+# npass_blob_name_taken DIR NAME - case-insensitive, because the store
+# is meant to travel to case-insensitive filesystems ("Azaus" and
+# "azaus" must never coexist).
+npass_blob_name_taken() {
+	local dir="$1" want="${2,,}" f
+	for f in "$dir/blobs"/*.gpg; do
+		[[ -e "$f" ]] || continue
+		f="${f##*/}"
+		f="${f,,}"
+		[[ "${f%.gpg}" == "$want" ]] && return 0
+	done
+	return 1
+}
+
+# npass_new_blob_name [ID_DIR] - fresh unique name on stdout.
+# Starts at 3 syllables (~20 bits) and grows a syllable every few
+# collisions, so a very large identity degrades to longer names instead
+# of looping.
 npass_new_blob_name() {
-	head -c16 /dev/urandom | od -An -tx1 | tr -d ' \n'
+	local dir="$1" syl=3 tries=0 name i
+	while :; do
+		name=""
+		for ((i = 0; i < syl; i++)); do
+			npass_rand_below "${#NPASS_SYL_C[@]}"
+			name+="${NPASS_SYL_C[REPLY]}"
+			npass_rand_below "${#NPASS_SYL_V[@]}"
+			name+="${NPASS_SYL_V[REPLY]}"
+		done
+		npass_rand_below 2
+		if ((REPLY == 1)); then
+			npass_rand_below "${#NPASS_SYL_C[@]}"
+			name+="${NPASS_SYL_C[REPLY]}"
+		fi
+		name="${name^}"
+		if [[ -z "$dir" ]] || ! npass_blob_name_taken "$dir" "$name"; then
+			printf '%s\n' "$name"
+			return 0
+		fi
+		((++tries % 6 == 0)) && ((syl++))
+	done
 }
 
 # --- map: mutations ----------------------------------------------------------
@@ -195,4 +268,36 @@ npass_map_rename() {
 	{ printf '%s\n' "$NPASS_MAP_MAGIC"; printf '%s' "$new_body"; } >"$tmp"
 	npass_gpg_encrypt NPASS_RECIPIENTS "$dir/.map.gpg" <"$tmp"
 	exec {fd}>&-
+}
+
+# --- identities: list ----------------------------------------------------------
+
+# npass identities - one line per identity: "NAME - N senhas".
+# N is the number of blob files on disk. Deliberately NOT read from the
+# encrypted map: counting through the map would decrypt every identity
+# and trigger one pinentry prompt each, just to print a listing.
+cmd_identities() {
+	case "$1" in
+	-h | --help)
+		printf '%s\n' "uso: npass identities"
+		return 0
+		;;
+	'') ;;
+	*) npass_die "$(npass_t erro_opcao_desconhecida "$1")" ;;
+	esac
+	local d id n found=0
+	for d in "$NPASS_STORE"/*/; do
+		[[ -f "${d}.gpg-id" ]] || continue
+		id="${d%/}"
+		id="${id##*/}"
+		n="$(find "${d}blobs" -maxdepth 1 -type f -name '*.gpg' 2>/dev/null | wc -l)"
+		n=$((n))
+		found=1
+		if ((n == 1)); then
+			npass_t msg_id_linha_um "$id"
+		else
+			npass_t msg_id_linha "$id" "$n"
+		fi
+	done
+	[[ $found -eq 1 ]] || npass_t msg_sem_identidades "$NPASS_STORE"
 }

@@ -79,10 +79,11 @@ setup() {
 @test "blob fisico continua opaco (nome real e codinome nao aparecem no nome do arquivo)" {
 	"$NPASS" migrate-secrets personal "$OLD" >/dev/null
 	run find "$NPASS_STORE/personal/blobs" -type f
-	[[ "$output" =~ blobs/[0-9a-f]{32}\.gpg ]]
+	[[ "$output" =~ blobs/[A-Z][a-z]{5,8}\.gpg ]]
 	[[ "$output" != *Bvop* ]]
 	[[ "$output" != *Amazon* ]]
-	[[ "$output" != *Zen* ]]
+	# (sem checar "Zen": nomes aleatorios silabicos podem, por acaso, conter
+	# 3 letras iguais a um nome real - inofensivo, mas tornaria o teste instavel)
 }
 
 @test "entrada sem correspondencia no .secrets.gpg importa normalmente, sem nota de nome real" {

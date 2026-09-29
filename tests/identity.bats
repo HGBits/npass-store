@@ -35,8 +35,8 @@ setup() {
 	printf 'hunter2\nhunter2\n' | "$NPASS" insert personal email/gmail
 	run find "$NPASS_STORE/personal/blobs" -type f
 	[ "$status" -eq 0 ]
-	# nome do blob deve ser hex puro de 32 chars + .gpg, jamais "gmail"
-	[[ "$output" =~ blobs/[0-9a-f]{32}\.gpg$ ]]
+	# nome do blob deve ser um pseudonimo legivel aleatorio ("Bavodu.gpg"), jamais "gmail"
+	[[ "$output" =~ blobs/[A-Z][a-z]{5,8}\.gpg$ ]]
 	[[ "$output" != *gmail* ]]
 	[[ "$output" != *email* ]]
 }

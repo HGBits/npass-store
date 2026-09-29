@@ -114,6 +114,15 @@ declare -gA NPASS_MSG_PT=(
 	[erro_extensao_chave_nao_e_sua]="extensão '%s' recusada: assinada por uma chave que não é sua (fpr %s não está entre suas chaves secretas)"
 	[msg_extensao_assinada]="Extensão \"%s\" assinada.\n"
 	[msg_extensoes_dir_ausente]="Diretório de extensões não existe: %s\n"
+	[warn_store_legado]="store antigo encontrado em %s. O padrão agora é %s - mova as identidades (ex.: mkdir -p %s && mv %s/<ID> %s/) ou defina NPASS_STORE."
+	[warn_git_commit]="commit automático falhou: %s"
+	[warn_sem_git]="não foi possível criar o repositório git do store (git instalado?) - continuando sem histórico"
+	[erro_git_indisponivel]="git indisponível: não foi possível preparar o repositório do store"
+	[msg_id_linha]="%s - %s senhas\n"
+	[msg_id_linha_um]="%s - 1 senha\n"
+	[msg_sem_identidades]="Nenhuma identidade em %s.\n"
+	[erro_campo_nao_encontrado]="campo '%s' não encontrado (ou ambíguo). Campos da entrada: %s"
+	[erro_campo_vazio]="o campo '%s' está vazio"
 )
 
 declare -gA NPASS_MSG_EN=(
@@ -217,6 +226,15 @@ declare -gA NPASS_MSG_EN=(
 	[erro_extensao_chave_nao_e_sua]="extension '%s' refused: signed by a key that isn't yours (fpr %s is not among your secret keys)"
 	[msg_extensao_assinada]="Extension \"%s\" signed.\n"
 	[msg_extensoes_dir_ausente]="Extensions directory does not exist: %s\n"
+	[warn_store_legado]="old store found at %s. The default is now %s - move your identities (e.g. mkdir -p %s && mv %s/<ID> %s/) or set NPASS_STORE."
+	[warn_git_commit]="automatic commit failed: %s"
+	[warn_sem_git]="could not create the store's git repository (is git installed?) - continuing without history"
+	[erro_git_indisponivel]="git unavailable: could not prepare the store repository"
+	[msg_id_linha]="%s - %s passwords\n"
+	[msg_id_linha_um]="%s - 1 password\n"
+	[msg_sem_identidades]="No identities in %s.\n"
+	[erro_campo_nao_encontrado]="field '%s' not found (or ambiguous). Fields in this entry: %s"
+	[erro_campo_vazio]="field '%s' is empty"
 )
 
 # npass_t KEY [ARGS...]

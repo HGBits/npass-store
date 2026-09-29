@@ -10,19 +10,27 @@
 # PREFIX=/usr), so there is exactly one place that knows where files
 # go, not two copies of the same install logic drifting apart.
 #
-#   PREFIX   default: $HOME/.local        (per-user, no root needed)
+#   PREFIX   default: /usr                (system-wide; same as the PKGBUILD)
+#   BINDIR   default: $PREFIX/bin         (override to e.g. /usr/sbin)
 #   DESTDIR  default: (empty)             (staging root for packaging)
 #
+# The password store itself is per-user ($HOME/.npass, or $NPASS_STORE);
+# only the program is global, so every user on the machine gets `npass`.
+# On Arch /usr/sbin is a symlink to /usr/bin, so /usr/bin/npass is
+# reachable as /usr/sbin/npass too.
+#
 # Usage:
-#   ./install.sh                 install under $HOME/.local
-#   PREFIX=/usr/local ./install.sh   install system-wide (needs write access)
-#   ./install.sh --uninstall     remove what a prior install put there
+#   sudo ./install.sh                  install under /usr (bin/npass)
+#   sudo ./install.sh --bindir=/usr/sbin   put the binary in /usr/sbin instead
+#   ./install.sh --prefix=$HOME/.local     per-user install, no root
+#   sudo ./install.sh --uninstall      remove what a prior install put there
 #   ./install.sh --prefix=/usr/local [--uninstall]
 
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
-: "${PREFIX:="$HOME/.local"}"
+: "${PREFIX:=/usr}"
+: "${BINDIR:=}"
 : "${DESTDIR:=}"
 uninstall=0
 
@@ -30,8 +38,9 @@ for arg in "$@"; do
 	case "$arg" in
 	--uninstall) uninstall=1 ;;
 	--prefix=*) PREFIX="${arg#--prefix=}" ;;
+	--bindir=*) BINDIR="${arg#--bindir=}" ;;
 	-h | --help)
-		sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
+		sed -n '2,28p' "$0" | sed 's/^# \{0,1\}//'
 		exit 0
 		;;
 	*)
@@ -41,7 +50,7 @@ for arg in "$@"; do
 	esac
 done
 
-bindir="$DESTDIR$PREFIX/bin"
+bindir="$DESTDIR${BINDIR:-$PREFIX/bin}"
 mandir="$DESTDIR$PREFIX/share/man/man1"
 bin_target="$bindir/npass"
 man_target="$mandir/npass.1"
@@ -55,7 +64,7 @@ if [[ $uninstall -eq 1 ]]; then
 			removed=1
 		fi
 	done
-	[[ $removed -eq 0 ]] && echo "nada instalado em $PREFIX (DESTDIR=${DESTDIR:-<vazio>}) para remover."
+	[[ $removed -eq 0 ]] && echo "nada instalado em ${BINDIR:-$PREFIX/bin} (DESTDIR=${DESTDIR:-<vazio>}) para remover."
 	exit 0
 fi
 
@@ -65,6 +74,17 @@ bash_major="${BASH_VERSINFO[0]}" bash_minor="${BASH_VERSINFO[1]}"
 if (( bash_major < 4 || (bash_major == 4 && bash_minor < 3) )); then
 	echo "install.sh: bash ${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]} é antigo demais (mínimo 4.3)." >&2
 	exit 1
+fi
+
+# System-wide default needs root. Fail early with a clear hint instead of
+# a bare "Permission denied" halfway through (skipped for DESTDIR staging).
+if [[ -z "$DESTDIR" && $EUID -ne 0 ]]; then
+	probe="$bindir"
+	while [[ ! -d "$probe" && "$probe" != "/" ]]; do probe="$(dirname "$probe")"; done
+	if [[ ! -w "$probe" ]]; then
+		echo "install.sh: sem permissão de escrita em $bindir. Rode com sudo, ou use --prefix=\$HOME/.local para instalar só para você." >&2
+		exit 1
+	fi
 fi
 
 echo "Reconstruindo bin/npass a partir de lib/*.bash..."

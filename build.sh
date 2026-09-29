@@ -3,6 +3,7 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
 out="bin/npass"
+mkdir -p "$(dirname "$out")"
 {
 	echo '#!/usr/bin/env bash'
 	echo '# GENERATED FILE - built by build.sh from lib/*.bash. Do not edit directly.'
