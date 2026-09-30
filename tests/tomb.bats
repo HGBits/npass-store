@@ -169,14 +169,22 @@ EOF
 	[[ "$output" != *"work"* ]]
 }
 
-@test "git permanece recuperável após fechar identidade protegida" {
+@test "git rastreia o artefato Tomb sem rastrear seus blobs internos" {
 	"$NPASS" init personal "$FPR"
 	printf 'segredo\nsegredo\n' | "$NPASS" insert personal email/gmail
 	"$NPASS" tomb create personal
 	"$NPASS" tomb close personal
 
-	run "$NPASS" git status --short
+	run "$NPASS" git ls-files --stage -- personal/blobs
 	[ "$status" -eq 0 ]
-	[[ "$output" != *".npass-tomb/"* ]]
-	[[ "$output" != *"blobs/"* ]]
+	[[ "$output" == *"120000"* ]]
+	[[ "$output" == *
+personal/blobs'* ]]
+	[[ "$output" != *".gpg"* ]]
+
+	run "$NPASS" git ls-files --stage -- personal/.map.gpg
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"120000"* ]]
+	[[ "$output" == *
+personal/.map.gpg'* ]]
 }
