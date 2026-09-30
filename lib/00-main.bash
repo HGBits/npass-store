@@ -20,6 +20,8 @@ npass_main() {
 	find) cmd_find "$@" ;;
 	grep) cmd_grep "$@" ;;
 	git) cmd_git "$@" ;;
+	nlog) cmd_nlog "$@" ;;
+	nloglong) cmd_nloglong "$@" ;;
 	migrate) cmd_migrate "$@" ;;
 	migrate-secrets) cmd_migrate_secrets "$@" ;;
 	sign) cmd_sign "$@" ;;
@@ -61,6 +63,8 @@ npass_main() {
 			  find ID PADRÃO           busca caminhos lógicos que casam PADRÃO
 			  grep ID [OPÇÕES] PADRÃO decifra e busca PADRÃO no conteúdo de cada entrada
 			  git ARGS...              passthrough para git dentro do store (repositório criado no primeiro init)
+			  nlog                     mostra os 20 últimos commits em formato resumido
+			  nloglong                 mostra arquivos modificados nos últimos 6 meses
 			  migrate [-f] [--delete-source] ID DIR_ANTIGO   importa um store pass tradicional
 			  migrate-secrets [-f] [--delete-source] ID DIR_IDENTIDADE_ANTIGA   importa layout pass-secrets-redesign
 			  otp ID DIR/PASS          gera o código OTP (TOTP/HOTP) do segredo
