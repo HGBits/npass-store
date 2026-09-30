@@ -7,7 +7,7 @@
 : "${NPASS_STORE:="$HOME/.npass"}"
 : "${NPASS_GPG:="gpg"}"
 : "${NPASS_LANG:="${LANG%%.*}"}"
-readonly NPASS_VERSION="1.0"
+readonly NPASS_VERSION="1.1"
 
 # Defense in depth: bash 5.2+ turns on `patsub_replacement`, which makes
 # `&` inside the replacement half of ${var/pattern/replacement} mean
