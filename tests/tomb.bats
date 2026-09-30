@@ -175,13 +175,9 @@ EOF
 	"$NPASS" tomb create personal
 	"$NPASS" tomb close personal
 
-	run "$NPASS" git ls-files --stage -- personal/blobs
+	run "$NPASS" git ls-files --stage -- personal
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"120000"* ]]
 	[[ "$output" == *"personal/blobs"* ]]
-
-	run "$NPASS" git ls-files --stage -- personal/.map.gpg
-	[ "$status" -eq 0 ]
-	[[ "$output" == *"120000"* ]]
 	[[ "$output" == *"personal/.map.gpg"* ]]
+	[[ "$output" != *"personal/blobs/"* ]]
 }
