@@ -63,14 +63,14 @@ npass_git_commit() {
 	return 0
 }
 
-# npass nlog - show the last 20 commits in compact form.
-cmd_nlog() {
+# npass log - show the last 20 commits in compact form.
+cmd_log() {
 	npass_git_ensure || npass_die "$(npass_t erro_git_indisponivel)"
 	git -C "$NPASS_STORE" log --oneline -20
 }
 
-# npass nloglong - show files modified by commits from the last 6 months.
-cmd_nloglong() {
+# npass loglong - show files modified by commits from the last 6 months.
+cmd_loglong() {
 	npass_git_ensure || npass_die "$(npass_t erro_git_indisponivel)"
 	git -C "$NPASS_STORE" log --diff-filter=M --name-only --since="6 months ago"
 }
