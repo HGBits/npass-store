@@ -173,6 +173,7 @@ npass_tomb_create() {
 	if ! mv -- "$dir/.map.gpg" "$mount/.map.gpg" ||
 		! mv -- "$dir/blobs" "$mount/blobs"; then
 		"$NPASS_TOMB" close "${tomb##*/}" >/dev/null 2>&1 || true
+		npass_warn "$(npass_t warn_tomb_movimento_parcial)"
 		npass_tomb_die "falha ao mover os dados existentes para dentro do Tomb"
 	fi
 
