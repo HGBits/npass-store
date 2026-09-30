@@ -37,7 +37,7 @@ npass_git_ensure() {
 		|| git -C "$NPASS_STORE" config user.name "npass"
 	git -C "$NPASS_STORE" config --get user.email >/dev/null 2>&1 \
 		|| git -C "$NPASS_STORE" config user.email "npass@localhost"
-	printf '%s\n' '.map.lock' 'extensions/' >"$NPASS_STORE/.gitignore"
+	printf '%s\n' '.map.lock' 'extensions/' '.npass-tomb/' >"$NPASS_STORE/.gitignore"
 	git -C "$NPASS_STORE" add -- .gitignore 2>/dev/null
 	git -C "$NPASS_STORE" commit -q --no-verify --no-gpg-sign \
 		-m "init: store" -- .gitignore 2>/dev/null
