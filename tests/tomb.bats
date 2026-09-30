@@ -7,8 +7,9 @@ setup() {
 	export NPASS_STORE="$BATS_TEST_TMPDIR/store"
 	export NPASS="$BATS_TEST_DIRNAME/../bin/npass"
 	export NPASS_FAKE_TOMB_STATE="$BATS_TEST_TMPDIR/fake-tomb"
+	export NPASS_TOMB_KEY_DIR="$BATS_TEST_TMPDIR/tomb-keys"
 	export PATH="$BATS_TEST_TMPDIR/bin:$PATH"
-	mkdir -p "$NPASS_STORE" "$BATS_TEST_TMPDIR/bin" "$NPASS_FAKE_TOMB_STATE"
+	mkdir -p "$NPASS_STORE" "$BATS_TEST_TMPDIR/bin" "$NPASS_FAKE_TOMB_STATE" "$NPASS_TOMB_KEY_DIR"
 	cat >"$BATS_TEST_TMPDIR/bin/tomb" <<'EOF'
 #!/usr/bin/env bash
 set -u
