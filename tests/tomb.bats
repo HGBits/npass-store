@@ -82,7 +82,8 @@ EOF
 
 	cat >"$BATS_TEST_TMPDIR/bin/mountpoint" <<'EOF'
 #!/usr/bin/env bash
-dir="$1"
+[[ "$1" == "-q" ]] || exit 2
+dir="$2"
 [[ -f "$dir/.fake-mounted" ]]
 EOF
 	chmod +x "$BATS_TEST_TMPDIR/bin/mountpoint"
