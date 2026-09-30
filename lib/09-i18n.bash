@@ -240,6 +240,11 @@ declare -gA NPASS_MSG_EN=(
 	[msg_sem_identidades]="No identities in %s.\n"
 	[erro_campo_nao_encontrado]="field '%s' not found (or ambiguous). Fields in this entry: %s"
 	[erro_campo_vazio]="field '%s' is empty"
+	[erro_tomb_fechado]="identity '%s' is closed; use 'npass tomb open %s' first"
+	[msg_tomb_aberto]="Identity \"%s\": Tomb open.\n"
+	[msg_tomb_fechado]="Identity \"%s\": Tomb closed.\n"
+	[msg_tomb_nao_protegido]="Identity \"%s\": no Tomb protection.\n"
+	[msg_tomb_nenhum]="No Tomb-protected identities.\n"
 )
 
 # npass_t KEY [ARGS...]
