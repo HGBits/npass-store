@@ -4,8 +4,8 @@ Gerenciador de senhas para Linux baseado em **Bash + GPG**, com armazenamento po
 
 ## Status
 
-**Versão:** `0.1.0-m2`
-**Estado:** desenvolvimento
+**Versão:** `1.0`
+**Estado:** pronto para uso
 
 ## Principais características
 
@@ -252,4 +252,4 @@ O projeto utiliza GPG para os dados, um mapa criptografado para ocultar os camin
 
 Arquivos temporários são criados com permissões restritivas e removidos ao final das operações.
 
-A implementação ainda está em desenvolvimento, portanto o código deve ser considerado experimental e passar por revisão de segurança antes de ser utilizado como solução definitiva para dados críticos.
+A implementação é considerada pronta para uso. Como em qualquer gerenciador de senhas, recomenda-se manter backups seguros do store e revisar as práticas de segurança do ambiente onde o GPG e o npass são utilizados.
