@@ -208,7 +208,7 @@ cmd_ls() {
 	local id="$1" prefix="$2"
 	[[ -z "$id" ]] && npass_die "uso: npass ls ID [DIR]"
 	local dir; dir="$(npass_identity_dir "$id")"
-	local entries; entries="$(npass_map_list_prefix "$dir" "$prefix")"
+	local entries; entries="$(npass_map_list_prefix "$dir" "$prefix")" || return 1
 	if [[ -z "$entries" ]]; then
 		printf '%s: (vazio)\n' "$id"
 		return 0
