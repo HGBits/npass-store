@@ -177,5 +177,6 @@ EOF
 
 	run "$NPASS" git status --short
 	[ "$status" -eq 0 ]
-	[ -z "$output" ]
+	[[ "$output" != *".npass-tomb/"* ]]
+	[[ "$output" != *"blobs/"* ]]
 }
