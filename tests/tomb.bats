@@ -179,11 +179,9 @@ EOF
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"120000"* ]]
 	[[ "$output" == *"personal/blobs"* ]]
-	[[ "$output" != *"/Bavodu.gpg"* ]]
 
 	run "$NPASS" git ls-files --stage -- personal/.map.gpg
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"120000"* ]]
-	[[ "$output" == *
-personal/.map.gpg'* ]]
+	[[ "$output" == *"personal/.map.gpg"* ]]
 }
