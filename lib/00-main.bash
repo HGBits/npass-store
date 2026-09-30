@@ -25,6 +25,7 @@ npass_main() {
 	sign) cmd_sign "$@" ;;
 	extension) cmd_extension "$@" ;;
 	clip) cmd_clip "$@" ;;
+	tomb) cmd_tomb "$@" ;;
 	otp)
 		local sub="$1"; shift
 		case "$sub" in
@@ -51,6 +52,7 @@ npass_main() {
 			  extension list           lista extensões e se cada uma passaria nas checagens
 			  show ID DIR/PASS         mostra um segredo
 			  clip [CAMPO] ID DIR/PASS copia a senha (padrão), 'all' ou um campo 'chave: valor'
+			  tomb create|open|close|status|list ID protege uma identidade com Tomb
 			  insert [-f] ID DIR/PASS  insere/atualiza um segredo
 			  rm [-f] ID DIR/PASS      remove um segredo
 			  mv ID DIR/PASS DEST      renomeia (mesma identidade) ou move (entre identidades)
