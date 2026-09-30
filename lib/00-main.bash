@@ -20,8 +20,8 @@ npass_main() {
 	find) cmd_find "$@" ;;
 	grep) cmd_grep "$@" ;;
 	git) cmd_git "$@" ;;
-	log) cmd_nlog "$@" ;;
-	loglong) cmd_nloglong "$@" ;;
+	log) cmd_log "$@" ;;
+	loglong) cmd_loglong "$@" ;;
 	migrate) cmd_migrate "$@" ;;
 	migrate-secrets) cmd_migrate_secrets "$@" ;;
 	sign) cmd_sign "$@" ;;
