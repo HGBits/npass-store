@@ -103,7 +103,7 @@ npass_tomb_links_install() {
 npass_tomb_usage() {
 	cat <<-_EOF
 		Uso:
-		  npass tomb create ID [-s MB]
+		  npass tomb create [-s MB] ID
 		  npass tomb open ID
 		  npass tomb close ID
 		  npass tomb status ID
@@ -138,7 +138,7 @@ npass_tomb_create() {
 		esac
 	done
 	id="$1"
-	[[ -n "$id" && -z "$2" ]] || npass_tomb_die "uso: npass tomb create ID [-s MB]"
+	[[ -n "$id" && -z "$2" ]] || npass_tomb_die "uso: npass tomb create [-s MB] ID"
 	[[ "$size" =~ ^[0-9]+$ && "$size" -ge 10 ]] || npass_tomb_die "tamanho do Tomb inválido: $size MB (mínimo 10)"
 
 	dir="$(npass_identity_dir "$id")"
