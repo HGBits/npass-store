@@ -123,6 +123,11 @@ declare -gA NPASS_MSG_PT=(
 	[msg_sem_identidades]="Nenhuma identidade em %s.\n"
 	[erro_campo_nao_encontrado]="campo '%s' não encontrado (ou ambíguo). Campos da entrada: %s"
 	[erro_campo_vazio]="o campo '%s' está vazio"
+	[erro_tomb_fechado]="identidade '%s' está fechada; use 'npass tomb open %s' primeiro"
+	[msg_tomb_aberto]="Identidade \"%s\": Tomb aberto.\n"
+	[msg_tomb_fechado]="Identidade \"%s\": Tomb fechado.\n"
+	[msg_tomb_nao_protegido]="Identidade \"%s\": sem proteção Tomb.\n"
+	[msg_tomb_nenhum]="Nenhuma identidade protegida por Tomb.\n"
 )
 
 declare -gA NPASS_MSG_EN=(
