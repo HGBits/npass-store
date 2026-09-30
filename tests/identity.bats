@@ -2,10 +2,10 @@
 
 setup() {
 	export GNUPGHOME="$BATS_TEST_DIRNAME/gnupg_test"
+	load helper
+	npass_test_keys || return 1
 	export NPASS_STORE="$BATS_TEST_TMPDIR/store"
 	export NPASS="$BATS_TEST_DIRNAME/../bin/npass"
-	export FPR="1B952E15B3CC559EEEF66340AAFD46D940B7AE4E"
-	export FPR2="9768F5A5986075BB78D37BC9DB0594DE5B86B960"
 	mkdir -p "$NPASS_STORE"
 }
 
@@ -135,8 +135,8 @@ setup() {
 	local blob
 	blob="$(find "$NPASS_STORE/work/blobs" -type f)"
 	run gpg --list-packets "$blob"
-	[[ "$output" == *"7EBEE20874B9F237"* ]]
-	[[ "$output" != *"80011E115B4591BE"* ]]
+	[[ "$output" == *"$(npass_test_encr_keyid "$FPR2")"* ]]
+	[[ "$output" != *"$(npass_test_encr_keyid "$FPR")"* ]]
 
 	run "$NPASS" show work aws/root
 	[ "$status" -eq 0 ]

@@ -2,9 +2,11 @@
 
 setup() {
 	export GNUPGHOME="$BATS_TEST_DIRNAME/gnupg_test"
+	load helper
+	npass_test_keys || return 1
+	command -v oathtool >/dev/null || skip "oathtool (oath-toolkit) nao instalado"
 	export NPASS_STORE="$BATS_TEST_TMPDIR/store"
 	export NPASS="$BATS_TEST_DIRNAME/../bin/npass"
-	export FPR="1B952E15B3CC559EEEF66340AAFD46D940B7AE4E"
 	mkdir -p "$NPASS_STORE"
 	# secret de teste RFC 4226/6238: ASCII "12345678901234567890" em base32
 	export TEST_SECRET_B32="GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"

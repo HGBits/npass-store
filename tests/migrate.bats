@@ -2,10 +2,10 @@
 
 setup() {
 	export GNUPGHOME="$BATS_TEST_DIRNAME/gnupg_test"
+	load helper
+	npass_test_keys || return 1
 	export NPASS_STORE="$BATS_TEST_TMPDIR/store"
 	export NPASS="$BATS_TEST_DIRNAME/../bin/npass"
-	export FPR="1B952E15B3CC559EEEF66340AAFD46D940B7AE4E"
-	export FPR2="9768F5A5986075BB78D37BC9DB0594DE5B86B960"
 	mkdir -p "$NPASS_STORE"
 	export OLD_STORE="$BATS_TEST_TMPDIR/old-pass-store"
 	mkdir -p "$OLD_STORE/email" "$OLD_STORE/work/aws"
@@ -110,5 +110,5 @@ setup() {
 	[ "$output" = "senhaGmail1" ]
 	local blob; blob="$(find "$NPASS_STORE/work/blobs" -type f | head -1)"
 	run gpg --list-packets "$blob"
-	[[ "$output" == *"7EBEE20874B9F237"* ]]
+	[[ "$output" == *"$(npass_test_encr_keyid "$FPR2")"* ]]
 }

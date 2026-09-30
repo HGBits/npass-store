@@ -4,10 +4,10 @@
 
 setup() {
 	export GNUPGHOME="$BATS_TEST_DIRNAME/gnupg_test"
+	load helper
+	npass_test_keys || return 1
 	export NPASS_STORE="$BATS_TEST_TMPDIR/store"
 	export NPASS="$BATS_TEST_DIRNAME/../bin/npass"
-	export FPR="1B952E15B3CC559EEEF66340AAFD46D940B7AE4E"
-	export FPR2="9768F5A5986075BB78D37BC9DB0594DE5B86B960"
 	# sem identidade git global: o npass precisa se virar sozinho
 	export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
 	# clipboard falso: wl-copy grava stdin num arquivo
@@ -16,10 +16,10 @@ setup() {
 	printf '#!/bin/bash\n[[ "$1" == "--clear" ]] && exit 0\ncat > "%s"\n' "$CLIPFILE" >"$MOCKBIN/wl-copy"
 	printf '#!/bin/bash\ncat "%s"\n' "$CLIPFILE" >"$MOCKBIN/wl-paste"
 	chmod +x "$MOCKBIN"/*
-	export PATH="$MOCKBIN:$PATH" WAYLAND_DISPLAY=wayland-test NPASS_CLIP_TIME=60
+	export PATH="$MOCKBIN:$PATH" WAYLAND_DISPLAY=wayland-test NPASS_CLIP_TIME=5
 }
 
-teardown() { pkill -f "sleep 60" 2>/dev/null || true; }
+teardown() { pkill -f "sleep 5$" 2>/dev/null || true; }
 
 mkentry() {
 	"$NPASS" init HG "$FPR" >/dev/null

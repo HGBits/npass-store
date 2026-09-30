@@ -2,11 +2,10 @@
 
 setup() {
 	export GNUPGHOME="$BATS_TEST_DIRNAME/gnupg_test"
+	load helper
+	npass_test_keys || return 1
 	export NPASS_STORE="$BATS_TEST_TMPDIR/store"
 	export NPASS="$BATS_TEST_DIRNAME/../bin/npass"
-	export FPR="1B952E15B3CC559EEEF66340AAFD46D940B7AE4E"
-	export ATACANTE_GNUPGHOME="$BATS_TEST_DIRNAME/gnupg_atacante"
-	export ATACANTE_FPR="3B7E950FB71C7B84E52337AFE3A388F60092527E"
 	mkdir -p "$NPASS_STORE"
 	export NPASS_EXTENSIONS_DIR="$BATS_TEST_TMPDIR/extensions"
 	mkdir -p "$NPASS_EXTENSIONS_DIR"

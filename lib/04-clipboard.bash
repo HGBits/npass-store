@@ -19,13 +19,16 @@ npass_clip() {
 	local copier=$!
 	disown "$copier" 2>/dev/null
 
+	# The timer must not inherit the caller's stdio: otherwise
+	# `x=$(npass clip ...)`, a pipe or a test harness would sit waiting for
+	# the background sleep to finish (NPASS_CLIP_TIME seconds).
 	(
 		sleep "$NPASS_CLIP_TIME"
 		# Only clear if nothing else has claimed the clipboard meanwhile.
 		if [[ "$(wl-paste --no-newline 2>/dev/null)" == "$secret" ]]; then
 			wl-copy --clear 2>/dev/null
 		fi
-	) & disown
+	) >/dev/null 2>&1 </dev/null & disown
 
 	npass_t msg_copiado "$label" "$NPASS_CLIP_TIME" >&2
 }
