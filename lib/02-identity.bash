@@ -53,6 +53,7 @@ npass_identity_init() {
 # Empty (no .map.gpg yet) is valid and yields nothing.
 npass_map_load() {
 	local dir="$1" body
+	npass_tomb_require_open "$dir"
 	local map="$dir/.map.gpg"
 	[[ -f "$map" ]] || return 0
 	body="$(npass_gpg_decrypt "$map")" || return 1
