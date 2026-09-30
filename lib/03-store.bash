@@ -34,15 +34,47 @@ cmd_show() {
 	npass_gpg_decrypt "$(npass_blob_path "$dir" "$physical")"
 }
 
+# npass insert --batch [-f] ID
+# Bulk write for tools (the import extension feeds this). Records arrive on
+# stdin as   LOGICAL_PATH NUL CONTENT NUL   pairs: content may span many
+# lines and never touches argv, the environment or the disk in plaintext.
+# Existing entries are skipped unless -f. One signature check up front and
+# ONE git commit at the end, instead of one commit per secret.
+cmd_insert_batch() {
+	local force="$1" id="$2"
+	[[ -z "$id" ]] && npass_die "uso: npass insert --batch [-f] ID   (registros CAMINHO\\0CONTEUDO\\0 no stdin)"
+	local dir; dir="$(npass_identity_dir "$id")"
+	local logical content existing written=0 skipped=0
+	while IFS= read -r -d '' logical && IFS= read -r -d '' content; do
+		npass_check_sneaky_path "$logical"
+		if [[ $force -eq 0 ]]; then
+			existing="$(npass_map_resolve "$dir" "$logical" 2>/dev/null)"
+			if [[ -n "$existing" ]]; then
+				((skipped++))
+				continue
+			fi
+		fi
+		npass_blob_write "$dir" "$logical" "$content"
+		((written++))
+	done
+	npass_git_commit "$id" "insert-batch"
+	npass_t msg_batch_resumo "$id" "$written" "$skipped"
+}
+
 cmd_insert() {
-	local force=0
+	local force=0 batch=0
 	while [[ "$1" == -* ]]; do
 		case "$1" in
 		-f | --force) force=1; shift ;;
+		--batch) batch=1; shift ;;
 		--) shift; break ;;
 		*) npass_die "$(npass_t erro_opcao_desconhecida "$1")" ;;
 		esac
 	done
+	if [[ $batch -eq 1 ]]; then
+		cmd_insert_batch "$force" "$@"
+		return
+	fi
 	local id="$1" logical="$2"
 	[[ -z "$id" || -z "$logical" ]] && npass_die "uso: npass insert [-f] ID DIR/PASS"
 	local dir existing

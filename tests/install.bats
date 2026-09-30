@@ -106,3 +106,15 @@ setup() {
 	run env -u PREFIX DESTDIR="$destdir" "$PROJECT_DIR/install.sh" --bindir=/usr/sbin --uninstall
 	[ ! -e "$destdir/usr/sbin/npass" ]
 }
+
+@test "a extensao npass-import e instalada em share/npass/extensions (sem ser ativada) e o --uninstall a remove" {
+	local destdir="$BATS_TEST_TMPDIR/stage"
+	run env -u PREFIX DESTDIR="$destdir" "$PROJECT_DIR/install.sh"
+	[ "$status" -eq 0 ]
+	[ -x "$destdir/usr/share/npass/extensions/npass-import" ]
+	# nao e assinada nem fica no diretorio de extensoes do usuario: confiar e um ato explicito
+	[ ! -e "$destdir/usr/share/npass/extensions/npass-import.sig" ]
+	run env -u PREFIX DESTDIR="$destdir" "$PROJECT_DIR/install.sh" --uninstall
+	[ ! -e "$destdir/usr/share/npass/extensions/npass-import" ]
+	[ ! -d "$destdir/usr/share/npass" ]
+}

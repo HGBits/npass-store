@@ -50,10 +50,12 @@ npass_main() {
 			  identities               lista as identidades e quantas senhas cada uma tem
 			  sign ID [KEYID]          assina (ou reassina) o .gpg-id de uma identidade
 			  extension sign CAMINHO [KEYID]   assina um executável de extensão
+			  extension install ARQUIVO [KEYID]   copia para o diretório de extensões e assina
 			  extension list           lista extensões e se cada uma passaria nas checagens
 			  show ID DIR/PASS         mostra um segredo
 			  clip [CAMPO] ID DIR/PASS copia a senha (padrão), 'all' ou um campo 'chave: valor'
 			  insert [-f] ID DIR/PASS  insere/atualiza um segredo
+			  insert --batch [-f] ID   grava vários (registros CAMINHO\\0CONTEÚDO\\0 no stdin)
 			  rm [-f] ID DIR/PASS      remove um segredo
 			  mv ID DIR/PASS DEST      renomeia (mesma identidade) ou move (entre identidades)
 			  ls ID [DIR]              lista os caminhos lógicos de uma identidade

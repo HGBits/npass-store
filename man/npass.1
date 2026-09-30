@@ -112,6 +112,16 @@ entry, prompts to overwrite unless
 .B \-f
 is given.
 .TP
+.BI "insert \-\-batch " "[\-f] " ID
+Bulk write for tools (the
+.B npass\-import
+extension uses it). Reads records from stdin as
+.IR "PATH NUL CONTENT NUL"
+pairs; the content may span many lines and never appears in argv or the
+environment. Existing entries are skipped unless
+.BR \-f .
+One signature check up front and one git commit for the whole batch.
+.TP
 .BI "generate " "[\-n] [\-c] [\-f] [\-\-in\-place] " ID " " DIR/PASS " [" LENGTH ]
 Generate a random password (default length: 25).
 .B \-n
@@ -304,6 +314,16 @@ extension will run \- see
 .B EXTENSIONS
 below.
 .TP
+.BI "extension install " FILE " [" KEYID ]
+Copy
+.I FILE
+(which must be named
+.BR npass\-NAME )
+into the extensions directory and sign it with your key in one step.
+Installing is the act of trusting it: read the file first. A symlink
+source is refused, and an existing target is replaced rather than
+written through.
+.TP
 .B "extension list"
 List every
 .B npass\-*
@@ -406,6 +426,32 @@ each other's entry.
 Individual encrypted secrets, named with random pronounceable pseudonyms. The
 filename carries no information about what it contains.
 .SH EXTENSIONS
+Extensions run with
+.B NPASS_STORE, NPASS_GPG, NPASS_LANG
+and
+.B NPASS_BIN
+(the exact
+.B npass
+that launched them) in the environment.
+.PP
+.B npass\-import
+ships with the program in
+.IR PREFIX/share/npass/extensions/ .
+It imports from other password managers (Bitwarden, KeePass/KeePassXC, Firefox,
+Chrome, LastPass, 1Password, Aegis, andOTP, generic CSV) and, for the classic
+.BR pass (1)
+layouts, delegates to
+.B migrate
+and
+.BR migrate\-secrets .
+Enable it with
+.B npass extension install
+and
+.BR "export NPASS_ENABLE_EXTENSIONS=1" ;
+see
+.B npass import \-\-list
+and the README. It needs
+.BR python3 .
 .B npass
 supports third\-party commands as external executables, off by
 default. This is Model A (a separate process, any language) rather

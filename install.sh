@@ -54,16 +54,22 @@ bindir="$DESTDIR${BINDIR:-$PREFIX/bin}"
 mandir="$DESTDIR$PREFIX/share/man/man1"
 bin_target="$bindir/npass"
 man_target="$mandir/npass.1"
+# Bundled extensions are shipped under share/npass/extensions and are NOT
+# enabled or trusted by the install: the user copies one into their own
+# extensions dir and signs it with `npass extension install FILE`.
+extdir="$DESTDIR$PREFIX/share/npass/extensions"
+ext_target="$extdir/npass-import"
 
 if [[ $uninstall -eq 1 ]]; then
 	removed=0
-	for f in "$bin_target" "$man_target"; do
+	for f in "$bin_target" "$man_target" "$ext_target"; do
 		if [[ -e "$f" ]]; then
 			rm -f -- "$f"
 			echo "removido: $f"
 			removed=1
 		fi
 	done
+	rmdir -- "$extdir" "$DESTDIR$PREFIX/share/npass" 2>/dev/null || true
 	[[ $removed -eq 0 ]] && echo "nada instalado em ${BINDIR:-$PREFIX/bin} (DESTDIR=${DESTDIR:-<vazio>}) para remover."
 	exit 0
 fi
@@ -90,11 +96,15 @@ fi
 echo "Reconstruindo bin/npass a partir de lib/*.bash..."
 bash build.sh
 
-mkdir -p "$bindir" "$mandir"
+mkdir -p "$bindir" "$mandir" "$extdir"
 install -m 755 bin/npass "$bin_target"
 install -m 644 man/npass.1 "$man_target"
+install -m 755 extensions/npass-import "$ext_target"
 echo "instalado: $bin_target"
 echo "instalado: $man_target"
+echo "instalado: $ext_target"
+echo "  (para usar a extensão de importação: npass extension install $PREFIX/share/npass/extensions/npass-import"
+echo "   e depois export NPASS_ENABLE_EXTENSIONS=1)"
 
 # Soft dependency check - informational only. Packaging (the AUR
 # PKGBUILD's depends=()) is what actually enforces this; a manual
@@ -108,6 +118,8 @@ if [[ ${#missing[@]} -gt 0 ]]; then
 fi
 command -v oathtool >/dev/null 2>&1 || command -v otptool >/dev/null 2>&1 \
 	|| echo "aviso: nem oathtool nem otptool encontrados - 'npass otp' não vai funcionar até um dos dois ser instalado." >&2
+command -v python3 >/dev/null 2>&1 \
+	|| echo "aviso: python3 não encontrado - a extensão npass-import (npass import) não vai funcionar." >&2
 command -v qrencode >/dev/null 2>&1 \
 	|| echo "aviso: qrencode não encontrado - 'npass otp uri -q' (QR no terminal) não vai funcionar." >&2
 

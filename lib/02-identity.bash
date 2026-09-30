@@ -60,7 +60,15 @@ npass_map_load() {
 	if [[ "$magic" != "$NPASS_MAP_MAGIC" ]]; then
 		npass_die "$(npass_t erro_mapa_corrompido "$dir")"
 	fi
-	printf '%s\n' "${body#*$'\n'}"
+	# A map with no entries is only the magic line, and $(...) already
+	# stripped its trailing newline: there is no "\n" left for the strip
+	# below to match, so the magic itself would come back as if it were an
+	# entry (and get written back as a bogus "NPASS-MAP-1<TAB>" row on the
+	# next save, showing up in `ls`). An empty map has nothing to return.
+	[[ "$body" == *$'\n'* ]] || return 0
+	# Self-heal maps already polluted by that bug: drop rows named like the
+	# magic. The next write then persists the clean map.
+	printf '%s\n' "${body#*$'\n'}" | awk -F'\t' -v m="$NPASS_MAP_MAGIC" '$1 != m'
 }
 
 # npass_map_save <id_dir> <body-without-header>

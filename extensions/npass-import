@@ -1,0 +1,608 @@
+#!/usr/bin/env python3
+"""npass-import - importa senhas de outros gerenciadores para uma identidade do npass.
+
+Uso:  npass import [opcoes] FORMATO ID [ARQUIVO...]      (npass import --list)
+
+Extensao do npass (modelo de subprocesso assinado). Somente biblioteca padrao
+do Python 3: nenhuma dependencia externa, nenhuma rede.
+
+Como os segredos trafegam: o arquivo de origem e lido em memoria (um .gpg e
+decifrado em memoria, nunca vai para o disco em claro), e as entradas seguem
+para `npass insert --batch` por um pipe no stdin. Nenhuma senha aparece em
+argv, em variavel de ambiente ou em arquivo temporario.
+"""
+import argparse
+import csv
+import io
+import json
+import os
+import re
+import subprocess
+import sys
+import urllib.parse
+from dataclasses import dataclass, field
+
+VERSION = "0.1.0"
+csv.field_size_limit(sys.maxsize)  # notas grandes estouram o limite padrao (128 KiB)
+
+# --------------------------------------------------------------------------
+# mensagens (PT por padrao; EN quando NPASS_LANG comeca com "en")
+# --------------------------------------------------------------------------
+_EN = os.environ.get("NPASS_LANG", "").startswith("en")
+_M = {
+    "uso": ("uso: npass import [opções] FORMATO ID [ARQUIVO...]   (npass import --list)",
+            "usage: npass import [options] FORMAT ID [FILE...]   (npass import --list)"),
+    "sem_bin": ("não achei o binário do npass (NPASS_BIN). Rode via 'npass import'.",
+                "could not find the npass binary (NPASS_BIN). Run it as 'npass import'."),
+    "fmt_desc": ("formato desconhecido: %s (veja 'npass import --list')",
+                 "unknown format: %s (see 'npass import --list')"),
+    "faltam_args": ("informe FORMATO, ID e o(s) arquivo(s) de origem",
+                    "give FORMAT, ID and the source file(s)"),
+    "sem_arquivo": ("arquivo não encontrado: %s", "file not found: %s"),
+    "decode": ("não consegui decodificar %s como %s (tente --encoding cp1252 ou latin-1)",
+               "could not decode %s as %s (try --encoding cp1252 or latin-1)"),
+    "gpg_falhou": ("falha ao decifrar %s: %s", "failed to decrypt %s: %s"),
+    "parse": ("%s: %s", "%s: %s"),
+    "cifrado": ("este export está criptografado; exporte a versão SEM criptografia ('plain')",
+                "this export is encrypted; export the unencrypted ('plain') version"),
+    "cols": ("o formato csv exige --cols (ex.: --cols 'url,login,,password')",
+             "the csv format requires --cols (e.g. --cols 'url,login,,password')"),
+    "col_vazia": ("--cols sem nenhuma coluna útil", "--cols has no usable column"),
+    "id_ls": ("não consegui ler a identidade %s: %s", "could not read identity %s: %s"),
+    "sem_pass_dry": ("'%s' delega ao comando do core e não aceita %s",
+                     "'%s' delegates to the core command and does not accept %s"),
+    "um_dir": ("'%s' espera exatamente um diretório de origem", "'%s' expects exactly one source directory"),
+    "vazia": ("entrada ignorada (sem senha, OTP nem notas): %s", "skipped entry (no password, OTP or notes): %s"),
+    "senha_nl": ("senha com quebra de linha, não importada: %s", "password contains a newline, not imported: %s"),
+    "existe": ("já existe (pulada): %s", "already exists (skipped): %s"),
+    "resumo": ("%d entrada(s) lida(s) de %s: %d a gravar, %d pulada(s) (já existiam), %d ignorada(s), %d com erro.",
+               "%d entr(y/ies) read from %s: %d to write, %d skipped (already exist), %d ignored, %d with errors."),
+    "dry": ("(simulação: nada foi gravado)", "(dry run: nothing was written)"),
+    "core_falhou": ("o npass recusou o lote (código %d)", "npass rejected the batch (code %d)"),
+    "shred_btrfs": ("aviso: %s está em btrfs (copy-on-write); o shred NÃO garante apagar os blocos antigos. "
+                    "Prefira importar de um arquivo .gpg ou de /dev/shm.",
+                    "warning: %s is on btrfs (copy-on-write); shred does NOT guarantee the old blocks are wiped. "
+                    "Prefer importing from a .gpg file or from /dev/shm."),
+    "apagado": ("origem apagada: %s", "source removed: %s"),
+}
+
+
+def t(key, *a):
+    s = _M[key][1 if _EN else 0]
+    return s % a if a else s
+
+
+def die(msg, code=1):
+    print("npass import: " + msg, file=sys.stderr)
+    sys.exit(code)
+
+
+def warn(msg):
+    print("npass import: " + msg, file=sys.stderr)
+
+
+# --------------------------------------------------------------------------
+# modelo de dados
+# --------------------------------------------------------------------------
+@dataclass
+class Entry:
+    title: str = ""
+    group: str = ""
+    login: str = ""
+    password: str = ""
+    url: str = ""
+    email: str = ""
+    notes: str = ""
+    otp: list = field(default_factory=list)      # linhas otpauth://
+    extra: list = field(default_factory=list)    # pares (chave, valor) de uma linha
+
+
+def s(v):
+    return "" if v is None else str(v)
+
+
+def one_line(v):
+    return re.sub(r"[\r\n\t]+", " ", s(v)).strip()
+
+
+def hostname(url):
+    u = s(url).strip()
+    if not u:
+        return ""
+    try:
+        h = urllib.parse.urlparse(u if "://" in u else "//" + u).hostname or ""
+    except ValueError:
+        return ""
+    return h[4:] if h.startswith("www.") else h
+
+
+# --------------------------------------------------------------------------
+# OTP
+# --------------------------------------------------------------------------
+_B32 = re.compile(r"^[A-Za-z2-7= ]{8,}$")
+
+
+def build_otpauth(kind, secret, label="", issuer="", algo="SHA1", digits=6, period=30, counter=None):
+    kind = "hotp" if s(kind).lower() == "hotp" else "totp"
+    secret = re.sub(r"[\s=]+$", "", s(secret).replace(" ", "")).upper()
+    q = lambda v: urllib.parse.quote(s(v), safe="")
+    if issuer and label:
+        lab = q(issuer) + ":" + q(label)
+    else:
+        lab = q(issuer or label or "otp")
+    params = [("secret", secret)]
+    if issuer:
+        params.append(("issuer", issuer))
+    algo = s(algo or "SHA1").upper().replace("-", "")
+    if algo != "SHA1":
+        params.append(("algorithm", algo))
+    if int(digits or 6) != 6:
+        params.append(("digits", int(digits)))
+    if kind == "hotp":
+        params.append(("counter", int(counter or 0)))
+    elif int(period or 30) != 30:
+        params.append(("period", int(period)))
+    return "otpauth://%s/%s?%s" % (kind, lab, "&".join("%s=%s" % (k, q(v)) for k, v in params))
+
+
+def normalize_otp(value, label="", issuer=""):
+    """Devolve (uri | None, bruto | None). Aceita URI, segredo base32 puro e o
+    formato 'key=...&step=...' do KeeOtp. O que nao reconhece vai como campo bruto."""
+    v = s(value).strip()
+    if not v:
+        return None, None
+    if v.lower().startswith("otpauth://"):
+        return v, None
+    if v.startswith("key="):
+        qs = urllib.parse.parse_qs(v)
+        key = (qs.get("key") or [""])[0]
+        if key:
+            return build_otpauth("totp", key, label, issuer,
+                                 digits=int((qs.get("size") or [6])[0]),
+                                 period=int((qs.get("step") or [30])[0])), None
+    if _B32.match(v):
+        return build_otpauth("totp", v, label, issuer), None
+    return None, v
+
+
+def add_otp(e, value):
+    uri, raw = normalize_otp(value, e.login or e.email, e.title)
+    if uri:
+        e.otp.append(uri)
+    elif raw:
+        e.extra.append(("otp-bruto" if not _EN else "otp-raw", one_line(raw)))
+
+
+# --------------------------------------------------------------------------
+# leitura de CSV guiada por perfil (nomes de coluna, sem diferenciar caixa)
+# --------------------------------------------------------------------------
+def read_csv(text, delimiter=","):
+    reader = csv.DictReader(io.StringIO(text.lstrip("\ufeff"), newline=""), delimiter=delimiter)
+    rows = []
+    for row in reader:
+        rows.append({(k or "").strip().lower(): (v if v is not None else "")
+                     for k, v in row.items() if k is not None})
+    return rows
+
+
+def pick(row, names):
+    for n in names:
+        v = row.get(n, "")
+        if isinstance(v, str) and v.strip() != "":
+            return v
+    return ""
+
+
+def entries_from_csv(text, prof, delimiter=","):
+    out = []
+    for r in read_csv(text, delimiter):
+        e = Entry(
+            title=pick(r, prof.get("title", [])),
+            group=pick(r, prof.get("group", [])),
+            login=pick(r, prof.get("login", [])),
+            password=pick(r, prof.get("password", [])),
+            url=pick(r, prof.get("url", [])),
+            email=pick(r, prof.get("email", [])),
+            notes=pick(r, prof.get("notes", [])),
+        )
+        add_otp(e, pick(r, prof.get("otp", [])))
+        hook = prof.get("hook")
+        if hook:
+            hook(r, e)
+        out.append(e)
+    return out
+
+
+def _lastpass_hook(r, e):
+    if e.url == "http://sn":  # nota segura do LastPass
+        e.url = ""
+
+
+def _bitwarden_csv_hook(r, e):
+    uris = [u.strip() for u in s(r.get("login_uri", "")).splitlines() if u.strip()]
+    e.url = uris[0] if uris else ""
+    for i, u in enumerate(uris[1:], start=2):
+        e.extra.append(("url-%d" % i, u))
+    rest = []
+    for line in s(r.get("fields", "")).splitlines():
+        if ": " in line:
+            k, v = line.split(": ", 1)
+            e.extra.append((one_line(k), one_line(v)))
+        elif line.strip():
+            rest.append(line)
+    if rest:
+        e.notes = (e.notes + "\n" if e.notes else "") + "\n".join(rest)
+
+
+PROFILES = {
+    "chrome": dict(title=["name"], login=["username"], password=["password"], url=["url"], notes=["note", "notes"]),
+    "firefox": dict(login=["username"], password=["password"], url=["url"]),
+    "keepassxc": dict(group=["group"], title=["title", "account"], login=["username", "login name"],
+                      password=["password"], url=["url", "web site"], notes=["notes", "comments"], otp=["totp"]),
+    "lastpass": dict(group=["grouping"], title=["name"], login=["username"], password=["password"],
+                     url=["url"], notes=["extra"], otp=["totp"], hook=_lastpass_hook),
+    "1password": dict(title=["title", "name"], login=["username", "login"], password=["password"],
+                      url=["url", "website"], notes=["notes", "note"], otp=["otpauth", "otp", "totp"]),
+    "bitwarden-csv": dict(group=["folder"], title=["name"], login=["login_username"], password=["login_password"],
+                          notes=["notes"], otp=["login_totp"], hook=_bitwarden_csv_hook),
+}
+
+# --------------------------------------------------------------------------
+# importadores
+# --------------------------------------------------------------------------
+def imp_profile(name):
+    prof = PROFILES[name]
+    return lambda text, o: entries_from_csv(text, prof, o.delimiter)
+
+
+def imp_csv(text, o):
+    if not o.cols:
+        die(t("cols"))
+    names = [c.strip().lower() for c in o.cols.split(",")]
+    known = {"title", "group", "login", "password", "url", "email", "notes", "otp"}
+    if not any(names):
+        die(t("col_vazia"))
+    out = []
+    rows = list(csv.reader(io.StringIO(text.lstrip("\ufeff"), newline=""), delimiter=o.delimiter))
+    if o.skip_header and rows:
+        rows = rows[1:]
+    for row in rows:
+        if not any(c.strip() for c in row):
+            continue
+        e = Entry()
+        for i, name in enumerate(names):
+            if not name or i >= len(row) or row[i] == "":
+                continue
+            v = row[i]
+            if name == "otp":
+                add_otp(e, v)
+            elif name in known:
+                setattr(e, name, v)
+            else:
+                e.extra.append((one_line(name), one_line(v)))
+        out.append(e)
+    return out
+
+
+def _flatten(prefix, obj, out):
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            _flatten("%s-%s" % (prefix, k) if prefix else k, v, out)
+    elif obj not in (None, "", []):
+        out.append((prefix, one_line(obj)))
+
+
+def imp_bitwarden(text, o):
+    if not text.lstrip().startswith("{"):
+        return entries_from_csv(text, PROFILES["bitwarden-csv"], o.delimiter)
+    try:
+        doc = json.loads(text)
+    except ValueError as ex:
+        die(t("parse", "bitwarden", ex))
+    if doc.get("encrypted"):
+        die(t("cifrado"))
+    folders = {f.get("id"): s(f.get("name")) for f in doc.get("folders", [])}
+    out = []
+    for it in doc.get("items", []):
+        e = Entry(title=s(it.get("name")), group=folders.get(it.get("folderId"), ""), notes=s(it.get("notes")))
+        login = it.get("login") or {}
+        e.login, e.password = s(login.get("username")), s(login.get("password"))
+        uris = [s(u.get("uri")) for u in login.get("uris") or [] if u.get("uri")]
+        e.url = uris[0] if uris else ""
+        for i, u in enumerate(uris[1:], start=2):
+            e.extra.append(("url-%d" % i, u))
+        add_otp(e, login.get("totp"))
+        for f in it.get("fields") or []:
+            if f.get("name") and f.get("value") not in (None, ""):
+                e.extra.append((one_line(f["name"]), one_line(f["value"])))
+        for kind in ("card", "identity"):
+            if it.get(kind):
+                flat = []
+                _flatten(kind, it[kind], flat)
+                e.extra.extend(flat)
+        out.append(e)
+    return out
+
+
+def imp_aegis(text, o):
+    try:
+        doc = json.loads(text)
+    except ValueError as ex:
+        die(t("parse", "aegis", ex))
+    db = doc.get("db")
+    if not isinstance(db, dict):
+        die(t("cifrado"))
+    out = []
+    for it in db.get("entries", []):
+        info = it.get("info") or {}
+        e = Entry(title=s(it.get("issuer")) or s(it.get("name")), login=s(it.get("name")), notes=s(it.get("note")))
+        if s(it.get("type")).lower() in ("totp", "hotp") and info.get("secret"):
+            e.otp.append(build_otpauth(it["type"], info["secret"], it.get("name"), it.get("issuer"),
+                                       info.get("algo"), info.get("digits"), info.get("period"), info.get("counter")))
+        elif info.get("secret"):
+            e.extra.append(("otp-" + s(it.get("type")).lower(), s(info["secret"])))
+        out.append(e)
+    return out
+
+
+def imp_andotp(text, o):
+    if text.lstrip()[:1] != "[":
+        die(t("cifrado"))
+    try:
+        items = json.loads(text)
+    except ValueError as ex:
+        die(t("parse", "andotp", ex))
+    out = []
+    for it in items:
+        label, issuer = s(it.get("label")), s(it.get("issuer"))
+        if ":" in label and not issuer:
+            issuer, label = label.split(":", 1)
+        elif label.startswith(issuer + ":") and issuer:
+            label = label[len(issuer) + 1:]
+        e = Entry(title=issuer or label, login=label.strip())
+        kind = s(it.get("type")).lower()
+        if kind in ("totp", "hotp") and it.get("secret"):
+            e.otp.append(build_otpauth(kind, it["secret"], label.strip(), issuer,
+                                       it.get("algorithm"), it.get("digits"), it.get("period"), it.get("counter")))
+        elif it.get("secret"):
+            e.extra.append(("otp-" + (kind or "desconhecido"), s(it["secret"])))
+        out.append(e)
+    return out
+
+
+FORMATS = {
+    "csv": (imp_csv, "CSV genérico, colunas por --cols", "generic CSV, columns via --cols"),
+    "bitwarden": (imp_bitwarden, "Bitwarden (.csv ou .json sem criptografia)", "Bitwarden (.csv or unencrypted .json)"),
+    "keepassxc": (imp_profile("keepassxc"), "KeePassXC (CSV)", "KeePassXC (CSV)"),
+    "keepass": (imp_profile("keepassxc"), "KeePass / KeePassX / KeePassXC (CSV)", "KeePass / KeePassX / KeePassXC (CSV)"),
+    "firefox": (imp_profile("firefox"), "Firefox (CSV de about:logins)", "Firefox (about:logins CSV)"),
+    "chrome": (imp_profile("chrome"), "Chrome / Chromium (CSV)", "Chrome / Chromium (CSV)"),
+    "lastpass": (imp_profile("lastpass"), "LastPass (CSV)", "LastPass (CSV)"),
+    "1password": (imp_profile("1password"), "1Password (CSV)", "1Password (CSV)"),
+    "aegis": (imp_aegis, "Aegis Authenticator (JSON plain) -> OTP", "Aegis Authenticator (plain JSON) -> OTP"),
+    "andotp": (imp_andotp, "andOTP (JSON plain) -> OTP", "andOTP (plain JSON) -> OTP"),
+    "pass": (None, "store pass tradicional (= npass migrate)", "classic pass store (= npass migrate)"),
+    "pass-secrets": (None, "layout pass-secrets-redesign (= npass migrate-secrets)",
+                     "pass-secrets-redesign layout (= npass migrate-secrets)"),
+}
+DELEGATED = {"pass": "migrate", "pass-secrets": "migrate-secrets"}
+
+# --------------------------------------------------------------------------
+# caminhos logicos
+# --------------------------------------------------------------------------
+_CTRL = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def comp(v):
+    """Um componente de caminho: sem controle, sem '/', nunca '.' ou '..'."""
+    v = re.sub(r"\s+", " ", _CTRL.sub(" ", s(v)).replace("/", "-")).strip()
+    return "" if set(v) <= {"."} else v
+
+
+def comp_group(g):
+    parts = [comp(p) for p in re.split(r"[\\/]+", s(g))]
+    return "/".join(p for p in parts if p)
+
+
+def base_path(e, prefix):
+    title = comp(e.title) or comp(hostname(e.url)) or comp(e.login) or comp(e.email) \
+        or ("untitled" if _EN else "sem-titulo")
+    return "/".join(p for p in (prefix, comp_group(e.group), title) if p)
+
+
+def assign_paths(entries, prefix):
+    counts = {}
+    for e in entries:
+        b = base_path(e, prefix)
+        counts[b] = counts.get(b, 0) + 1
+    used, out = set(), []
+    for i, e in enumerate(entries, start=1):
+        b = base_path(e, prefix)
+        p0 = b if counts[b] == 1 else "%s/%s" % (b, comp(e.login) or comp(e.email) or str(i))
+        p, n = p0, 1
+        while p in used:
+            n += 1
+            p = "%s-%d" % (p0, n)
+        used.add(p)
+        out.append(p)
+    return out
+
+
+def render(e):
+    if "\n" in e.password or "\r" in e.password:
+        return None
+    lines = [e.password]
+    if e.login:
+        lines.append("login: " + one_line(e.login))
+    if e.email and e.email != e.login:
+        lines.append("email: " + one_line(e.email))
+    if e.url:
+        lines.append("url: " + one_line(e.url))
+    for k, v in e.extra:
+        k = re.sub(r"[:\r\n\t]+", " ", s(k)).strip()
+        if k and one_line(v):
+            lines.append("%s: %s" % (k, one_line(v)))
+    lines.extend(e.otp)
+    if e.notes.strip():
+        lines.extend(["", e.notes.replace("\r\n", "\n").replace("\r", "\n").strip("\n")])
+    return "\n".join(lines).replace("\0", "")
+
+
+# --------------------------------------------------------------------------
+# E/S: origem, npass
+# --------------------------------------------------------------------------
+def npass_bin():
+    b = os.environ.get("NPASS_BIN", "")
+    if not (b and os.access(b, os.X_OK)):
+        die(t("sem_bin"))
+    return b
+
+
+def read_source(path, o):
+    if path == "-":
+        data = sys.stdin.buffer.read()
+    else:
+        if not os.path.isfile(path):
+            die(t("sem_arquivo", path))
+        with open(path, "rb") as fh:
+            data = fh.read()
+    if path.endswith((".gpg", ".pgp", ".asc")) or data.startswith(b"-----BEGIN PGP MESSAGE-----"):
+        gpg = os.environ.get("NPASS_GPG", "gpg")
+        r = subprocess.run([gpg, "--quiet", "--batch", "--use-agent", "--decrypt"],
+                           input=data, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if r.returncode != 0:
+            die(t("gpg_falhou", path, r.stderr.decode(errors="replace").strip()))
+        data = r.stdout
+    try:
+        return data.decode(o.encoding)
+    except (UnicodeDecodeError, LookupError):
+        die(t("decode", path, o.encoding))
+
+
+def existing_paths(binp, ident):
+    r = subprocess.run([binp, "ls", ident], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    if r.returncode != 0:
+        die(t("id_ls", ident, (r.stderr or r.stdout).strip()))
+    return {ln[2:] for ln in r.stdout.splitlines()[1:] if ln.startswith("  ")}
+
+
+def write_batch(binp, ident, items, force):
+    payload = b"".join(p.encode() + b"\0" + c.encode() + b"\0" for p, c in items)
+    cmd = [binp, "insert", "--batch"] + (["-f"] if force else []) + [ident]
+    return subprocess.run(cmd, input=payload).returncode
+
+
+def delete_source(path):
+    if path == "-":
+        return
+    if path.endswith((".gpg", ".pgp", ".asc")):
+        os.remove(path)  # ja esta cifrado: basta remover
+    else:
+        fs = subprocess.run(["stat", "-f", "-c", "%T", path], stdout=subprocess.PIPE, text=True).stdout.strip()
+        if fs == "btrfs":
+            warn(t("shred_btrfs", path))
+        if subprocess.run(["shred", "-u", path]).returncode != 0 and os.path.exists(path):
+            os.remove(path)
+    print(t("apagado", path), file=sys.stderr)
+
+
+# --------------------------------------------------------------------------
+# main
+# --------------------------------------------------------------------------
+def list_formats():
+    for name, (_, pt, en) in FORMATS.items():
+        print("%-14s %s" % (name, en if _EN else pt))
+
+
+def main(argv):
+    ap = argparse.ArgumentParser(prog="npass import", add_help=False, allow_abbrev=False)
+    ap.add_argument("args", nargs="*")
+    ap.add_argument("-p", "--path", default="")
+    ap.add_argument("-f", "--force", action="store_true")
+    ap.add_argument("-d", "--dry-run", action="store_true")
+    ap.add_argument("-v", "--verbose", action="store_true")
+    ap.add_argument("--delete-source", action="store_true")
+    ap.add_argument("--cols", default="")
+    ap.add_argument("--del", dest="delimiter", default=",")
+    ap.add_argument("--skip-header", action="store_true")
+    ap.add_argument("--encoding", default="utf-8")
+    ap.add_argument("-l", "--list", action="store_true")
+    ap.add_argument("-h", "--help", action="store_true")
+    ap.add_argument("-V", "--version", action="store_true")
+    try:
+        o = ap.parse_intermixed_args(argv)
+    except SystemExit:
+        die(t("uso"), 2)
+    if o.version:
+        print("npass-import " + VERSION)
+        return 0
+    if o.list:
+        list_formats()
+        return 0
+    if o.help or not o.args:
+        print(__doc__.strip().split("\n\n")[0])
+        print(t("uso"))
+        return 0 if o.help else 2
+    if len(o.args) < 3:
+        die(t("faltam_args"), 2)
+    fmt, ident, files = o.args[0].lower(), o.args[1], o.args[2:]
+    if fmt not in FORMATS:
+        die(t("fmt_desc", fmt), 2)
+
+    binp = npass_bin()
+
+    if fmt in DELEGATED:  # migrate / migrate-secrets vivem no core
+        for flag, on in (("--dry-run", o.dry_run), ("--path", o.path)):
+            if on:
+                die(t("sem_pass_dry", fmt, flag), 2)
+        if len(files) != 1:
+            die(t("um_dir", fmt), 2)
+        cmd = [binp, DELEGATED[fmt]] + (["-f"] if o.force else []) \
+            + (["--delete-source"] if o.delete_source else []) + [ident, files[0]]
+        os.execv(binp, cmd)
+
+    parser = FORMATS[fmt][0]
+    entries = []
+    for f in files:
+        entries.extend(parser(read_source(f, o), o))
+
+    prefix = comp_group(o.path)
+    paths = assign_paths(entries, prefix)
+    have = existing_paths(binp, ident)
+
+    items, skipped, ignored, errors = [], 0, 0, 0
+    for e, p in zip(entries, paths):
+        if not (e.password or e.otp or e.notes.strip() or e.extra):
+            warn(t("vazia", p))
+            ignored += 1
+            continue
+        body = render(e)
+        if body is None:
+            warn(t("senha_nl", p))
+            errors += 1
+            continue
+        if p in have and not o.force:
+            if o.verbose or o.dry_run:
+                print("= " + t("existe", p))
+            skipped += 1
+            continue
+        items.append((p, body))
+        if o.verbose or o.dry_run:
+            print(("! " if p in have else "+ ") + p)
+
+    print(t("resumo", len(entries), fmt, len(items), skipped, ignored, errors), file=sys.stderr)
+    if o.dry_run:
+        print(t("dry"), file=sys.stderr)
+        return 1 if errors else 0
+    rc = write_batch(binp, ident, items, o.force) if items else 0
+    if rc != 0:
+        warn(t("core_falhou", rc))
+        return rc
+    if o.delete_source and not errors:
+        for f in files:
+            delete_source(f)
+    return 1 if errors else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

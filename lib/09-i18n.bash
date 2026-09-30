@@ -123,6 +123,11 @@ declare -gA NPASS_MSG_PT=(
 	[msg_sem_identidades]="Nenhuma identidade em %s.\n"
 	[erro_campo_nao_encontrado]="campo '%s' não encontrado (ou ambíguo). Campos da entrada: %s"
 	[erro_campo_vazio]="o campo '%s' está vazio"
+	[msg_batch_resumo]="Lote em \"%s\": %d gravada(s), %d pulada(s).\n"
+	[msg_extensao_instalada]="Extensão instalada e assinada: %s\n(habilite com: export NPASS_ENABLE_EXTENSIONS=1)\n"
+	[erro_extensao_origem]="arquivo de extensão inválido (inexistente ou symlink): %s"
+	[erro_extensao_nome]="o arquivo precisa se chamar npass-NOME (recebi: %s)"
+	[erro_extensao_dir]="não foi possível preparar o diretório de extensões: %s"
 )
 
 declare -gA NPASS_MSG_EN=(
@@ -235,6 +240,11 @@ declare -gA NPASS_MSG_EN=(
 	[msg_sem_identidades]="No identities in %s.\n"
 	[erro_campo_nao_encontrado]="field '%s' not found (or ambiguous). Fields in this entry: %s"
 	[erro_campo_vazio]="field '%s' is empty"
+	[msg_batch_resumo]="Batch into \"%s\": %d written, %d skipped.\n"
+	[msg_extensao_instalada]="Extension installed and signed: %s\n(enable it with: export NPASS_ENABLE_EXTENSIONS=1)\n"
+	[erro_extensao_origem]="invalid extension file (missing or a symlink): %s"
+	[erro_extensao_nome]="the file must be named npass-NAME (got: %s)"
+	[erro_extensao_dir]="could not prepare the extensions directory: %s"
 )
 
 # npass_t KEY [ARGS...]

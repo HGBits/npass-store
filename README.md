@@ -220,6 +220,8 @@ npass migrate-secrets pessoal /caminho/da/identidade
 
 Por padrão, as fontes não são removidas.
 
+Para importar de **outros gerenciadores** (Bitwarden, KeePassXC, Firefox, Chrome, LastPass, 1Password, Aegis, andOTP, CSV genérico), use a extensão `npass-import` (seção abaixo).
+
 ## Extensões
 
 As extensões são desativadas por padrão.
@@ -231,6 +233,40 @@ export NPASS_ENABLE_EXTENSIONS=1
 ```
 
 Extensões precisam ser arquivos regulares, possuir permissões restritivas e uma assinatura GPG válida.
+
+`npass extension install ARQUIVO [KEYID]` copia o arquivo (que deve se chamar `npass-NOME`) para o diretório de extensões e o assina com a sua chave num passo só. Instalar É o ato de confiar: leia o arquivo antes. A extensão recebe `NPASS_STORE`, `NPASS_GPG`, `NPASS_LANG` e `NPASS_BIN` (o `npass` exato que a executou).
+
+### npass-import: importar de outros gerenciadores
+
+Vem junto com a instalação em `PREFIX/share/npass/extensions/npass-import` (precisa de `python3`, só biblioteca padrão, sem rede). Ela **não** fica ativa sozinha:
+
+```bash
+npass extension install /usr/share/npass/extensions/npass-import
+export NPASS_ENABLE_EXTENSIONS=1
+npass import --list
+```
+
+Uso: `npass import [opções] FORMATO ID ARQUIVO...`
+
+```bash
+npass import bitwarden pessoal bitwarden_export.json
+npass import keepassxc pessoal export.csv -p Importado      # tudo sob "Importado/"
+npass import firefox pessoal logins.csv --dry-run            # mostra o que faria, sem gravar
+npass import csv pessoal dados.csv --cols 'url,login,,password' --skip-header
+npass import aegis pessoal aegis-plain.json                  # vira URIs otpauth:// (npass otp)
+npass import bitwarden pessoal export.csv.gpg                # .gpg é decifrado em memória
+npass import pass pessoal ~/.password-store                  # = npass migrate
+npass import pass-secrets pessoal /caminho/da/identidade     # = npass migrate-secrets
+```
+
+Formatos: `csv` (genérico), `bitwarden` (csv/json), `keepassxc`/`keepass`, `firefox`, `chrome`, `lastpass`, `1password`, `aegis`, `andotp`, `pass`, `pass-secrets`.
+
+- Por padrão **pula** o que já existe (reimportar é seguro); `-f` sobrescreve. Títulos repetidos viram `titulo/login`.
+- Opções: `-p PREFIXO`, `-f`, `-d/--dry-run`, `-v`, `--delete-source`, `--encoding`, `--del`, `--cols`, `--skip-header`.
+- O conteúdo segue o formato do `pass` (`senha` na 1ª linha, depois `login:`, `url:`, campos extras, URI OTP e notas), então `npass clip login ...` e `npass otp ...` funcionam.
+- Os segredos trafegam por pipe no stdin do `npass insert --batch`: nunca em argv, variável de ambiente ou arquivo temporário. O lote inteiro gera **um** commit Git.
+- Exports **criptografados** (Bitwarden, Aegis, andOTP) são recusados: exporte a versão sem criptografia, importe e apague. **O arquivo exportado é uma cópia em claro de todas as suas senhas.** Prefira cifrá-lo com `gpg` antes (a extensão lê `.gpg`) ou usar `/dev/shm`. `--delete-source` usa `shred`, que **não é confiável em btrfs** (copy-on-write) nem em SSD.
+- Os parsers foram escritos a partir do formato documentado de cada gerenciador e testados com fixtures sintéticos. Antes de confiar em um formato, importe um export real com `--dry-run` e confira.
 
 ## Desenvolvimento
 
