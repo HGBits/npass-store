@@ -57,12 +57,16 @@ setup() {
 }
 
 @test "DESTDIR + PREFIX (empacotamento) instala dentro do staging, nao no sistema real" {
-	local destdir="$BATS_TEST_TMPDIR/pkgstage"
+	local destdir="$BATS_TEST_TMPDIR/pkgstage" before after
+	# Quem roda os testes pode ja ter o npass instalado em /usr/bin. O que
+	# importa e que o DESTDIR nao o toque: compara inode, mtime e tamanho.
+	before="$(stat -c '%i %Y %s' /usr/bin/npass 2>/dev/null || echo ausente)"
 	run env DESTDIR="$destdir" PREFIX="/usr" "$PROJECT_DIR/install.sh"
 	[ "$status" -eq 0 ]
 	[ -x "$destdir/usr/bin/npass" ]
 	[ -f "$destdir/usr/share/man/man1/npass.1" ]
-	[ ! -e "/usr/bin/npass" ]
+	after="$(stat -c '%i %Y %s' /usr/bin/npass 2>/dev/null || echo ausente)"
+	[ "$before" = "$after" ]
 }
 
 @test "binario instalado e reconstruido a partir do lib atual, nao um bin/npass velho esquecido" {
