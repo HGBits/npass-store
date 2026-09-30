@@ -63,6 +63,18 @@ npass_git_commit() {
 	return 0
 }
 
+# npass nlog - show the last 20 commits in compact form.
+cmd_nlog() {
+	npass_git_ensure || npass_die "$(npass_t erro_git_indisponivel)"
+	git -C "$NPASS_STORE" log --oneline -20
+}
+
+# npass nloglong - show files modified by commits from the last 6 months.
+cmd_nloglong() {
+	npass_git_ensure || npass_die "$(npass_t erro_git_indisponivel)"
+	git -C "$NPASS_STORE" log --diff-filter=M --name-only --since="6 months ago"
+}
+
 # npass git ARGS... - direct passthrough, e.g. `npass git log --stat`,
 # `npass git remote add origin ...`. Makes sure the repo exists first.
 cmd_git() {
