@@ -4,7 +4,7 @@ Gerenciador de senhas para Linux baseado em **Bash + GPG**, com armazenamento po
 
 ## Status
 
-**Versão:** `1.1`
+**Versão:** `1.4`
 **Estado:** versão beta
 
 ## Principais características
