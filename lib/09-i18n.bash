@@ -82,11 +82,6 @@ declare -gA NPASS_MSG_PT=(
 	[verbo_gerar]="gerar"
 	[verbo_fornecer]="fornecer"
 
-	[erro_dir_nao_encontrado]="diretório não encontrado: %s"
-	[erro_informe_id_dir]="informe ID e DIRETÓRIO_ANTIGO"
-	[erro_id_sem_auto_criar]="identidade '%s' não existe e %s não tem .gpg-id para criá-la automaticamente"
-	[warn_migrate_existe]="%s já existe em %s, pulando (use -f para sobrescrever)"
-	[msg_migrate_resumo]="Migração para \"%s\" concluída: %d importado(s), %d pulado(s), %d falhou(aram).\n"
 
 	[erro_comando_desconhecido]="comando desconhecido: %s (veja 'npass help')"
 	[rotulo_aviso]="aviso"
@@ -101,12 +96,9 @@ declare -gA NPASS_MSG_PT=(
 	[prompt_repita]="Repita: "
 	[msg_digite_conteudo]="Digite o novo conteúdo de %s e pressione Ctrl+D quando terminar:\n"
 	[msg_usando_comprimento]="Usando o comprimento da senha antiga: %s\n"
-	[msg_nenhum_arquivo_gpg]="Nenhum arquivo .gpg encontrado em %s.\n"
 	[erro_assinar_gpgid]="falha ao assinar .gpg-id em %s: %s"
 	[erro_assinatura_invalida]="assinatura de .gpg-id inválida em %s - possível adulteração do destinatário GPG: %s"
 	[msg_assinado]="Identidade \"%s\" assinada.\n"
-	[warn_secrets_sem_decifrar]=".secrets.gpg falhou ao decifrar - importando sem nomes reais"
-	[warn_mask_sem_decifrar]=".mask.gpg falhou ao decifrar - importando sem aliases de email"
 	[erro_extensao_symlink]="extensão '%s' recusada: é um link simbólico, não um arquivo regular"
 	[erro_extensao_permissao]="extensão '%s' recusada: arquivo gravável por outro usuário/grupo (permissões inseguras)"
 	[erro_extensao_sem_sig]="extensão '%s' recusada: sem assinatura (.sig) - assine com 'npass extension sign'"
@@ -124,10 +116,7 @@ declare -gA NPASS_MSG_PT=(
 	[erro_campo_nao_encontrado]="campo '%s' não encontrado (ou ambíguo). Campos da entrada: %s"
 	[erro_campo_vazio]="o campo '%s' está vazio"
 	[msg_batch_resumo]="Lote em \"%s\": %d gravada(s), %d pulada(s).\n"
-	[msg_extensao_instalada]="Extensão instalada e assinada: %s\n(habilite com: export NPASS_ENABLE_EXTENSIONS=1)\n"
-	[erro_extensao_origem]="arquivo de extensão inválido (inexistente ou symlink): %s"
-	[erro_extensao_nome]="o arquivo precisa se chamar npass-NOME (recebi: %s)"
-	[erro_extensao_dir]="não foi possível preparar o diretório de extensões: %s"
+	[erro_migrate_movido]="'%s' saiu do core: a importação agora é da extensão npass-import (npass import pass ID DIR | npass import pass-secrets ID DIR). Instale-a pela opção de extensões do install.sh."
 )
 
 declare -gA NPASS_MSG_EN=(
@@ -199,11 +188,6 @@ declare -gA NPASS_MSG_EN=(
 	[verbo_gerar]="generate"
 	[verbo_fornecer]="provide"
 
-	[erro_dir_nao_encontrado]="directory not found: %s"
-	[erro_informe_id_dir]="provide ID and OLD_DIRECTORY"
-	[erro_id_sem_auto_criar]="identity '%s' does not exist and %s has no .gpg-id to auto-create it"
-	[warn_migrate_existe]="%s already exists in %s, skipping (use -f to overwrite)"
-	[msg_migrate_resumo]="Migration to \"%s\" complete: %d imported, %d skipped, %d failed.\n"
 
 	[erro_comando_desconhecido]="unknown command: %s (see 'npass help')"
 	[rotulo_aviso]="warning"
@@ -218,12 +202,9 @@ declare -gA NPASS_MSG_EN=(
 	[prompt_repita]="Repeat: "
 	[msg_digite_conteudo]="Type the new content for %s and press Ctrl+D when done:\n"
 	[msg_usando_comprimento]="Using the old password's length: %s\n"
-	[msg_nenhum_arquivo_gpg]="No .gpg files found in %s.\n"
 	[erro_assinar_gpgid]="failed to sign .gpg-id in %s: %s"
 	[erro_assinatura_invalida]="invalid .gpg-id signature in %s - possible tampering with the GPG recipient: %s"
 	[msg_assinado]="Identity \"%s\" signed.\n"
-	[warn_secrets_sem_decifrar]=".secrets.gpg failed to decrypt - importing without real names"
-	[warn_mask_sem_decifrar]=".mask.gpg failed to decrypt - importing without email aliases"
 	[erro_extensao_symlink]="extension '%s' refused: it's a symlink, not a regular file"
 	[erro_extensao_permissao]="extension '%s' refused: file is writable by another user/group (unsafe permissions)"
 	[erro_extensao_sem_sig]="extension '%s' refused: no signature (.sig) - sign it with 'npass extension sign'"
@@ -241,10 +222,7 @@ declare -gA NPASS_MSG_EN=(
 	[erro_campo_nao_encontrado]="field '%s' not found (or ambiguous). Fields in this entry: %s"
 	[erro_campo_vazio]="field '%s' is empty"
 	[msg_batch_resumo]="Batch into \"%s\": %d written, %d skipped.\n"
-	[msg_extensao_instalada]="Extension installed and signed: %s\n(enable it with: export NPASS_ENABLE_EXTENSIONS=1)\n"
-	[erro_extensao_origem]="invalid extension file (missing or a symlink): %s"
-	[erro_extensao_nome]="the file must be named npass-NAME (got: %s)"
-	[erro_extensao_dir]="could not prepare the extensions directory: %s"
+	[erro_migrate_movido]="'%s' left the core: importing is now handled by the npass-import extension (npass import pass ID DIR | npass import pass-secrets ID DIR). Install it from the extensions option of install.sh."
 )
 
 # npass_t KEY [ARGS...]

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# npass-extension-desc: Importa senhas de outros gerenciadores (Bitwarden, KeePassXC, Firefox, Aegis, ...) e de stores pass/pass-secrets
+# npass-extension-needs: python3
 """npass-import - importa senhas de outros gerenciadores para uma identidade do npass.
 
 Uso:  npass import [opcoes] FORMATO ID [ARQUIVO...]      (npass import --list)
@@ -49,8 +51,21 @@ _M = {
              "the csv format requires --cols (e.g. --cols 'url,login,,password')"),
     "col_vazia": ("--cols sem nenhuma coluna útil", "--cols has no usable column"),
     "id_ls": ("não consegui ler a identidade %s: %s", "could not read identity %s: %s"),
-    "sem_pass_dry": ("'%s' delega ao comando do core e não aceita %s",
-                     "'%s' delegates to the core command and does not accept %s"),
+    "dir_nao_encontrado": ("diretório não encontrado: %s", "directory not found: %s"),
+    "id_sem_auto_criar": ("identidade '%s' não existe e %s não tem .gpg-id para criá-la automaticamente",
+                          "identity '%s' does not exist and %s has no .gpg-id to auto-create it"),
+    "init_falhou": ("não consegui criar a identidade '%s'", "could not create identity '%s'"),
+    "nenhum_gpg": ("Nenhum arquivo .gpg encontrado em %s.", "No .gpg files found in %s."),
+    "ja_existe": ("%s já existe em %s, pulando (use -f para sobrescrever)",
+                  "%s already exists in %s, skipping (use -f to overwrite)"),
+    "falha_decifrar": ("%s: falha ao decifrar, pulando", "%s: failed to decrypt, skipping"),
+    "caminho_invalido": ("%s: caminho lógico inválido, pulando", "%s: invalid logical path, skipping"),
+    "secrets_sem": (".secrets.gpg falhou ao decifrar - importando sem nomes reais",
+                    ".secrets.gpg failed to decrypt - importing without real names"),
+    "mask_sem": (".mask.gpg falhou ao decifrar - importando sem aliases de email",
+                 ".mask.gpg failed to decrypt - importing without email aliases"),
+    "resumo_tree": ("Migração para \"%s\" concluída: %d importado(s), %d pulado(s), %d falhou(aram).",
+                    "Migration to \"%s\" complete: %d imported, %d skipped, %d failed."),
     "um_dir": ("'%s' espera exatamente um diretório de origem", "'%s' expects exactly one source directory"),
     "vazia": ("entrada ignorada (sem senha, OTP nem notas): %s", "skipped entry (no password, OTP or notes): %s"),
     "senha_nl": ("senha com quebra de linha, não importada: %s", "password contains a newline, not imported: %s"),
@@ -381,11 +396,17 @@ FORMATS = {
     "1password": (imp_profile("1password"), "1Password (CSV)", "1Password (CSV)"),
     "aegis": (imp_aegis, "Aegis Authenticator (JSON plain) -> OTP", "Aegis Authenticator (plain JSON) -> OTP"),
     "andotp": (imp_andotp, "andOTP (JSON plain) -> OTP", "andOTP (plain JSON) -> OTP"),
-    "pass": (None, "store pass tradicional (= npass migrate)", "classic pass store (= npass migrate)"),
-    "pass-secrets": (None, "layout pass-secrets-redesign (= npass migrate-secrets)",
-                     "pass-secrets-redesign layout (= npass migrate-secrets)"),
+    "pass": (None, "store pass tradicional (diretório de arquivos .gpg)", "classic pass store (directory of .gpg files)"),
+    "pass-secrets": (None, "layout pass-secrets-redesign (codinomes + .secrets.gpg/.mask.gpg)",
+                     "pass-secrets-redesign layout (codenames + .secrets.gpg/.mask.gpg)"),
 }
-DELEGATED = {"pass": "migrate", "pass-secrets": "migrate-secrets"}
+# Formatos que sao uma ARVORE de .gpg (e nao um arquivo exportado): ver import_tree().
+TREES = ("pass", "pass-secrets")
+
+# Rotulos das notas do pass-secrets. NAO passam pelo t(): viram DADO permanente
+# gravado dentro do segredo, entao nao podem mudar com o idioma da hora da migracao.
+LABEL_REAL = "nome-real"
+LABEL_ALIAS = "email-alias"
 
 # --------------------------------------------------------------------------
 # caminhos logicos
@@ -487,12 +508,13 @@ def existing_paths(binp, ident):
 
 
 def write_batch(binp, ident, items, force):
-    payload = b"".join(p.encode() + b"\0" + c.encode() + b"\0" for p, c in items)
+    enc = lambda v: v.encode("utf-8", "surrogateescape")
+    payload = b"".join(enc(p) + b"\0" + enc(c) + b"\0" for p, c in items)
     cmd = [binp, "insert", "--batch"] + (["-f"] if force else []) + [ident]
     return subprocess.run(cmd, input=payload).returncode
 
 
-def delete_source(path):
+def delete_source(path, quiet=False):
     if path == "-":
         return
     if path.endswith((".gpg", ".pgp", ".asc")):
@@ -503,7 +525,146 @@ def delete_source(path):
             warn(t("shred_btrfs", path))
         if subprocess.run(["shred", "-u", path]).returncode != 0 and os.path.exists(path):
             os.remove(path)
-    print(t("apagado", path), file=sys.stderr)
+    if not quiet:
+        print(t("apagado", path), file=sys.stderr)
+
+
+# --------------------------------------------------------------------------
+# pass / pass-secrets: importar uma ARVORE de .gpg (antes: migrate / migrate-secrets)
+# --------------------------------------------------------------------------
+def gpg_decrypt_file(path):
+    """Decifra em memoria. Devolve o texto SEM as quebras de linha finais (como um
+    $(...) do shell, que e o que o antigo migrate fazia) ou None se falhar."""
+    gpg = os.environ.get("NPASS_GPG", "gpg")
+    r = subprocess.run([gpg, "--quiet", "--batch", "--use-agent", "-d", "-o", "-", path],
+                       stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if r.returncode != 0:
+        return None
+    return r.stdout.decode("utf-8", "surrogateescape").replace("\0", "").rstrip("\n")
+
+
+def parse_codename_map(body):
+    """'CODIGO = valor' por linha. A regex e gulosa: um valor que contem ' = ' parte
+    na ULTIMA ocorrencia (limitacao conhecida do formato, igual ao migrate-secrets)."""
+    out = {}
+    for line in body.splitlines():
+        m = re.match(r"^(.+) = (.+)$", line)
+        if m:
+            out[m.group(1)] = m.group(2)
+    return out
+
+
+def find_gpg_files(root, skip=()):
+    """Todo *.gpg regular (nao symlink) sob root, fora de .git, em ordem estavel."""
+    out = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d != ".git"]
+        for fn in filenames:
+            p = os.path.join(dirpath, fn)
+            if fn.endswith(".gpg") and p not in skip and os.path.isfile(p) and not os.path.islink(p):
+                out.append(p)
+    return sorted(out)
+
+
+def valid_logical(p):
+    """Espelha o npass_check_sneaky_path do core, para que UM nome estranho vindo do
+    disco seja pulado e relatado em vez de abortar o lote inteiro."""
+    return not (p in ("", ".", "..") or p.startswith("/") or p.startswith("../")
+                or p.endswith("/..") or "/../" in p or "\t" in p or "\n" in p)
+
+
+def import_tree(fmt, o, binp, ident, args):
+    if len(args) != 1:
+        die(t("um_dir", fmt), 2)
+    root = args[0]
+    if not os.path.isdir(root):
+        die(t("dir_nao_encontrado", root))
+    root = root.rstrip("/") or "/"
+
+    # Identidade: se nao existe, nasce do .gpg-id da origem (e ja assinada se a origem
+    # tinha .gpg-id.sig). Uma identidade que JA existia nunca e assinada aqui como
+    # efeito colateral: isso continua sendo uma decisao explicita (`npass sign`).
+    gid = os.path.join(root, ".gpg-id")
+    exists = os.path.isfile(os.path.join(os.environ.get("NPASS_STORE", ""), ident, ".gpg-id"))
+    created = False
+    if not exists:
+        if not os.path.isfile(gid):
+            die(t("id_sem_auto_criar", ident, root))
+        if not o.dry_run:
+            with open(gid, encoding="utf-8", errors="replace") as fh:
+                recips = [ln.strip() for ln in fh.read().splitlines() if ln.strip()]
+            cmd = [binp, "init"] + (["--sign"] if os.path.isfile(gid + ".sig") else []) + [ident] + recips
+            if subprocess.run(cmd).returncode != 0:
+                die(t("init_falhou", ident))
+            created = True
+
+    skip = {os.path.join(root, n) for n in (".secrets.gpg", ".mask.gpg")} if fmt == "pass-secrets" else set()
+    files = find_gpg_files(root, skip)
+    if not files:
+        print(t("nenhum_gpg", root))
+        return 0
+
+    secrets, mask = {}, {}
+    if fmt == "pass-secrets" and not o.dry_run:
+        for name, store_, key in ((".secrets.gpg", secrets, "secrets_sem"), (".mask.gpg", mask, "mask_sem")):
+            fp = os.path.join(root, name)
+            if os.path.isfile(fp):
+                body = gpg_decrypt_file(fp)
+                if body is None:
+                    warn(t(key))
+                else:
+                    store_.update(parse_codename_map(body))
+
+    have = set() if (created or not exists) else existing_paths(binp, ident)
+    prefix = comp_group(o.path)
+    items, sources, skipped, failed = [], [], 0, 0
+    for f in files:
+        logical = os.path.relpath(f, root)[:-len(".gpg")]
+        path = "/".join(x for x in (prefix, logical) if x)
+        if not valid_logical(path):
+            warn(t("caminho_invalido", logical))
+            failed += 1
+            continue
+        if path in have and not o.force:
+            warn(t("ja_existe", logical, ident))
+            skipped += 1
+            continue
+        if o.dry_run:
+            print(("! " if path in have else "+ ") + path)
+            items.append((path, ""))
+            continue
+        body = gpg_decrypt_file(f)
+        if body is None:
+            warn(t("falha_decifrar", logical))
+            failed += 1
+            continue
+        if fmt == "pass-secrets":
+            real = secrets.get(logical, "")
+            alias = mask.get(logical.split("/")[0], "")
+            if real:
+                body += "\n# %s: %s" % (LABEL_REAL, real)
+            if alias:
+                body += "\n# %s: %s" % (LABEL_ALIAS, alias)
+        if o.verbose:
+            print(("! " if path in have else "+ ") + path)
+        items.append((path, body))
+        sources.append(f)
+
+    if o.dry_run:
+        print(t("resumo_tree", ident, len(items), skipped, failed))
+        print(t("dry"), file=sys.stderr)
+        return 1 if failed else 0
+
+    if items:
+        rc = write_batch(binp, ident, items, o.force)
+        if rc != 0:
+            warn(t("core_falhou", rc))
+            return rc
+        if o.delete_source:
+            for f in sources:
+                delete_source(f, quiet=True)
+    print(t("resumo_tree", ident, len(items), skipped, failed))
+    return 1 if failed else 0
 
 
 # --------------------------------------------------------------------------
@@ -551,15 +712,8 @@ def main(argv):
 
     binp = npass_bin()
 
-    if fmt in DELEGATED:  # migrate / migrate-secrets vivem no core
-        for flag, on in (("--dry-run", o.dry_run), ("--path", o.path)):
-            if on:
-                die(t("sem_pass_dry", fmt, flag), 2)
-        if len(files) != 1:
-            die(t("um_dir", fmt), 2)
-        cmd = [binp, DELEGATED[fmt]] + (["-f"] if o.force else []) \
-            + (["--delete-source"] if o.delete_source else []) + [ident, files[0]]
-        os.execv(binp, cmd)
+    if fmt in TREES:
+        return import_tree(fmt, o, binp, ident, files)
 
     parser = FORMATS[fmt][0]
     entries = []

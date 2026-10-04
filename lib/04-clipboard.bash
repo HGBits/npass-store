@@ -50,7 +50,7 @@ NPASS_FV=()
 
 # Parse the lines AFTER the first (the first is the password) that look
 # like "key: value" into NPASS_FK / NPASS_FV (keys lower-cased). A leading
-# "# " is accepted because migrate-secrets writes its note lines that way
+# "# " is accepted because npass-import (pass-secrets) writes its note lines that way
 # ("# email-alias: ...", "# nome-real: ...").
 npass_entry_parse() {
 	local content="$1" line key first=1

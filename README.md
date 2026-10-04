@@ -4,8 +4,8 @@ Gerenciador de senhas para Linux baseado em **Bash + GPG**, com armazenamento po
 
 ## Status
 
-**Versão:** `1.4`
-**Estado:** versão beta
+**Versão:** `2.0`
+**Estado:** Pronto para uso
 
 ## Principais características
 
@@ -204,23 +204,22 @@ uma senha não a apaga do histórico.
 
 Os caminhos lógicos das senhas não são utilizados nas mensagens desses commits.
 
-## Migração
+## Migração e importação
 
-Migrar um store tradicional do `pass`:
-
-```bash
-npass migrate pessoal ~/.password-store
-```
-
-Migrar um store `pass-secrets-redesign`:
+Toda a importação vive na extensão opcional `npass-import` (veja "Extensões"), inclusive a migração de stores do `pass`:
 
 ```bash
-npass migrate-secrets pessoal /caminho/da/identidade
+npass import pass pessoal ~/.password-store                  # store pass tradicional
+npass import pass-secrets pessoal /caminho/da/identidade     # layout pass-secrets-redesign
 ```
 
-Por padrão, as fontes não são removidas.
+- Se a identidade `pessoal` ainda não existir e a origem tiver `.gpg-id`, ela é criada com os mesmos destinatários, e já **assinada** se a origem tiver `.gpg-id.sig`. Uma identidade que já existia nunca é assinada como efeito colateral (isso continua sendo `npass sign`).
+- As fontes não são removidas por padrão (`--delete-source` apaga cada `.gpg` depois de importar com sucesso). O que já existe é pulado; `-f` sobrescreve. `-p PREFIXO` e `--dry-run` também valem aqui.
+- No `pass-secrets` o codinome continua sendo o caminho lógico (para não ir parar no histórico do shell nem em `/proc/*/cmdline`); o nome real e o alias de e-mail viram notas dentro do segredo cifrado (`# nome-real: ...`, `# email-alias: ...`).
 
-Para importar de **outros gerenciadores** (Bitwarden, KeePassXC, Firefox, Chrome, LastPass, 1Password, Aegis, andOTP, CSV genérico), use a extensão `npass-import` (seção abaixo).
+> `npass migrate` e `npass migrate-secrets` não existem mais no core: viraram `npass import pass` e `npass import pass-secrets`. Rodar o comando antigo mostra esse aviso.
+
+Para importar de **outros gerenciadores** (Bitwarden, KeePassXC, Firefox, Chrome, LastPass, 1Password, Aegis, andOTP, CSV genérico), é a mesma extensão: seção abaixo.
 
 ## Extensões
 
@@ -232,17 +231,36 @@ Para habilitá-las:
 export NPASS_ENABLE_EXTENSIONS=1
 ```
 
-Extensões precisam ser arquivos regulares, possuir permissões restritivas e uma assinatura GPG válida.
+Extensões precisam ser arquivos regulares, possuir permissões restritivas e uma assinatura GPG válida, feita por uma chave **sua** (`npass extension sign ARQUIVO`; confira com `npass extension list`). A extensão recebe `NPASS_STORE`, `NPASS_GPG`, `NPASS_LANG` e `NPASS_BIN` (o `npass` exato que a executou).
 
-`npass extension install ARQUIVO [KEYID]` copia o arquivo (que deve se chamar `npass-NOME`) para o diretório de extensões e o assina com a sua chave num passo só. Instalar É o ato de confiar: leia o arquivo antes. A extensão recebe `NPASS_STORE`, `NPASS_GPG`, `NPASS_LANG` e `NPASS_BIN` (o `npass` exato que a executou).
+### Instalando as extensões que acompanham o repositório
+
+O `install.sh` **não instala nenhuma extensão por padrão**. Rodando num terminal, depois de instalar o npass ele oferece cada extensão de `extensions/`, uma por uma e com uma descrição curta; as que você aceitar já vão direto para o destino final (`~/.local/share/npass/extensions`) e são assinadas com a sua chave. Instalar É o ato de confiar: leia antes.
+
+```bash
+sudo ./install.sh                  # instala o npass e, num terminal, oferece as extensões
+./install.sh --extensions-only     # só as extensões (ex.: você usa o pacote do AUR)
+./install.sh --no-extensions       # nunca oferece
+./install.sh --sign-key=KEYID      # chave usada para assinar (padrão: a padrão do gpg)
+```
+
+- Sob `sudo`, o destino e a assinatura são do usuário que chamou o `sudo` (`SUDO_USER`), não do root.
+- Nada é perguntado quando a entrada não é um terminal nem com `DESTDIR` (empacotamento). O PKGBUILD usa `--no-extensions`.
+- `--uninstall` remove só o npass; as suas extensões ficam onde estão.
+- Se a assinatura falhar, o arquivo fica no lugar e o instalador mostra o comando exato (`npass extension sign ...`).
+- Para uma extensão sua aparecer no instalador, coloque nas 20 primeiras linhas `# npass-extension-desc: descrição curta` e, opcionalmente, `# npass-extension-needs: comando1 comando2` (avisa se faltar). Um arquivo `npass-foo.bash` é instalado como `npass-foo` e roda como `npass foo`.
+
+Extensões que acompanham:
+
+- **`npass-import`**: importa de outros gerenciadores e de stores `pass`/`pass-secrets` (abaixo). Precisa de `python3`.
+- **`npass-clip-x11`**: copia a senha ou um campo para o clipboard do X11, para quem ainda usa sessão gráfica X11 (o `clip` do core é Wayland). `npass clip-x11 [CAMPO] ID DIR/PASS`. Precisa de `xclip`.
+- **`npass-wclip`**: copia a senha ou um campo para o clipboard do windows, Por favor ler [Documentação](~/windows_Requisitos.md)
 
 ### npass-import: importar de outros gerenciadores
 
-Vem junto com a instalação em `PREFIX/share/npass/extensions/npass-import` (precisa de `python3`, só biblioteca padrão, sem rede). Ela **não** fica ativa sozinha:
+Só biblioteca padrão do Python 3, sem rede.
 
 ```bash
-npass extension install /usr/share/npass/extensions/npass-import
-export NPASS_ENABLE_EXTENSIONS=1
 npass import --list
 ```
 
@@ -255,8 +273,8 @@ npass import firefox pessoal logins.csv --dry-run            # mostra o que fari
 npass import csv pessoal dados.csv --cols 'url,login,,password' --skip-header
 npass import aegis pessoal aegis-plain.json                  # vira URIs otpauth:// (npass otp)
 npass import bitwarden pessoal export.csv.gpg                # .gpg é decifrado em memória
-npass import pass pessoal ~/.password-store                  # = npass migrate
-npass import pass-secrets pessoal /caminho/da/identidade     # = npass migrate-secrets
+npass import pass pessoal ~/.password-store                  # store pass tradicional
+npass import pass-secrets pessoal /caminho/da/identidade     # layout pass-secrets-redesign
 ```
 
 Formatos: `csv` (genérico), `bitwarden` (csv/json), `keepassxc`/`keepass`, `firefox`, `chrome`, `lastpass`, `1password`, `aegis`, `andotp`, `pass`, `pass-secrets`.
@@ -266,7 +284,7 @@ Formatos: `csv` (genérico), `bitwarden` (csv/json), `keepassxc`/`keepass`, `fir
 - O conteúdo segue o formato do `pass` (`senha` na 1ª linha, depois `login:`, `url:`, campos extras, URI OTP e notas), então `npass clip login ...` e `npass otp ...` funcionam.
 - Os segredos trafegam por pipe no stdin do `npass insert --batch`: nunca em argv, variável de ambiente ou arquivo temporário. O lote inteiro gera **um** commit Git.
 - Exports **criptografados** (Bitwarden, Aegis, andOTP) são recusados: exporte a versão sem criptografia, importe e apague. **O arquivo exportado é uma cópia em claro de todas as suas senhas.** Prefira cifrá-lo com `gpg` antes (a extensão lê `.gpg`) ou usar `/dev/shm`. `--delete-source` usa `shred`, que **não é confiável em btrfs** (copy-on-write) nem em SSD.
-- Os parsers foram escritos a partir do formato documentado de cada gerenciador e testados com fixtures sintéticos. Antes de confiar em um formato, importe um export real com `--dry-run` e confira.
+- Os parsers de formatos exportados foram escritos a partir do formato documentado de cada gerenciador e testados com fixtures sintéticos. Antes de confiar em um formato, importe um export real com `--dry-run` e confira.
 
 ## Desenvolvimento
 

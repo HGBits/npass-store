@@ -13,7 +13,7 @@ setup() {
 	export NPASS_EXTENSIONS_DIR="$BATS_TEST_TMPDIR/ext"
 	export NPASS_ENABLE_EXTENSIONS=1
 	export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
-	"$NPASS" extension install "$BATS_TEST_DIRNAME/../extensions/npass-import" "$FPR" >/dev/null
+	npass_test_install_ext npass-import || return 1
 	"$NPASS" init HG "$FPR" >/dev/null
 	F="$BATS_TEST_TMPDIR/in"
 }
@@ -379,43 +379,4 @@ JSON
 	run "$NPASS" import csv HG "$F.csv" --cols 'title,password' --delete-source
 	[ "$status" -eq 1 ]
 	[ -e "$F.csv" ]
-}
-
-# --- migrate / migrate-secrets incluidos ---------------------------------------------
-
-@test "import pass delega ao migrate (store pass tradicional)" {
-	local old="$BATS_TEST_TMPDIR/old"
-	mkdir -p "$old/email"
-	printf '%s\n' "$FPR" >"$old/.gpg-id"
-	printf 'senhaGmail1\n' | gpg --batch --yes --trust-model always -r "$FPR" -e -o "$old/email/gmail.gpg"
-	run "$NPASS" import pass HG "$old"
-	[ "$status" -eq 0 ]
-	run "$NPASS" show HG email/gmail
-	[ "$output" = "senhaGmail1" ]
-}
-
-@test "import pass-secrets delega ao migrate-secrets (caminho logico = codinome)" {
-	local old="$BATS_TEST_TMPDIR/old-secrets"
-	mkdir -p "$old/LOFT"
-	printf '%s\n' "$FPR" >"$old/.gpg-id"
-	printf 'LOFT/Zen = Amazon\n' | gpg --batch --yes --trust-model always -r "$FPR" -e -o "$old/.secrets.gpg"
-	printf 'senhaAmazon\n' | gpg --batch --yes --trust-model always -r "$FPR" -e -o "$old/LOFT/Zen.gpg"
-	run "$NPASS" import pass-secrets HG "$old"
-	[ "$status" -eq 0 ]
-	run "$NPASS" show HG LOFT/Zen
-	[[ "$output" == "senhaAmazon"* ]]
-}
-
-@test "import pass repassa -f e --delete-source ao core; --dry-run e -p sao recusados" {
-	local old="$BATS_TEST_TMPDIR/old"
-	mkdir -p "$old"
-	printf '%s\n' "$FPR" >"$old/.gpg-id"
-	printf 'x\n' | gpg --batch --yes --trust-model always -r "$FPR" -e -o "$old/a.gpg"
-	run "$NPASS" import pass HG "$old" --dry-run
-	[ "$status" -eq 2 ]
-	run "$NPASS" import pass HG "$old" -p Prefixo
-	[ "$status" -eq 2 ]
-	run "$NPASS" import pass HG "$old" --delete-source
-	[ "$status" -eq 0 ]
-	[ ! -e "$old/a.gpg" ]
 }

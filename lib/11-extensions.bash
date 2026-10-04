@@ -140,29 +140,6 @@ cmd_extension_sign() {
 	npass_t msg_extensao_assinada "$path"
 }
 
-# npass extension install FILE [KEYID]
-# Copies FILE (must be named npass-NAME) into the extensions directory and
-# signs it with your key in one step. Installing IS the act of trusting
-# it: read the file first. A symlink source is refused, and any existing
-# target is replaced (never written through).
-cmd_extension_install() {
-	local src="$1" keyid="$2"
-	[[ -z "$src" ]] && npass_die "uso: npass extension install ARQUIVO [KEYID]"
-	if [[ -L "$src" || ! -f "$src" ]]; then
-		npass_die "$(npass_t erro_extensao_origem "$src")"
-	fi
-	local name="${src##*/}"
-	[[ "$name" == npass-?* && "$name" != *.sig ]] || npass_die "$(npass_t erro_extensao_nome "$name")"
-	local dir; dir="$(npass_extensions_dir)"
-	mkdir -p -- "$dir" || npass_die "$(npass_t erro_extensao_dir "$dir")"
-	chmod 700 -- "$dir" 2>/dev/null
-	local dest="$dir/$name"
-	rm -f -- "$dest" "$dest.sig"
-	install -m 755 -- "$src" "$dest" || npass_die "$(npass_t erro_extensao_dir "$dir")"
-	npass_gpg_detach_sign "$dest" "$dest.sig" "$keyid"
-	npass_t msg_extensao_instalada "$dest"
-}
-
 cmd_extension_list() {
 	local dir; dir="$(npass_extensions_dir)"
 	if [[ ! -d "$dir" ]]; then
@@ -190,8 +167,7 @@ cmd_extension() {
 	local sub="$1"; shift
 	case "$sub" in
 	sign) cmd_extension_sign "$@" ;;
-	install) cmd_extension_install "$@" ;;
 	list) cmd_extension_list "$@" ;;
-	*) npass_die "uso: npass extension [sign CAMINHO [KEYID] | install ARQUIVO [KEYID] | list]" ;;
+	*) npass_die "uso: npass extension [sign CAMINHO [KEYID] | list]" ;;
 	esac
 }

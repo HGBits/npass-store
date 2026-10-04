@@ -242,61 +242,6 @@ Check whether a string is a well\-formed
 .B otpauth://
 URI.
 .TP
-.BI "migrate " "[\-f] [\-\-delete\-source] " ID " " OLD_DIR
-Import a legacy, vanilla
-.BR pass (1)
-store (a real directory tree where names are plaintext) into
-.IR ID ,
-obscuring every imported name behind the map. If
-.I ID
-does not exist yet and
-.I OLD_DIR
-has a
-.BR .gpg\-id ,
-the identity is created automatically with the same recipients, and
-signed on the spot
-.RB ( "as if by " "init \-\-sign" )
-if
-.I OLD_DIR
-also has a
-.BR .gpg\-id.sig .
-Migrating into an
-.I ID
-that already exists never signs it as a side effect \- that stays an
-explicit
-.B sign
-call.
-.B \-\-delete\-source
-shreds each old file after it is successfully imported (off by
-default \- migration is non\-destructive unless asked otherwise).
-.TP
-.BI "migrate\-secrets " "[\-f] [\-\-delete\-source] " ID " " OLD_IDENTITY_DIR
-Import an identity from the
-.I pass\-secrets\-redesign
-layout: a tree where both the category (directory) and the file are
-already codenames, with a separate
-.B .secrets.gpg
-translating \c
-.RI \(dq CODENAME " = Real Name" \(dq
-per line, and optionally a
-.B .mask.gpg
-translating \c
-.RI \(dq CATEGORY " = email\-alias" \(dq .
-The codename (e.g.
-.IR IST/Bvop )
-becomes the npass logical path unchanged \- typing habits don't
-change. The real name and email alias, when present, are appended as
-plain note lines
-.RI ( "# nome\-real: ..." ", " "# email\-alias: ..." )
-inside the already\-encrypted blob itself, never in the map, in a git
-commit, or on the command line: see
-.B SECURITY
-for why the codename, not the real name, had to stay the CLI\-visible
-value. Auto\-creates and auto\-signs the destination identity under
-the same rule as
-.B migrate
-above.
-.TP
 .BI "git " ARGS ...
 Passthrough to
 .BI "git \-C " $NPASS_STORE " " ARGS .
@@ -313,16 +258,6 @@ over an extension executable with your own key. Required before that
 extension will run \- see
 .B EXTENSIONS
 below.
-.TP
-.BI "extension install " FILE " [" KEYID ]
-Copy
-.I FILE
-(which must be named
-.BR npass\-NAME )
-into the extensions directory and sign it with your key in one step.
-Installing is the act of trusting it: read the file first. A symlink
-source is refused, and an existing target is replaced rather than
-written through.
 .TP
 .B "extension list"
 List every
@@ -434,24 +369,56 @@ and
 .B npass
 that launched them) in the environment.
 .PP
+.B install.sh
+installs no extension by default. Run from a terminal it offers each bundled
+extension (from
+.IR extensions/ )
+one by one with a short description, moves each accepted one straight to the
+user's extensions directory and signs it with the user's key; see
+.B ./install.sh \-\-help
+(\fB\-\-extensions\-only\fR, \fB\-\-no\-extensions\fR, \fB\-\-sign\-key\fR).
+.PP
 .B npass\-import
-ships with the program in
-.IR PREFIX/share/npass/extensions/ .
-It imports from other password managers (Bitwarden, KeePass/KeePassXC, Firefox,
-Chrome, LastPass, 1Password, Aegis, andOTP, generic CSV) and, for the classic
+(needs
+.BR python3 )
+imports from other password managers (Bitwarden, KeePass/KeePassXC, Firefox,
+Chrome, LastPass, 1Password, Aegis, andOTP, generic CSV): see
+.B npass import \-\-list
+and the README. It is also where legacy
 .BR pass (1)
-layouts, delegates to
+stores are imported, with
+.B npass import pass [\-f] [\-\-delete\-source] ID OLD_DIR
+(a vanilla tree where names are plaintext) and
+.B npass import pass\-secrets [\-f] [\-\-delete\-source] ID OLD_IDENTITY_DIR
+(the pass\-secrets\-redesign layout: codename category/file, with a separate
+.B .secrets.gpg
+translating
+.RI \(dq CODENAME " = Real Name" \(dq
+and an optional
+.B .mask.gpg
+translating
+.RI \(dq CATEGORY " = email\-alias" \(dq ).
+These replace the old
 .B migrate
 and
-.BR migrate\-secrets .
-Enable it with
-.B npass extension install
-and
-.BR "export NPASS_ENABLE_EXTENSIONS=1" ;
-see
-.B npass import \-\-list
-and the README. It needs
-.BR python3 .
+.B migrate\-secrets
+core commands. If
+.I ID
+does not exist yet and the source has a
+.BR .gpg\-id ,
+the identity is created with the same recipients, and signed on the spot
+.RB ( "as if by " "init \-\-sign" )
+if the source also has a
+.BR .gpg\-id.sig ;
+importing into an existing identity never signs it. For
+.BR pass\-secrets ,
+the codename becomes the logical path unchanged, and the real name and email
+alias are appended as note lines
+.RI ( "# nome\-real: ..." ", " "# email\-alias: ..." )
+inside the encrypted blob, never in the map, a git commit or the command line.
+.B npass\-clip\-x11
+copies the password or a field to the X11 clipboard (needs
+.BR xclip ).
 .B npass
 supports third\-party commands as external executables, off by
 default. This is Model A (a separate process, any language) rather
@@ -620,7 +587,7 @@ claims \- so tampering with it cannot expose secrets you already
 have; it can only try to hijack secrets you haven't written yet, and
 that is exactly the attempt this catches.
 .TP
-.B migrate\-secrets keeps the codename as the logical path on purpose.
+.B import pass\-secrets keeps the codename as the logical path on purpose.
 The npass logical path is passed as a literal command\-line argument
 on every
 .BR show / edit / generate " etc. call \- it lands in shell history and"
@@ -649,11 +616,11 @@ search requires decrypting every candidate. This matches the
 inherent cost of searching an encrypted store and is not specific to
 .BR npass .
 .PP
-.B migrate
+.B import pass
 only understands a vanilla
 .BR pass (1)
 directory\-tree layout;
-.B migrate\-secrets
+.B import pass\-secrets
 only understands the specific pass\-secrets\-redesign layout described
 above. A store from any other name\-obscuring scheme needs its own
 dedicated importer.
@@ -667,9 +634,9 @@ npass clip personal email/gmail
 npass otp personal email/gmail
 npass update \-a \-f personal email/
 npass git init
-npass migrate personal ~/.password\-store
+NPASS_ENABLE_EXTENSIONS=1 npass import pass personal ~/.password\-store
 npass init \-\-sign personal 1B95\&...940B7AE4E
-npass migrate\-secrets personal ~/old\-store/ID\-Pessoal/HG
+NPASS_ENABLE_EXTENSIONS=1 npass import pass\-secrets personal ~/old\-store/ID\-Pessoal/HG
 npass extension sign ~/.local/share/npass/extensions/npass\-mycmd
 NPASS_ENABLE_EXTENSIONS=1 npass mycmd
 .EE

@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Core que sustenta as extensoes: insert --batch, extension install, NPASS_BIN,
+# Core que sustenta as extensoes: insert --batch, NPASS_BIN,
 # e a regressao do mapa vazio (linha magica vazando como entrada).
 
 setup() {
@@ -77,55 +77,14 @@ commits() { git -C "$NPASS_STORE" rev-list --count HEAD; }
 	[ "$(printf '%s\n' "$output" | grep -c '^NPASS-MAP-1')" -eq 1 ]
 }
 
-# --- extension install ---------------------------------------------------------
-
-mkext() {
-	printf '#!/bin/bash\necho "ola $*"\n' >"$BATS_TEST_TMPDIR/npass-ola"
-	chmod 755 "$BATS_TEST_TMPDIR/npass-ola"
-}
-
-@test "extension install copia, assina e a extensao passa a executar" {
-	mkext
-	run "$NPASS" extension install "$BATS_TEST_TMPDIR/npass-ola" "$FPR"
-	[ "$status" -eq 0 ]
-	[ -x "$NPASS_EXTENSIONS_DIR/npass-ola" ]
-	[ -f "$NPASS_EXTENSIONS_DIR/npass-ola.sig" ]
-	NPASS_ENABLE_EXTENSIONS=1 run "$NPASS" ola mundo
-	[ "$status" -eq 0 ]
-	[ "$output" = "ola mundo" ]
-}
-
-@test "extension install recusa nome fora do padrao npass-NOME" {
-	printf '#!/bin/bash\n' >"$BATS_TEST_TMPDIR/qualquer"
-	run "$NPASS" extension install "$BATS_TEST_TMPDIR/qualquer" "$FPR"
-	[ "$status" -ne 0 ]
-	[ ! -e "$NPASS_EXTENSIONS_DIR/qualquer" ]
-}
-
-@test "extension install recusa symlink como origem" {
-	mkext
-	ln -s "$BATS_TEST_TMPDIR/npass-ola" "$BATS_TEST_TMPDIR/npass-link"
-	run "$NPASS" extension install "$BATS_TEST_TMPDIR/npass-link" "$FPR"
-	[ "$status" -ne 0 ]
-	[ ! -e "$NPASS_EXTENSIONS_DIR/npass-link" ]
-}
-
-@test "extension install substitui uma versao anterior sem escrever atraves de symlink" {
-	mkext
-	mkdir -p "$NPASS_EXTENSIONS_DIR"
-	echo alvo >"$BATS_TEST_TMPDIR/alvo"
-	ln -s "$BATS_TEST_TMPDIR/alvo" "$NPASS_EXTENSIONS_DIR/npass-ola"
-	"$NPASS" extension install "$BATS_TEST_TMPDIR/npass-ola" "$FPR"
-	[ ! -L "$NPASS_EXTENSIONS_DIR/npass-ola" ]
-	[ "$(cat "$BATS_TEST_TMPDIR/alvo")" = "alvo" ]
-}
-
 # --- NPASS_BIN -----------------------------------------------------------------
 
 @test "a extensao recebe NPASS_BIN apontando para o npass que a executou" {
 	printf '#!/bin/bash\nprintf "%%s" "$NPASS_BIN"\n' >"$BATS_TEST_TMPDIR/npass-quem"
 	chmod 755 "$BATS_TEST_TMPDIR/npass-quem"
-	"$NPASS" extension install "$BATS_TEST_TMPDIR/npass-quem" "$FPR" >/dev/null
+	mkdir -p "$NPASS_EXTENSIONS_DIR"
+	install -m 755 "$BATS_TEST_TMPDIR/npass-quem" "$NPASS_EXTENSIONS_DIR/npass-quem"
+	"$NPASS" extension sign "$NPASS_EXTENSIONS_DIR/npass-quem" "$FPR" >/dev/null
 	NPASS_ENABLE_EXTENSIONS=1 run "$NPASS" quem
 	[ "$status" -eq 0 ]
 	[ "$output" = "$(readlink -f "$NPASS")" ]

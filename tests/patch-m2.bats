@@ -92,7 +92,7 @@ mkentry() {
 	[ "$(cat "$CLIPFILE")" = "a@x.com" ]
 }
 
-@test "clip acha campos gravados como '# chave: valor' (formato do migrate-secrets)" {
+@test "clip acha campos gravados como '# chave: valor' (formato do import pass-secrets)" {
 	mkentry
 	"$NPASS" clip nome-real HG Mips/Natty
 	sleep 0.3

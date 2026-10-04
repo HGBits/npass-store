@@ -22,8 +22,6 @@ npass_main() {
 	git) cmd_git "$@" ;;
 	log) cmd_log "$@" ;;
 	loglong) cmd_loglong "$@" ;;
-	migrate) cmd_migrate "$@" ;;
-	migrate-secrets) cmd_migrate_secrets "$@" ;;
 	sign) cmd_sign "$@" ;;
 	extension) cmd_extension "$@" ;;
 	clip) cmd_clip "$@" ;;
@@ -50,7 +48,6 @@ npass_main() {
 			  identities               lista as identidades e quantas senhas cada uma tem
 			  sign ID [KEYID]          assina (ou reassina) o .gpg-id de uma identidade
 			  extension sign CAMINHO [KEYID]   assina um executável de extensão
-			  extension install ARQUIVO [KEYID]   copia para o diretório de extensões e assina
 			  extension list           lista extensões e se cada uma passaria nas checagens
 			  show ID DIR/PASS         mostra um segredo
 			  clip [CAMPO] ID DIR/PASS copia a senha (padrão), 'all' ou um campo 'chave: valor'
@@ -67,8 +64,6 @@ npass_main() {
 			  git ARGS...              passthrough para git dentro do store (repositório criado no primeiro init)
 			  log                     mostra os 20 últimos commits em formato resumido
 			  loglong                 mostra arquivos modificados nos últimos 6 meses
-			  migrate [-f] [--delete-source] ID DIR_ANTIGO   importa um store pass tradicional
-			  migrate-secrets [-f] [--delete-source] ID DIR_IDENTIDADE_ANTIGA   importa layout pass-secrets-redesign
 			  otp ID DIR/PASS          gera o código OTP (TOTP/HOTP) do segredo
 			  otp insert [-f] ID DIR/PASS   insere/atualiza a URI OTP (interativo)
 			  otp uri [-c|-q] ID DIR/PASS   mostra a URI OTP, copia, ou exibe QR
@@ -77,6 +72,9 @@ npass_main() {
 			Não existe modo de caminho físico "clássico": todo comando exige ID.
 		_EOF
 		;;
+	# Importing lives in the npass-import extension now; say so instead of
+	# a bare "unknown command" for the two names people already know.
+	migrate | migrate-secrets) npass_die "$(npass_t erro_migrate_movido "$cmd")" ;;
 	*) npass_try_extension "$cmd" "$@" || npass_die "$(npass_t erro_comando_desconhecido "$cmd")" ;;
 	esac
 }

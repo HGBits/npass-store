@@ -27,8 +27,9 @@ license=('gplv3')
 depends=('bash' 'gnupg')
 optdepends=(
 	'git: para "npass git" e commits automáticos por identidade'
-	'python: para a extensão npass-import (importa de Bitwarden, KeePassXC, Firefox, Aegis, etc.)'
-	'wl-clipboard: para "npass clip" e "npass otp clip" (Wayland-only, sem fallback X11)'
+	'python: para a extensão opcional npass-import (instale com ./install.sh --extensions-only)'
+	'wl-clipboard: para "npass clip" e "npass otp clip" (Wayland; para X11 use a extensão opcional npass-clip-x11)'
+	'xclip: para a extensão opcional npass-clip-x11 (clipboard em sessões X11)'
 	'oathtool: para "npass otp" (ou otptool)'
 	'otptool: alternativa ao oathtool para "npass otp"'
 	'qrencode: para "npass otp uri -q" (QR code no terminal)'
@@ -56,5 +57,5 @@ build() {
 
 package() {
 	cd "$pkgname" || exit 1
-	PREFIX=/usr DESTDIR="$pkgdir" ./install.sh
+	PREFIX=/usr DESTDIR="$pkgdir" ./install.sh --no-extensions
 }

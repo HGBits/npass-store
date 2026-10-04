@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # npass-clip-x11 - X11 clipboard extension for npass.
+# npass-extension-desc: Copia senha ou campo para o clipboard do X11 (xclip), para quem ainda usa sessão gráfica X11
+# npass-extension-needs: xclip
 #
 # Requires:
 #   - X11
