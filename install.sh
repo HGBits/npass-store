@@ -74,6 +74,11 @@ bindir="$DESTDIR${BINDIR:-$PREFIX/bin}"
 mandir="$DESTDIR$PREFIX/share/man/man1"
 bin_target="$bindir/npass"
 man_target="$mandir/npass.1"
+# The EFF wordlists for `npass diceware` / `npass memorable`. This is the shipped
+# TEMPLATE, found by npass relative to its own binary; on first use npass copies it
+# into the user's tree ($NPASS_STORE/wordlist.txt), which is where it is read from.
+words_dir="$DESTDIR$PREFIX/share/npass/encrypts_alternatives"
+words_target="$words_dir/wordlist.txt"
 
 if [[ -n "$DESTDIR" && "$ext_mode" == yes ]]; then
 	echo "install.sh: extensões moram no diretório do usuário e são assinadas por ele; não combinam com DESTDIR (empacotamento)." >&2
@@ -201,13 +206,14 @@ fi
 
 if [[ $uninstall -eq 1 ]]; then
 	removed=0
-	for f in "$bin_target" "$man_target"; do
+	for f in "$bin_target" "$man_target" "$words_target"; do
 		if [[ -e "$f" ]]; then
 			rm -f -- "$f"
 			echo "removido: $f"
 			removed=1
 		fi
 	done
+	rmdir -- "$words_dir" "$DESTDIR$PREFIX/share/npass" 2>/dev/null || true
 	[[ $removed -eq 0 ]] && echo "nada instalado em ${BINDIR:-$PREFIX/bin} (DESTDIR=${DESTDIR:-<vazio>}) para remover."
 	exit 0
 fi
@@ -234,11 +240,13 @@ fi
 echo "Reconstruindo bin/npass a partir de lib/*.bash..."
 bash build.sh
 
-mkdir -p "$bindir" "$mandir"
+mkdir -p "$bindir" "$mandir" "$words_dir"
 install -m 755 bin/npass "$bin_target"
 install -m 644 man/npass.1 "$man_target"
+install -m 644 encrypts_alternatives/wordlist.txt "$words_target"
 echo "instalado: $bin_target"
 echo "instalado: $man_target"
+echo "instalado: $words_target"
 
 # Soft dependency check - informational only. Packaging (the AUR
 # PKGBUILD's depends=()) is what actually enforces this; a manual

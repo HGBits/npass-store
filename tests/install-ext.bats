@@ -22,7 +22,7 @@ inst() { "$PROJECT_DIR/install.sh" --prefix="$PREFIX" "$@"; }
 	[ -x "$PREFIX/bin/npass" ]
 	[[ "$output" != *"Extensões opcionais"* ]]
 	[ ! -e "$NPASS_EXTENSIONS_DIR" ]
-	[ ! -e "$PREFIX/share/npass" ]
+	[ ! -e "$PREFIX/share/npass/extensions" ]   # (share/npass tem a wordlist, mas nenhuma extensao)
 }
 
 @test "--no-extensions nunca pergunta, mesmo com respostas disponiveis" {
@@ -36,7 +36,7 @@ inst() { "$PROJECT_DIR/install.sh" --prefix="$PREFIX" "$@"; }
 	run env DESTDIR="$BATS_TEST_TMPDIR/stage" "$PROJECT_DIR/install.sh" --prefix=/usr
 	[ "$status" -eq 0 ]
 	[[ "$output" != *"Extensões opcionais"* ]]
-	[ ! -e "$BATS_TEST_TMPDIR/stage/usr/share/npass" ]
+	[ ! -e "$BATS_TEST_TMPDIR/stage/usr/share/npass/extensions" ]
 	run env DESTDIR="$BATS_TEST_TMPDIR/stage" "$PROJECT_DIR/install.sh" --prefix=/usr --extensions
 	[ "$status" -ne 0 ]
 	[[ "$output" == *"DESTDIR"* ]]

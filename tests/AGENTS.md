@@ -22,6 +22,7 @@ Testes Bats do projeto. Use-os como índice de comportamento esperado antes de a
 | `store-extras.bats` | comportamentos extras do store |
 | `i18n.bats` | internacionalização |
 | `patch-m2.bats` | regressão/patch específico |
+| `diceware.bats` | `diceware`, `memorable`, lista de palavras, sorteio sem viés, instalação da lista |
 
 ## Fixtures GPG
 

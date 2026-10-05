@@ -132,6 +132,42 @@ copies it to the clipboard instead of printing it.
 replaces only the first line of an existing multi\-line entry,
 preserving any following lines (notably an OTP URI) untouched.
 .TP
+.BI "diceware " "[\-c] [\-f] [\-\-in\-place] [\-s " SEP "] " ID " " DIR/PASS " [" WORDS ]
+Generate a diceware passphrase of
+.I WORDS
+words (4 to 20, default 6) from the EFF Large list and store it in the vault. The
+passphrase itself is not printed; instead the
+.I height
+of each word (its dice number in the published list) is written to
+.B stderr
+for the user to copy onto paper, with the separator and a warning. With the
+paper, the list and the separator the passphrase can be rebuilt by hand if the
+password manager is lost. Heights are never stored by
+.BR npass .
+.B \-s
+sets the separator (0 to 3 characters; default
+.BR \- ),
+.B \-c
+copies the passphrase to the clipboard, and
+.B \-\-in\-place
+replaces only the first line of an existing entry, as in
+.BR generate .
+.TP
+.BI "memorable " "[\-c] [\-f] [\-\-in\-place] [\-s " SEP "] [\-l " LIST "] " ID " " DIR/PASS " [" WORDS ]
+Like
+.BR diceware ,
+but for passphrases meant to be memorised: words come from the EFF Short lists
+.RB ( short
+= both lists, 2448 distinct words;
+.B short1
+or
+.BR short2 ,
+selected with
+.BR \-l ),
+the phrase is printed (or copied with
+.BR \-c ),
+and there is no height and nothing to write down.
+.TP
 .BI "edit " ID " " DIR/PASS
 Open the entry's raw content in
 .BR $EDITOR " (default " vi )
@@ -328,6 +364,26 @@ and for
 .B \-l
 is not given. Default: 25.
 .TP
+.B NPASS_DICEWARE_SEP
+Preset separator for
+.B diceware
+and
+.BR memorable :
+0 to 3 characters, no control characters. An empty value means no separator.
+.B \-\-sep
+overrides it. Default:
+.BR \- .
+.TP
+.B NPASS_WORDLIST
+Path of the wordlist. Default:
+.IR $NPASS_STORE/wordlist.txt .
+.TP
+.B NPASS_WORDLIST_SRC
+Where to copy the wordlist from the first time it is needed, overriding the
+copy found relative to the
+.B npass
+executable.
+.TP
 .B EDITOR
 Used by
 .B edit
@@ -343,6 +399,24 @@ and
 .B otp clip
 to work.
 .SH FILES
+.TP
+.I $NPASS_STORE/wordlist.txt
+The EFF wordlists used by
+.B diceware
+and
+.BR memorable ,
+in one file: comment lines,
+.B [large]
+.B [short1]
+.B [short2]
+section lines, and
+.I HEIGHT TAB word
+rows. Plain data, never executed. Copied on first use from the copy that ships with
+.B npass
+(\fIPREFIX/share/npass/encrypts_alternatives/wordlist.txt\fR, or
+.I encrypts_alternatives/
+in the source tree). A list with fewer than 1296 usable words is refused. EFF
+lists, CC BY 3.0 US.
 .TP
 .I $NPASS_STORE/ID/.gpg\-id
 One GPG recipient per line for identity
@@ -599,6 +673,17 @@ real service name as the logical path during migration would reopen
 exactly that leak one layer up; keeping the codename closes it, at
 the cost of the real name only being visible after a secret is
 already decrypted.
+.TP
+.B The height index printed by diceware is the password.
+The EFF lists are public, so anyone holding the paper (or a photo, or a file)
+with the heights and the separator rebuilds the passphrase without the vault or
+your key. npass prints the heights only to
+.B stderr
+and stores them nowhere, but that does not protect the paper: keep it away from
+the computer and the vault, and clear the terminal screen and scrollback after
+copying it. A wordlist edited to be tiny would weaken every future passphrase, so
+a list with fewer than 1296 usable words is refused and the entropy shown is
+computed from the list actually used.
 .SH LIMITATIONS
 There is no "classic" bare\-path mode: an
 .I ID

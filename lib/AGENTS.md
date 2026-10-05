@@ -19,6 +19,7 @@ Este é o código-fonte principal do `npass`. O executável em `bin/npass` é ge
 | `09-i18n.bash` | mensagens/traduções |
 | `10-signing.bash` | assinatura e verificação |
 | `11-extensions.bash` | descoberta, instalação e execução de extensões |
+| `12-diceware.bash` | comandos `diceware` (com alturas) e `memorable` (sem índice); lista de palavras em `$NPASS_STORE/wordlist.txt` |
 
 ## Como localizar
 
@@ -32,6 +33,7 @@ Este é o código-fonte principal do `npass`. O executável em `bin/npass` é ge
 - Texto traduzido -> `09-i18n.bash`
 - Assinatura -> `10-signing.bash`
 - Extensões -> `11-extensions.bash`
+- Diceware, frases memoráveis, alturas, separador, lista de palavras -> `12-diceware.bash` (a lista que acompanha o programa é `encrypts_alternatives/wordlist.txt`)
 
 ## Regra de dependência
 

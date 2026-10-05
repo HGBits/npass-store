@@ -117,6 +117,20 @@ declare -gA NPASS_MSG_PT=(
 	[erro_campo_vazio]="o campo '%s' está vazio"
 	[msg_batch_resumo]="Lote em \"%s\": %d gravada(s), %d pulada(s).\n"
 	[erro_migrate_movido]="'%s' saiu do core: a importação agora é da extensão npass-import (npass import pass ID DIR | npass import pass-secrets ID DIR). Instale-a pela opção de extensões do install.sh."
+	[erro_wordlist_ausente]="lista de palavras não encontrada em %s e não achei a cópia que acompanha o npass. Copie encrypts_alternatives/wordlist.txt do repositório para esse caminho, ou defina NPASS_WORDLIST_SRC."
+	[erro_wordlist_copiar]="não consegui copiar a lista de palavras de %s para %s"
+	[warn_wordlist_copiada]="lista de palavras copiada para %s (a partir de %s)"
+	[erro_wordlist_pequena]="lista de palavras pequena demais em %s: só %d palavras utilizáveis (mínimo %d). O arquivo foi alterado?"
+	[erro_palavras_invalido]="número de palavras inválido: %s (use %d a %d)"
+	[erro_separador_invalido]="separador inválido (%s): use até 3 caracteres, sem caracteres de controle"
+	[rotulo_sem_separador]="(nenhum)"
+	[erro_lista_invalida]="lista inválida: %s (use short, short1 ou short2)"
+	[msg_diceware_cab]="Frase diceware de %d palavras gravada em %s: %s\n(lista EFF Large: %d palavras, ~%s bits de entropia)\n"
+	[msg_diceware_alturas]="\nALTURAS - anote em papel, nesta ordem:\n\n    %s\n\n"
+	[msg_diceware_sep]="Separador: %s (anote também)\n"
+	[msg_diceware_recuperar]="Para recuperar sem o npass: procure cada altura na seção [large] de %s (ou na lista pública da EFF) e junte as palavras com o separador.\n\n"
+	[msg_diceware_aviso]="ATENÇÃO: este índice É a sua senha em outra forma. Quem tiver o papel e a lista (que é pública) reconstrói a senha sem precisar do cofre nem da sua chave. Guarde-o longe do computador e do cofre; nunca em arquivo, foto, nuvem ou app de notas; e limpe a tela e o scrollback do terminal depois de anotar. O npass não grava estas alturas em lugar nenhum.\n"
+	[msg_memorable_info]="Frase memorável de %d palavras gravada em %s: %s\n(listas EFF Short: %d palavras distintas, ~%s bits de entropia)\n"
 )
 
 declare -gA NPASS_MSG_EN=(
@@ -223,6 +237,20 @@ declare -gA NPASS_MSG_EN=(
 	[erro_campo_vazio]="field '%s' is empty"
 	[msg_batch_resumo]="Batch into \"%s\": %d written, %d skipped.\n"
 	[erro_migrate_movido]="'%s' left the core: importing is now handled by the npass-import extension (npass import pass ID DIR | npass import pass-secrets ID DIR). Install it from the extensions option of install.sh."
+	[erro_wordlist_ausente]="wordlist not found at %s and I could not find the copy that ships with npass. Copy encrypts_alternatives/wordlist.txt from the repository to that path, or set NPASS_WORDLIST_SRC."
+	[erro_wordlist_copiar]="could not copy the wordlist from %s to %s"
+	[warn_wordlist_copiada]="wordlist copied to %s (from %s)"
+	[erro_wordlist_pequena]="wordlist too small in %s: only %d usable words (minimum %d). Was the file altered?"
+	[erro_palavras_invalido]="invalid number of words: %s (use %d to %d)"
+	[erro_separador_invalido]="invalid separator (%s): use up to 3 characters, no control characters"
+	[rotulo_sem_separador]="(none)"
+	[erro_lista_invalida]="invalid list: %s (use short, short1 or short2)"
+	[msg_diceware_cab]="Diceware passphrase of %d words stored in %s: %s\n(EFF Large list: %d words, ~%s bits of entropy)\n"
+	[msg_diceware_alturas]="\nHEIGHTS - write these on paper, in this order:\n\n    %s\n\n"
+	[msg_diceware_sep]="Separator: %s (write it down too)\n"
+	[msg_diceware_recuperar]="To recover without npass: look up each height in the [large] section of %s (or in EFF's public list) and join the words with the separator.\n\n"
+	[msg_diceware_aviso]="WARNING: this index IS your password in another form. Anyone holding the paper and the list (which is public) rebuilds the password without needing the vault or your key. Keep it away from the computer and the vault; never in a file, photo, cloud or notes app; and clear the terminal screen and scrollback after writing it down. npass does not store these heights anywhere.\n"
+	[msg_memorable_info]="Memorable passphrase of %d words stored in %s: %s\n(EFF Short lists: %d distinct words, ~%s bits of entropy)\n"
 )
 
 # npass_t KEY [ARGS...]

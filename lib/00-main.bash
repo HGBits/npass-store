@@ -15,6 +15,8 @@ npass_main() {
 	mv | rename) cmd_mv "$@" ;;
 	ls | list) cmd_ls "$@" ;;
 	generate | gen) cmd_generate "$@" ;;
+	diceware) cmd_diceware "$@" ;;
+	memorable) cmd_memorable "$@" ;;
 	edit) cmd_edit "$@" ;;
 	update) cmd_update "$@" ;;
 	find) cmd_find "$@" ;;
@@ -57,6 +59,8 @@ npass_main() {
 			  mv ID DIR/PASS DEST      renomeia (mesma identidade) ou move (entre identidades)
 			  ls ID [DIR]              lista os caminhos lógicos de uma identidade
 			  generate [-n|-c|-f] [--in-place] ID DIR/PASS [LEN]   gera senha aleatória
+			  diceware [-c|-f] [--in-place] [-s SEP] ID DIR/PASS [N]   frase de N palavras (EFF Large); mostra as ALTURAS para anotar
+			  memorable [-c|-f] [--in-place] [-s SEP] [-l short|short1|short2] ID DIR/PASS [N]   frase memorável (palavras curtas), sem alturas
 			  edit ID DIR/PASS         edita o conteúdo bruto no \$EDITOR
 			  update [opts] ID PATTERN...   rotaciona senhas em massa (veja 'npass update -h')
 			  find ID PADRÃO           busca caminhos lógicos que casam PADRÃO

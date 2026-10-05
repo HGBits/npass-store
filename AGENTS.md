@@ -15,6 +15,7 @@ Este arquivo é o índice operacional do projeto. Use-o para localizar rapidamen
 | Identidades, chaves GPG, `.gpg-id` | `lib/02-identity.bash` | `lib/10-signing.bash` se assinatura |
 | Store, mapa, blobs, CRUD | `lib/03-store.bash` | `lib/07-git.bash` se persistência/Git |
 | Clipboard Wayland | `lib/04-clipboard.bash` | extensão correspondente se backend externo |
+| Diceware/frases (`diceware`, `memorable`) e lista de palavras | `lib/12-diceware.bash` | `tests/diceware.bats`, `encrypts_alternatives/wordlist.txt` |
 | OTP/TOTP/HOTP | `lib/05-otp.bash` | `tests/otp.bats` |
 | Atualização/rotação | `lib/06-update.bash` | `lib/03-store.bash`, testes |
 | Git automático | `lib/07-git.bash` | `tests/update.bats`, `tests/store-extras.bats` |
@@ -49,6 +50,7 @@ lib/00-main.bash
    +--> 09-i18n.bash
    +--> 10-signing.bash
    +--> 11-extensions.bash
+   +--> 12-diceware.bash
              |
              +--> extensions/*
              |
