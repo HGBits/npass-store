@@ -417,3 +417,39 @@ in_section() { awk -F'\t' -v w="$1" -v sec="[$2]" '/^\[/{s=$0} s==sec && $2==w {
 	DESTDIR="$stage" "$PROJECT_DIR/install.sh" --prefix=/usr --uninstall >/dev/null
 	[ ! -e "$stage/usr/share/npass" ]
 }
+
+# --- entrada ilegivel: nunca sobrescrever dados que nao foram vistos -----------------------------------------
+
+corromper_blob() { printf 'lixo-nao-decifravel' >"$(ls "$NPASS_STORE"/HG/blobs/*.gpg | head -1)"; }
+hash_blob() { sha256sum "$(ls "$NPASS_STORE"/HG/blobs/*.gpg | head -1)" | cut -d' ' -f1; }
+
+@test "entrada existente mas ilegivel: diceware e memorable perguntam (EOF = nao) e mantem o que la esta" {
+	printf 'senha\nsenha\n' | "$NPASS" insert HG a/b >/dev/null
+	corromper_blob
+	local antes cmd; antes="$(hash_blob)"
+	for cmd in diceware memorable; do
+		run bash -c "'$NPASS' $cmd HG a/b </dev/null"
+		[ "$status" -ne 0 ]
+		[ "$(hash_blob)" = "$antes" ]
+	done
+}
+
+@test "entrada existente mas ilegivel: --in-place para sem alterar nada, citando o motivo" {
+	printf 'senha\nsenha\n' | "$NPASS" insert HG a/b >/dev/null
+	corromper_blob
+	local antes cmd; antes="$(hash_blob)"
+	for cmd in diceware memorable; do
+		run "$NPASS" "$cmd" --in-place HG a/b
+		[ "$status" -ne 0 ]
+		[[ "$output" == *"não pôde ser decifrada"* ]]
+		[ "$(hash_blob)" = "$antes" ]
+	done
+}
+
+@test "entrada existente mas ilegivel: so -f, pedido de forma explicita, sobrescreve" {
+	printf 'senha\nsenha\n' | "$NPASS" insert HG a/b >/dev/null
+	corromper_blob
+	run "$NPASS" diceware -f HG a/b
+	[ "$status" -eq 0 ]
+	[[ "$("$NPASS" show HG a/b)" =~ ^[a-z-]+$ ]]
+}

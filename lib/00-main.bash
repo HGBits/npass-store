@@ -27,6 +27,7 @@ npass_main() {
 	sign) cmd_sign "$@" ;;
 	extension) cmd_extension "$@" ;;
 	clip) cmd_clip "$@" ;;
+	pin) cmd_pin "$@" ;;
 	otp)
 		local sub="$1"; shift
 		case "$sub" in
@@ -53,6 +54,7 @@ npass_main() {
 			  extension list           lista extensões e se cada uma passaria nas checagens
 			  show ID DIR/PASS         mostra um segredo
 			  clip [CAMPO] ID DIR/PASS copia a senha (padrão), 'all' ou um campo 'chave: valor'
+			  pin (--password|--field) [-c|-f] [--in-place] ID DIR/PASS [N]   gera um PIN numérico: como a senha ou como o campo 'pin:'
 			  insert [-f] ID DIR/PASS  insere/atualiza um segredo
 			  insert --batch [-f] ID   grava vários (registros CAMINHO\\0CONTEÚDO\\0 no stdin)
 			  rm [-f] ID DIR/PASS      remove um segredo

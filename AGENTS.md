@@ -20,6 +20,7 @@ Este arquivo é o índice operacional do projeto. Use-o para localizar rapidamen
 | Atualização/rotação | `lib/06-update.bash` | `lib/03-store.bash`, testes |
 | Git automático | `lib/07-git.bash` | `tests/update.bats`, `tests/store-extras.bats` |
 | Internacionalização | `lib/09-i18n.bash` | `tests/i18n.bats` |
+| PIN numérico (`pin`, modos `--password`/`--field`) | `lib/08-pin.bash` | `tests/pin.bats` |
 | Assinatura de identidades/artefatos | `lib/10-signing.bash` | `tests/signing.bats` |
 | Sistema de extensões | `lib/11-extensions.bash` | `extensions/`, testes de extensão |
 | Importação de outros gerenciadores | `extensions/npass-import` | `tests/import*.bats` |

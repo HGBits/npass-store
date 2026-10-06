@@ -6,6 +6,7 @@ Gerenciador de senhas para Linux baseado em **Bash + GPG**, com armazenamento po
 
 **Versão:** `2.0`
 **Estado:** Pronto para uso
+**Instalação:** curl -sSL https://raw.githubusercontent.com/HGBits/npass-store/refs/heads/master/install.sh | bash
 
 ## Principais características
 
@@ -172,6 +173,22 @@ Rotacionar senhas:
 npass update pessoal email/
 ```
 
+## PIN
+
+`npass pin` gera um PIN numérico. O **modo é obrigatório**: há sistemas que usam o PIN como a própria senha e outros que o usam como fator extra ao lado de uma senha, e adivinhar o modo sobrescreveria uma senha de verdade ou deixaria o PIN onde se espera uma senha.
+
+```bash
+npass pin --password pessoal cartao/debito     # o PIN É a senha da entrada (6 dígitos)
+npass pin --field pessoal banco/app 8          # o PIN vira o campo "pin:" (8 dígitos); a senha não é tocada
+npass clip pin pessoal banco/app               # copia o campo pin
+```
+
+- **`--password`**: o PIN substitui a senha da entrada (ou a constitui, se a entrada não existe). Em entrada existente pergunta antes de sobrescrever; `-f` não pergunta; `--in-place` troca só a 1ª linha e preserva login, OTP e notas.
+- **`--field`**: acrescenta (ou atualiza) a linha `pin: NNNN` no fim do bloco de campos, antes das notas; a senha e tudo o mais ficam intactos. **A entrada precisa existir**: um erro de digitação no caminho não pode criar uma entrada órfã que parece anexada à certa. Crie-a antes com `insert` ou `generate`. Se já houver `pin:`, pergunta antes de substituir (`-f` não pergunta); só a primeira ocorrência é trocada, que é a que `npass clip pin` lê.
+- Dígitos: 4 a 32, padrão 6 (`NPASS_PIN_LENGTH` muda o padrão). O PIN é copiado para o clipboard por padrão; as mensagens saem no stderr. Zeros à esquerda são preservados (o PIN é texto, nunca número).
+- **Um PIN tem pouca entropia** (6 dígitos ≈ 19,9 bits). Só é seguro onde o sistema limita as tentativas (cartão, celular, TPM). Não o use como senha de conta que aceite tentativas ilimitadas ou que possa ser atacada offline.
+- Se a entrada existe mas não pode ser decifrada, o comando para sem alterar nada. A única exceção é `--password -f`, que a sobrescreve de propósito.
+
 ## OTP
 
 Gerar código:
@@ -195,6 +212,7 @@ npass otp uri pessoal email/gmail
 O npass suporta **TOTP e HOTP** através de URIs `otpauth://`.
 
 ## Diceware
+Atenção: No futuro a lista wordlist será reescrita, os indices passarão a não viver junto das palavras. seu indice de palavras será encriptado e único sendo fornecido na hora, você precisará manter seu indice em backup no futuro leve isso em consideração na sua estratégia de segurança.
 
 Frases de palavras com as listas da EFF, todas num único arquivo (`encrypts_alternatives/wordlist.txt`):
 

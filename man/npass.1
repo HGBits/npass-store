@@ -243,6 +243,40 @@ instead, ignoring every option above
 skip the confirmation prompt
 .RE
 .TP
+.BI "pin (\-\-password|\-\-field) " "[\-c] [\-f] [\-\-in\-place] " ID " " DIR/PASS " [" DIGITS ]
+Generate a random numeric PIN of
+.I DIGITS
+digits (4 to 32; default
+.BR NPASS_PIN_LENGTH ,
+6) and store it. One mode
+.B must
+be chosen, because some systems take a PIN as the password itself and others as an
+extra factor next to a password. With
+.B \-\-password
+the PIN becomes the entry's password (line 1), creating the entry if needed; an
+existing entry is overwritten after a prompt, or silently with
+.BR \-f ,
+and
+.B \-\-in\-place
+replaces only the first line, keeping login, OTP and notes. With
+.B \-\-field
+the PIN is stored as a
+.B pin:
+line, replacing the first existing one, or added after the entry's other fields and
+before its notes; the password and every other line are left as they were. The entry
+must already exist, so a mistyped path cannot create an orphan entry; an existing
+.B pin:
+field is replaced after a prompt, or silently with
+.BR \-f .
+The field is read back with
+.BR "npass clip pin" .
+The PIN is printed on stdout (or copied with
+.BR \-c ),
+messages go to stderr, and leading zeros are kept. If the entry exists but cannot
+be decrypted, nothing is changed, except by
+.BR "\-\-password \-f" ,
+which overwrites it on purpose.
+.TP
 .BI "otp " ID " " DIR/PASS
 Generate the current TOTP/HOTP code for an entry. For HOTP, also
 increments and persists the stored counter. The OTP secret is never
@@ -354,6 +388,11 @@ page are not affected by this variable.
 .TP
 .B NPASS_CLIP_TIME
 Seconds before a clipboard copy is cleared. Default: 45.
+.TP
+.B NPASS_PIN_LENGTH
+Default number of digits for
+.BR pin .
+Default: 6.
 .TP
 .B NPASS_GENERATED_LENGTH
 Default length for
@@ -573,6 +612,11 @@ On success, npass
 .BR NPASS_STORE ", " NPASS_GPG ", and " NPASS_LANG
 exported, and the extension's exit code becomes npass's own.
 .SH SECURITY
+.TP
+.B A PIN has little entropy.
+Six digits are about 19.9 bits. A PIN is only safe where the verifying system limits
+attempts (a card, a phone, a TPM). Do not use one as the password of an account that
+accepts unlimited guesses or can be attacked offline.
 .TP
 .B Commit messages never contain a logical path.
 When git integration is enabled

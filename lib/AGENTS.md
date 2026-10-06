@@ -16,6 +16,7 @@ Este é o código-fonte principal do `npass`. O executável em `bin/npass` é ge
 | `05-otp.bash` | TOTP/HOTP e URIs `otpauth://` |
 | `06-update.bash` | atualização/rotação de entradas |
 | `07-git.bash` | commits e integração Git |
+| `08-pin.bash` | comando `pin`: PIN numérico como senha ou como campo `pin:` |
 | `09-i18n.bash` | mensagens/traduções |
 | `10-signing.bash` | assinatura e verificação |
 | `11-extensions.bash` | descoberta, instalação e execução de extensões |
@@ -30,6 +31,7 @@ Este é o código-fonte principal do `npass`. O executável em `bin/npass` é ge
 - Problema de OTP -> `05-otp.bash`
 - Problema de update/rotação -> `06-update.bash`
 - Commit automático/histórico -> `07-git.bash`
+- PIN (`pin --password` / `pin --field`) -> `08-pin.bash`
 - Texto traduzido -> `09-i18n.bash`
 - Assinatura -> `10-signing.bash`
 - Extensões -> `11-extensions.bash`

@@ -84,8 +84,15 @@ npass_wordlist_load() {
 		NPASS_WL_W+=("$w")
 	done < <(LC_ALL=C awk -F'\t' -v want=" $* " '
 		/^[[:space:]]*(#|$)/ { next }
-		/^\[[A-Za-z0-9_-]+\]$/ { cur = substr($0, 2, length($0) - 2); next }
-		cur != "" && index(want, " " cur " ") && NF == 2 && $1 ~ /^[1-6]+$/ && $2 ~ /^[a-z-]+$/ && !seen[$2]++ {
+		/^[[:space:]]*@list[[:space:]]+[A-Za-z0-9_-]+[[:space:]]*$/ {
+			cur = $2
+			next
+		}
+		cur != "" && index(want, " " cur " ") &&
+		NF == 2 &&
+		$1 ~ /^[1-6]+$/ &&
+		$2 ~ /^[a-z-]+$/ &&
+		!seen[$2]++ {
 			print $1 "\t" $2
 		}
 	' "$file")
@@ -188,10 +195,18 @@ npass_passphrase_cmd() {
 	((pool >= NPASS_WORDLIST_MIN_POOL)) \
 		|| npass_die "$(npass_t erro_wordlist_pequena "$wl" "$pool" "$NPASS_WORDLIST_MIN_POOL")"
 
-	local dir existing reply
+	local dir has_entry=0 existing="" reply
 	dir="$(npass_identity_dir "$id")"
-	existing="$(cmd_show "$id" "$logical" 2>/dev/null || true)"
-	if [[ -n "$existing" && $inplace -eq 0 && $force -eq 0 ]]; then
+	npass_map_resolve "$dir" "$logical" >/dev/null 2>&1 && has_entry=1
+	# Read the current content ONLY for --in-place, which keeps part of it. If the
+	# entry exists but cannot be decrypted (cancelled pinentry, missing key, damaged
+	# blob), stop: treating "unreadable" as "empty" would silently overwrite data we
+	# never saw, and skip the confirmation below.
+	if ((has_entry)) && [[ $inplace -eq 1 ]]; then
+		existing="$(cmd_show "$id" "$logical")" \
+			|| npass_die "$(npass_t erro_entrada_ilegivel "$id" "$logical")"
+	fi
+	if ((has_entry)) && [[ $inplace -eq 0 && $force -eq 0 ]]; then
 		read -r -p "$(npass_t prompt_sobrescrever_existe "$id" "$logical")" reply
 		[[ "$reply" == [yY] ]] || { npass_t msg_cancelado; return 1; }
 	fi
@@ -205,7 +220,7 @@ npass_passphrase_cmd() {
 	done
 
 	local content="$phrase"
-	if [[ $inplace -eq 1 && -n "$existing" ]]; then
+	if [[ $inplace -eq 1 && $has_entry -eq 1 ]]; then
 		content="$(npass_replace_first_line "$existing" "$phrase")"
 	fi
 	npass_blob_write "$dir" "$logical" "$content"
