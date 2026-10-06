@@ -1,0 +1,195 @@
+#!/usr/bin/env python3
+# npass-extension-desc: Audita senhas por vazamentos, força e reutilização
+# npass-extension-needs: python3
+"""npass-audit: auditoria de senhas de uma identidade npass.
+
+Uso: npass audit ID [CAMINHO/PREFIXO] [--offline] [-v]
+Consulta HIBP por k-anonymity (somente os 5 primeiros caracteres do SHA-1
+saem da máquina). zxcvbn é opcional. Senhas nunca são impressas.
+"""
+import argparse
+import hashlib
+import os
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+
+VERSION = "0.1.0"
+NPASS = os.environ.get("NPASS_BIN") or "npass"
+EN = os.environ.get("NPASS_LANG", "").startswith("en")
+
+
+def tr(pt, en):
+    return en if EN else pt
+
+
+def die(message, code=1):
+    print("npass audit: " + message, file=sys.stderr)
+    raise SystemExit(code)
+
+
+def run_npass(args):
+    p = subprocess.run([NPASS, *args], stdout=subprocess.PIPE,
+                       stderr=subprocess.PIPE, text=True, errors="replace")
+    if p.returncode:
+        detail = (p.stderr or p.stdout).strip()
+        raise RuntimeError(detail or "npass command failed")
+    return p.stdout
+
+
+def list_paths(identity, prefix):
+    output = run_npass(["ls", identity, prefix] if prefix else ["ls", identity])
+    paths = []
+    for line in output.splitlines():
+        value = line.strip()
+        if value and not value.endswith(": (vazio)") and value != identity:
+            paths.append(value)
+    return sorted(set(paths))
+
+
+def parse_entry(path, raw):
+    lines = raw.splitlines()
+    entry = {"path": path, "password": "", "values": []}
+    if not lines:
+        return entry
+    first = lines[0]
+    if ": " in first:
+        key, value = first.split(": ", 1)
+        entry["values"].append(value)
+        if key.strip().lower() in ("password", "senha"):
+            entry["password"] = value
+    else:
+        entry["password"] = first
+    for line in lines[1:]:
+        if ": " in line:
+            key, value = line.split(": ", 1)
+            entry["values"].extend((key, value))
+            if key.strip().lower() in ("password", "senha"):
+                entry["password"] = value
+        elif line.startswith("otpauth://"):
+            continue
+        else:
+            entry["values"].append(line)
+    return entry
+
+
+def hibp_count(password, cache):
+    digest = hashlib.sha1(password.encode("utf-8")).hexdigest().upper()
+    prefix, suffix = digest[:5], digest[5:]
+    if prefix not in cache:
+        req = urllib.request.Request(
+            "https://api.pwnedpasswords.com/range/" + prefix,
+            headers={"User-Agent": "npass-audit/" + VERSION,
+                     "Add-Padding": "true"})
+        with urllib.request.urlopen(req, timeout=15) as response:
+            body = response.read().decode("ascii", "strict")
+        bucket = {}
+        for line in body.splitlines():
+            if ":" in line:
+                key, count = line.split(":", 1)
+                bucket[key.strip().upper()] = int(count.strip())
+        cache[prefix] = bucket
+    return cache[prefix].get(suffix, 0)
+
+
+def main(argv):
+    ap = argparse.ArgumentParser(
+        prog="npass audit",
+        description=tr("Verifica vazamentos, senhas fracas e reutilizadas.",
+                       "Check for breached, weak and reused passwords."),
+        allow_abbrev=False)
+    ap.add_argument("identity", nargs="?")
+    ap.add_argument("path", nargs="?", default="")
+    ap.add_argument("--offline", action="store_true",
+                    help=tr("não consultar Have I Been Pwned",
+                            "do not query Have I Been Pwned"))
+    ap.add_argument("-v", "--verbose", action="store_true")
+    ap.add_argument("--version", action="version", version="npass-audit " + VERSION)
+    args = ap.parse_args(argv)
+    if not args.identity:
+        ap.error(tr("informe a identidade: npass audit ID [CAMINHO/PREFIXO]",
+                    "provide an identity: npass audit ID [PATH/PREFIX]"))
+
+    try:
+        paths = list_paths(args.identity, args.path)
+    except (RuntimeError, OSError) as e:
+        die(tr("não consegui listar a identidade: ", "could not list identity: ") + str(e))
+    if not paths:
+        die(tr("nenhuma entrada encontrada.", "no entries found."))
+
+    entries = []
+    failures = 0
+    for path in paths:
+        try:
+            raw = run_npass(["show", args.identity, path])
+            entries.append(parse_entry(path, raw))
+        except (RuntimeError, OSError) as e:
+            failures += 1
+            print(tr(f"aviso: não foi possível ler {path}: {e}",
+                     f"warning: could not read {path}: {e}"), file=sys.stderr)
+
+    passwords = [(e["path"], e["password"]) for e in entries if e["password"]]
+    duplicates = {}
+    for path, password in passwords:
+        fingerprint = hashlib.sha256(password.encode("utf-8")).digest()
+        duplicates.setdefault(fingerprint, []).append(path)
+    duplicate_groups = [v for v in duplicates.values() if len(v) > 1]
+
+    weak = []
+    try:
+        from zxcvbn import zxcvbn
+    except ImportError:
+        zxcvbn = None
+        print(tr("aviso: zxcvbn não instalado; pulando análise de força.",
+                 "warning: zxcvbn is not installed; skipping strength analysis."),
+              file=sys.stderr)
+    if zxcvbn:
+        for e in entries:
+            password = e["password"]
+            if not password:
+                continue
+            try:
+                result = zxcvbn(password, user_inputs=[e["path"]])
+                if result["score"] <= 2:
+                    weak.append((e["path"], result["score"]))
+            except ValueError:
+                pass
+
+    breached = []
+    if not args.offline:
+        cache = {}
+        for path, password in passwords:
+            try:
+                count = hibp_count(password, cache)
+                if count:
+                    breached.append((path, count))
+            except (urllib.error.URLError, TimeoutError, UnicodeError, ValueError) as e:
+                print(tr(f"aviso: consulta HIBP falhou para {path}: {e}",
+                         f"warning: HIBP lookup failed for {path}: {e}"),
+                      file=sys.stderr)
+                failures += 1
+
+    for path, count in breached:
+        print(tr(f"VAZADA: {path} (encontrada {count} vez(es))",
+                 f"BREACHED: {path} (seen {count} time(s))"))
+    for path, score in weak:
+        print(tr(f"FRACA: {path} (pontuação zxcvbn: {score}/4)",
+                 f"WEAK: {path} (zxcvbn score: {score}/4)"))
+    for group in duplicate_groups:
+        print(tr("REUTILIZADA: ", "REUSED: ") + ", ".join(group))
+
+    total = len(passwords)
+    issues = len(breached) + len(weak) + len(duplicate_groups)
+    print(tr(f"Resumo: {total} senha(s), {len(breached)} vazada(s), "
+             f"{len(weak)} fraca(s), {len(duplicate_groups)} grupo(s) reutilizado(s).",
+             f"Summary: {total} password(s), {len(breached)} breached, "
+             f"{len(weak)} weak, {len(duplicate_groups)} reused group(s)."))
+    if failures:
+        print(tr(f"{failures} verificação(ões) falharam ou foram incompletas.",
+                 f"{failures} check(s) failed or were incomplete."), file=sys.stderr)
+    return 1 if issues or failures else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
