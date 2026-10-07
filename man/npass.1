@@ -611,6 +611,31 @@ On success, npass
 \&'s the extension directly (no wrapper process) with
 .BR NPASS_STORE ", " NPASS_GPG ", and " NPASS_LANG
 exported, and the extension's exit code becomes npass's own.
+.SS npass-passkey
+Passkeys WebAuthn/FIDO2 guardadas só no npass. Subcomandos:
+.TP
+.B npass passkey list ID [RP] [LOGIN]
+Lista (rp, login, blob) pelo índice \fBFido/.map\fR.
+.TP
+.B npass passkey store ID RP LOGIN
+Lê a credencial (base64 do CBOR) no stdin, grava \fBFido/<hex>.gpg\fR e atualiza o índice; se o índice falhar, o blob é revertido.
+.TP
+.B npass passkey load ID BLOB
+Verifica hash e assinatura (chave autorizada pelo .gpg-id), decifra e imprime a credencial.
+.TP
+.B npass passkey rm ID BLOB
+Remove o blob e a entrada do índice.
+.TP
+.B npass passkey verify ID [--deep]
+Integridade, assinaturas, blobs órfãos, entradas penduradas, duplicatas, permissões.
+.TP
+.B npass passkey rebuild-index ID
+Reconstrói o índice só dos blobs verificados.
+.TP
+.B npass passkey serve ID [ARGS]
+Valida o helper \fBnpass-passkeyd\fR (assinatura sua + selo de compatibilidade) e o executa.
+.PP
+Ambiente: \fBNPASS_HELPERS_DIR\fR (padrão ~/.local/share/npass/helpers), \fBNPASS_PASSKEY_GIT\fR=0, \fBNPASS_PASSKEY_CONFIRM\fR (comando de confirmação do daemon).
 .SH SECURITY
 .TP
 .B A PIN has little entropy.

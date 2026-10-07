@@ -338,6 +338,35 @@ Formatos: `csv` (genérico), `bitwarden` (csv/json), `keepassxc`/`keepass`, `fir
 - Exports **criptografados** (Bitwarden, Aegis, andOTP) são recusados: exporte a versão sem criptografia, importe e apague. **O arquivo exportado é uma cópia em claro de todas as suas senhas.** Prefira cifrá-lo com `gpg` antes (a extensão lê `.gpg`) ou usar `/dev/shm`. `--delete-source` usa `shred`, que **não é confiável em btrfs** (copy-on-write) nem em SSD.
 - Os parsers de formatos exportados foram escritos a partir do formato documentado de cada gerenciador e testados com fixtures sintéticos. Antes de confiar em um formato, importe um export real com `--dry-run` e confira.
 
+### npass-passkey: passkeys (WebAuthn/FIDO2) no desktop
+
+Registra e usa passkeys reais em sites, com o **npass como único armazenamento**:
+
+```text
+navegador -> WebAuthn -> npass-passkeyd (Rust: CTAP2 + UHID) -> npass-passkey -> npass
+```
+
+```bash
+npass passkey list ID [RP] [LOGIN]      # descoberta, só pelo índice Fido/.map
+npass passkey store ID RP LOGIN < CRED  # credencial em base64 (CBOR) no stdin
+npass passkey load ID BLOB
+npass passkey rm ID BLOB
+npass passkey verify ID [--deep]        # hash, assinaturas, órfãos, duplicatas
+npass passkey rebuild-index ID
+npass passkey serve ID                  # valida o helper e sobe o autenticador virtual
+```
+
+- Cada passkey é um blob opaco `ID/Fido/<hex>.gpg`: cabeçalho público (`rp_id`, `login`,
+  hash do payload, assinatura GPG) + payload cifrado. `Fido/.map` (0600, com lock) só ajuda a
+  achar candidatos; **nunca é autoridade**. Vários blobs podem ter o mesmo RP/login.
+- O `install.sh` só compila o daemon (`cargo build --release --locked` em `passkey/`) se você
+  escolher `npass-passkey`; as demais extensões não precisam de Rust. O helper vai para
+  `~/.local/share/npass/helpers/` e é assinado junto com um selo que o amarra a esta versão da extensão.
+- Requer `/dev/uhid` acessível ao seu usuário (`modprobe uhid` + regra udev). A presença do
+  usuário é pedida por `zenity`/`kdialog`, pelo terminal ou por `--confirm-cmd`; sem nenhum, nega.
+- `rp_id` e `login` ficam **em claro** nos blobs e no `.map` (e no git do store), por desenho.
+  `NPASS_PASSKEY_GIT=0` desliga o commit automático de `Fido/`.
+
 ## Desenvolvimento
 
 O executável principal é **gerado** a partir dos arquivos em `lib/`.

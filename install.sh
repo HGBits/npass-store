@@ -139,8 +139,19 @@ offer_extensions() {
 		fi
 	}
 
+	# Shell para checar/compilar com o cargo de QUEM vai rodar o npass: ao trocar de
+	# usuário (sudo), um login shell carrega o PATH dele (~/.cargo/bin etc.); sem troca,
+	# vale o ambiente atual.
+	as_user_sh() {
+		if [[ $EUID -eq 0 && "$ext_user" != root ]]; then
+			as_user bash -lc "$1"
+		else
+			bash -c "$1"
+		fi
+	}
+
 	echo "Destino: $extdir (usuário: $ext_user)"
-	local installed=0 name desc needs n dest keyargs tty_dev
+	local installed=0 name desc needs n dest keyargs tty_dev cargo_spec manifest helper_name built helper_built hdir
 	tty_dev="$(tty 2>/dev/null || true)"
 	[[ "$tty_dev" == /dev/* ]] || tty_dev=""
 	for f in "${candidates[@]}"; do
@@ -155,10 +166,31 @@ offer_extensions() {
 				command -v "$n" >/dev/null 2>&1 || echo "    aviso: requer '$n', que não foi encontrado no PATH."
 			done
 		fi
+		cargo_spec="$(ext_field "$f" cargo)"
 		ask "  Instalar $name?" || continue
 
+		# Extensão com helper nativo (Rust): só aqui, só porque foi escolhida,
+		# o cargo do usuário que vai RODAR o npass compila o código-fonte atual.
+		helper_built=""
+		if [[ -n "$cargo_spec" ]]; then
+			read -r manifest helper_name <<<"$cargo_spec"
+			if ! as_user_sh 'command -v cargo' >/dev/null 2>&1; then
+				echo "    erro: $name precisa do cargo (Rust) no ambiente de $ext_user, e ele não foi encontrado. Não instalada." >&2
+				continue
+			fi
+			built="$(dirname "$manifest")/target/release/$helper_name"
+			# nunca reaproveita binário antigo: apaga o que houver e exige um novo
+			rm -f -- "$built" "bin/$helper_name"
+			echo "    compilando $helper_name (cargo build --release --locked)..."
+			if ! as_user_sh "cd '$PWD' && cargo build --release --locked --manifest-path '$manifest'" >&2 || [[ ! -x "$built" ]]; then
+				echo "    erro: a compilação de $helper_name falhou. $name não instalada." >&2
+				continue
+			fi
+			helper_built="$built"
+		fi
+
 		dest="$extdir/$name"
-		if [[ -f "$dest" && -f "$dest.sig" ]] && cmp -s "$f" "$dest"; then
+		if [[ -z "$helper_built" && -f "$dest" && -f "$dest.sig" ]] && cmp -s "$f" "$dest"; then
 			echo "    já instalada, idêntica e assinada: $dest"
 			((++installed))
 			continue
@@ -177,6 +209,25 @@ offer_extensions() {
 		else
 			echo "    aviso: NÃO foi possível assinar. A extensão está no lugar, mas não roda até ser assinada:" >&2
 			echo "      npass extension sign $dest" >&2
+			continue
+		fi
+
+		# Helper nativo: copia, e o PRÓPRIO npass-passkey o sela (selo de compatibilidade
+		# + assinatura GPG do helper) - roda pelas portas normais de extensão.
+		if [[ -n "$helper_built" ]]; then
+			hdir="$(dirname "$extdir")/helpers"
+			[[ -n "${NPASS_HELPERS_DIR:-}" ]] && hdir="$NPASS_HELPERS_DIR"
+			as_user mkdir -p "$hdir"
+			as_user chmod 700 "$hdir" 2>/dev/null || true
+			as_user rm -f -- "$hdir/$helper_name" "$hdir/$helper_name.sig" "$hdir/$helper_name.stamp" "$hdir/$helper_name.stamp.sig"
+			as_user install -m 755 -- "$helper_built" "$hdir/$helper_name"
+			echo "    helper instalado: $hdir/$helper_name"
+			if as_user env NPASS_ENABLE_EXTENSIONS=1 NPASS_EXTENSIONS_DIR="$extdir" NPASS_HELPERS_DIR="$hdir" \
+				${tty_dev:+GPG_TTY="$tty_dev"} "$signer" "${name#npass-}" seal ${keyargs[@]+"${keyargs[@]}"} >/dev/null; then
+				echo "    helper selado e assinado com a sua chave."
+			else
+				echo "    aviso: NÃO foi possível selar o helper; 'npass passkey serve' recusa até: npass passkey seal" >&2
+			fi
 		fi
 	done
 

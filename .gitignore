@@ -1,4 +1,5 @@
-tests/gnupg_test/
-tests/gnupg_atacante/
 bin/
+passkey/target/
 tests/.keys.lock
+tests/gnupg_atacante/
+tests/gnupg_test/

@@ -1,0 +1,724 @@
+#!/usr/bin/env bash
+# npass-extension-desc: Passkeys (WebAuthn/FIDO2) no desktop Linux, guardadas só no npass
+# npass-extension-needs: gpg
+# npass-extension-cargo: passkey/Cargo.toml npass-passkeyd
+#
+# npass-passkey - backend de armazenamento de passkeys + ponte para o daemon.
+#
+#   npass passkey list ID [RP] [LOGIN]
+#   npass passkey store ID RP LOGIN < CREDENCIAL(base64)
+#   npass passkey load ID BLOB
+#   npass passkey rm ID BLOB
+#   npass passkey verify ID [--deep]
+#   npass passkey rebuild-index ID
+#   npass passkey serve ID [ARGS-DO-DAEMON...]
+#   npass passkey seal [KEYID]            (encanamento do instalador)
+#
+# Layout (por identidade):
+#   $NPASS_STORE/ID/Fido/.map        índice de DESCOBERTA (rp_id, login, blob), 0600
+#   $NPASS_STORE/ID/Fido/.map.lock   lock do índice
+#   $NPASS_STORE/ID/Fido/<hex>.gpg   blob: cabeçalho público assinado + payload cifrado
+#
+# O índice NUNCA é autoridade: load/verify/rebuild-index decidem pelo blob
+# (hash do payload + assinatura de uma chave autorizada da identidade).
+# Veja npass-passkey-arquitetura.md para as decisões de projeto.
+
+set -u
+set -o pipefail
+umask 077
+
+readonly PASSKEY_PROTO=1
+readonly BLOB_MAGIC="NPASS-FIDO-BLOB-V1"
+readonly PAYLOAD_MAGIC="NPASS-FIDO-PAYLOAD-V1"
+readonly MAP_MAGIC="# npass-fido-map-v2"
+readonly MAP_COLS=$'# rp_id\tlogin\tblob'
+readonly STAMP_MAGIC="npass-passkeyd-stamp-v1"
+
+: "${NPASS_STORE:=$HOME/.npass}"
+: "${NPASS_GPG:=gpg}"
+: "${NPASS_LANG:=${LANG:-}}"
+NPASS_LANG="${NPASS_LANG%%.*}"
+
+SELF="$(readlink -f -- "${BASH_SOURCE[0]}" 2>/dev/null || printf '%s' "${BASH_SOURCE[0]}")"
+
+# --------------------------------------------------------------------------
+# base: mensagens, temporários, validações
+# --------------------------------------------------------------------------
+
+t() { if [[ "$NPASS_LANG" == en* ]]; then printf '%s' "$2"; else printf '%s' "$1"; fi; }
+
+die() {
+	printf 'npass passkey: %s\n' "$*" >&2
+	exit 1
+}
+
+warn() { printf 'npass passkey: %s: %s\n' "$(t aviso warning)" "$*" >&2; }
+
+T="$(mktemp -d "${XDG_RUNTIME_DIR:-/tmp}/npass-passkey.XXXXXX" 2>/dev/null)" || die "$(t 'não consegui criar diretório temporário' 'cannot create temporary directory')"
+cleanup() {
+	if [[ -n "${T:-}" && -d "$T" ]]; then
+		find "$T" -type f -exec shred -u -- {} + 2>/dev/null
+		rm -rf -- "$T"
+	fi
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+usage() {
+	cat >&2 <<'EOF'
+uso: npass passkey COMANDO ...
+  list ID [RP] [LOGIN]           lista as passkeys do índice (rp, login, blob)
+  store ID RP LOGIN < CRED       guarda uma credencial (base64 do CBOR) e atualiza o índice
+  load ID BLOB                   verifica o blob, decifra e imprime a credencial (base64)
+  rm ID BLOB                     remove o blob e a entrada do índice
+  verify ID [--deep]             integridade, assinaturas, órfãos, duplicatas
+  rebuild-index ID               reconstrói o índice a partir dos metadados públicos dos blobs
+  serve ID [ARGS...]             valida o helper e inicia o autenticador FIDO virtual
+  seal [KEYID]                   (instalador) assina o helper e o selo de compatibilidade
+EOF
+	exit 2
+}
+
+# Campo público (rp_id / login): sem controles (tab/newline separam colunas), não vazio.
+check_field() {
+	local LC_ALL=C name="$1" v="$2"
+	[[ -n "$v" ]] || die "$(t "campo vazio: $name" "empty field: $name")"
+	((${#v} <= 255)) || die "$(t "campo longo demais (máx. 255 bytes): $name" "field too long (max 255 bytes): $name")"
+	if [[ "$v" =~ [[:cntrl:]] ]]; then
+		die "$(t "caractere de controle em $name" "control character in $name")"
+	fi
+}
+
+# Nome de blob vindo de fora: só [A-Za-z0-9_-], sem barras, sem "..".
+norm_blob() {
+	local b="${1%.gpg}"
+	[[ "$b" =~ ^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$ ]] || die "$(t "nome de blob inválido: $1" "invalid blob name: $1")"
+	printf '%s.gpg' "$b"
+}
+
+sha_of() { sha256sum -- "$1" | cut -d' ' -f1; }
+
+# --------------------------------------------------------------------------
+# identidade, destinatários, chaves autorizadas
+# --------------------------------------------------------------------------
+
+DIR="" FIDO="" MAP="" LOCKFD=""
+RECIPIENTS=()
+AUTH_FPRS=()
+SIGNER=""
+
+# Como o npass: nada de caminhos que escapem do store.
+check_id() {
+	local id="$1"
+	case "$id" in
+	'' | . | .. | */../* | ../* | */.. | /*) die "$(t "identidade inválida: $id" "invalid identity: $id")" ;;
+	esac
+	if [[ "$id" == *$'\t'* || "$id" == *$'\n'* ]]; then
+		die "$(t "identidade inválida: $id" "invalid identity: $id")"
+	fi
+}
+
+setup_id() {
+	local id="$1"
+	check_id "$id"
+	DIR="$NPASS_STORE/$id"
+	[[ -d "$DIR" && -f "$DIR/.gpg-id" ]] || die "$(t "identidade não encontrada: $id" "identity not found: $id")"
+	FIDO="$DIR/Fido"
+	MAP="$FIDO/.map"
+	# .gpg-id assinado? então a assinatura tem que valer (mesma regra do npass).
+	if [[ -f "$DIR/.gpg-id.sig" ]]; then
+		"$NPASS_GPG" --batch --quiet --verify "$DIR/.gpg-id.sig" "$DIR/.gpg-id" 2>"$T/err" \
+			|| die "$(t "assinatura do .gpg-id inválida em $id" "invalid .gpg-id signature in $id"): $(head -n1 "$T/err")"
+	fi
+	mapfile -t RECIPIENTS < <(grep -v '^[[:space:]]*$' "$DIR/.gpg-id")
+	((${#RECIPIENTS[@]})) || die "$(t ".gpg-id vazio em $id" "empty .gpg-id in $id")"
+}
+
+# Chaves autorizadas a assinar blobs desta identidade = chaves primárias dos
+# destinatários do .gpg-id.
+load_authorized() {
+	local r f
+	AUTH_FPRS=()
+	for r in "${RECIPIENTS[@]}"; do
+		while IFS= read -r f; do
+			[[ -n "$f" ]] && AUTH_FPRS+=("${f^^}")
+		done < <("$NPASS_GPG" --batch --with-colons --list-keys -- "$r" 2>/dev/null \
+			| awk -F: '$1=="pub"{p=1} $1=="fpr"&&p{print $10; p=0}')
+	done
+	((${#AUTH_FPRS[@]})) || die "$(t 'nenhuma chave dos destinatários da identidade foi encontrada no chaveiro' 'none of the identity recipients keys were found in the keyring')"
+}
+
+in_list() {
+	local needle="$1" x
+	shift
+	for x in "$@"; do [[ "$x" == "$needle" ]] && return 0; done
+	return 1
+}
+
+# Para ASSINAR: primeira chave secreta sua que também é destinatária.
+pick_signer() {
+	local f
+	SIGNER=""
+	while IFS= read -r f; do
+		f="${f^^}"
+		if in_list "$f" "${AUTH_FPRS[@]}"; then
+			SIGNER="$f"
+			return 0
+		fi
+	done < <("$NPASS_GPG" --batch --with-colons --list-secret-keys 2>/dev/null \
+		| awk -F: '$1=="sec"{p=1} $1=="fpr"&&p{print $10; p=0}')
+	die "$(t 'nenhuma chave secreta sua está entre os destinatários da identidade; não dá para assinar o blob' 'none of your secret keys is an identity recipient; cannot sign the blob')"
+}
+
+gpg_encrypt_to_file() { # IN OUT
+	local -a args=()
+	local r
+	for r in "${RECIPIENTS[@]}"; do args+=(-r "$r"); done
+	"$NPASS_GPG" --quiet --batch --yes --use-agent --trust-model always --armor \
+		"${args[@]}" -e -o "$2" "$1" 2>"$T/err" \
+		|| die "$(t 'falha ao cifrar' 'encryption failed'): $(head -n1 "$T/err")"
+}
+
+# --------------------------------------------------------------------------
+# blob: montar, ler, verificar
+# --------------------------------------------------------------------------
+
+B_RP="" B_LOGIN="" B_SHA="" B_SIG="" B_FPR="" B_ERR=""
+
+# blob_parse FILE  -> preenche B_*, e escreve $T/meta e $T/pl
+blob_parse() {
+	local f="$1" l1="" l2="" l3="" l4="" l5=""
+	B_ERR="" B_RP="" B_LOGIN="" B_SHA="" B_SIG="" B_FPR=""
+	{
+		IFS= read -r l1
+		IFS= read -r l2
+		IFS= read -r l3
+		IFS= read -r l4
+		IFS= read -r l5
+	} <"$f" 2>/dev/null
+	if [[ "$l1" != "$BLOB_MAGIC" || "$l2" != $'rp_id\t'* || "$l3" != $'login\t'* \
+		|| "$l4" != $'payload-sha256\t'* || "$l5" != $'signature-b64\t'* ]]; then
+		B_ERR="CABECALHO"
+		return 1
+	fi
+	B_RP="${l2#$'rp_id\t'}"
+	B_LOGIN="${l3#$'login\t'}"
+	B_SHA="${l4#$'payload-sha256\t'}"
+	B_SIG="${l5#$'signature-b64\t'}"
+	if [[ -z "$B_RP" || -z "$B_LOGIN" || ! "$B_SHA" =~ ^[0-9a-f]{64}$ || ! "$B_SIG" =~ ^[A-Za-z0-9+/=]+$ ]]; then
+		B_ERR="CABECALHO"
+		return 1
+	fi
+	printf '%s\n%s\n%s\n%s\n' "$l1" "$l2" "$l3" "$l4" >"$T/meta"
+	tail -n +6 -- "$f" >"$T/pl"
+	return 0
+}
+
+# blob_check FILE -> 0 se: cabeçalho ok, hash do payload bate, assinatura vale e é
+# de chave AUTORIZADA. Senão B_ERR = CABECALHO | HASH | ASSINATURA | NAO_AUTORIZADA:<fpr>
+blob_check() {
+	local f="$1" sha status
+	blob_parse "$f" || return 1
+	sha="$(sha_of "$T/pl")"
+	if [[ "$sha" != "$B_SHA" ]]; then
+		B_ERR="HASH"
+		return 1
+	fi
+	if ! printf '%s' "$B_SIG" | base64 -d >"$T/sig.bin" 2>/dev/null; then
+		B_ERR="ASSINATURA"
+		return 1
+	fi
+	status="$("$NPASS_GPG" --batch --status-fd=1 --verify "$T/sig.bin" "$T/meta" 2>/dev/null)"
+	B_FPR="$(awk '$2=="VALIDSIG"{print $12; exit}' <<<"$status")"
+	B_FPR="${B_FPR^^}"
+	if [[ -z "$B_FPR" ]]; then
+		B_ERR="ASSINATURA"
+		return 1
+	fi
+	if ! in_list "$B_FPR" "${AUTH_FPRS[@]}"; then
+		B_ERR="NAO_AUTORIZADA:$B_FPR"
+		return 1
+	fi
+	return 0
+}
+
+err_text() {
+	case "$1" in
+	CABECALHO) t 'cabeçalho inválido' 'invalid header' ;;
+	HASH) t 'hash do payload não confere (blob adulterado)' 'payload hash mismatch (tampered blob)' ;;
+	ASSINATURA) t 'assinatura ausente ou inválida' 'missing or invalid signature' ;;
+	NAO_AUTORIZADA:*) t "assinado por chave não autorizada (${1#*:})" "signed by an unauthorized key (${1#*:})" ;;
+	*) printf '%s' "$1" ;;
+	esac
+}
+
+# blob_build OUT RP LOGIN CRED_FILE
+blob_build() {
+	local out="$1" rp="$2" login="$3" credf="$4" sha
+	{
+		printf '%s\n' "$PAYLOAD_MAGIC"
+		printf 'rp_id\t%s\n' "$rp"
+		printf 'login\t%s\n' "$login"
+		printf 'credential\t%s\n' "$(tr -d '[:space:]' <"$credf")"
+	} >"$T/plain"
+	gpg_encrypt_to_file "$T/plain" "$T/pl.asc"
+	shred -u -- "$T/plain" 2>/dev/null || rm -f -- "$T/plain"
+	sha="$(sha_of "$T/pl.asc")"
+	{
+		printf '%s\n' "$BLOB_MAGIC"
+		printf 'rp_id\t%s\n' "$rp"
+		printf 'login\t%s\n' "$login"
+		printf 'payload-sha256\t%s\n' "$sha"
+	} >"$T/meta.new"
+	"$NPASS_GPG" --batch --yes --quiet --local-user "$SIGNER" --detach-sign \
+		-o "$T/sig.new" "$T/meta.new" 2>"$T/err" \
+		|| die "$(t 'falha ao assinar o blob' 'failed to sign the blob'): $(head -n1 "$T/err")"
+	{
+		cat "$T/meta.new"
+		printf 'signature-b64\t%s\n' "$(base64 -w0 <"$T/sig.new")"
+		cat "$T/pl.asc"
+	} >"$out"
+}
+
+new_blob_name() {
+	local n
+	while :; do
+		n="$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n').gpg"
+		[[ -e "$FIDO/$n" ]] || { printf '%s' "$n"; return 0; }
+	done
+}
+
+# --------------------------------------------------------------------------
+# índice (.map): lock, leitura, escrita atômica
+# --------------------------------------------------------------------------
+
+lock_map() { # x | s
+	exec {LOCKFD}>>"$FIDO/.map.lock" || die "$(t 'não consegui abrir o lock do índice' 'cannot open index lock')"
+	flock "-$1" "$LOCKFD" || die "$(t 'não consegui obter o lock do índice' 'cannot acquire index lock')"
+}
+
+# 0 = ok ou ausente; 1 = presente mas inválido
+map_valid() {
+	[[ -e "$MAP" || -L "$MAP" ]] || return 0
+	[[ -f "$MAP" && ! -L "$MAP" ]] || return 1
+	[[ "$(head -n1 -- "$MAP" 2>/dev/null)" == "$MAP_MAGIC" ]]
+}
+
+map_rows() {
+	[[ -f "$MAP" ]] || return 0
+	grep -v -e '^#' -e '^$' -- "$MAP" || true
+}
+
+# linhas de dados no stdin -> .map novo (temp + rename, 0600)
+map_write() {
+	local tmp="$FIDO/.map.new.$$"
+	{
+		printf '%s\n' "$MAP_MAGIC" "$MAP_COLS"
+		cat
+	} >"$tmp" && chmod 600 -- "$tmp" && mv -T -- "$tmp" "$MAP" || {
+		rm -f -- "$tmp"
+		return 1
+	}
+}
+
+git_commit() {
+	local id="$1"
+	[[ "${NPASS_PASSKEY_GIT:-1}" == 0 ]] && return 0
+	[[ -d "$NPASS_STORE/.git" ]] && command -v git >/dev/null 2>&1 || return 0
+	git -C "$NPASS_STORE" add -A -- "$id/Fido" 2>/dev/null
+	if ! git -C "$NPASS_STORE" diff --cached --quiet -- "$id/Fido" 2>/dev/null; then
+		git -C "$NPASS_STORE" commit -q --no-verify --no-gpg-sign -m "passkey: $id" -- "$id/Fido" 2>/dev/null \
+			|| warn "$(t 'commit automático falhou' 'automatic commit failed')"
+	fi
+	return 0
+}
+
+# --------------------------------------------------------------------------
+# comandos do backend
+# --------------------------------------------------------------------------
+
+cmd_list() {
+	local id="${1:-}" rp="${2:-}" login="${3:-}"
+	[[ -n "$id" && $# -le 3 ]] || usage
+	setup_id "$id"
+	if [[ ! -e "$MAP" ]]; then
+		if compgen -G "$FIDO/*.gpg" >/dev/null; then
+			warn "$(t 'há blobs mas não há índice; rode: npass passkey rebuild-index' 'there are blobs but no index; run: npass passkey rebuild-index') $id"
+		fi
+		return 0
+	fi
+	map_valid || die "$(t "índice inválido em $id; rode: npass passkey rebuild-index $id" "invalid index in $id; run: npass passkey rebuild-index $id")"
+	map_rows | awk -F'\t' -v rp="$rp" -v lg="$login" -v hasrp="${2+x}" -v haslg="${3+x}" \
+		'(hasrp=="" || $1==rp) && (haslg=="" || $2==lg)'
+}
+
+cmd_store() {
+	[[ $# -eq 3 ]] || usage
+	local id="$1" rp="$2" login="$3" cred name blob_tmp
+	setup_id "$id"
+	check_field rp_id "$rp"
+	check_field login "$login"
+	cred="$(tr -d '[:space:]')"
+	[[ -n "$cred" ]] || die "$(t 'credencial vazia no stdin' 'empty credential on stdin')"
+	printf '%s' "$cred" | base64 -d >/dev/null 2>&1 || die "$(t 'a credencial não é base64 válido' 'credential is not valid base64')"
+	printf '%s' "$cred" >"$T/cred"
+
+	load_authorized
+	pick_signer
+	mkdir -p -m 700 -- "$FIDO" || die "$(t 'não consegui criar Fido/' 'cannot create Fido/')"
+	lock_map x
+	map_valid || die "$(t "índice inválido em $id; rode: npass passkey rebuild-index $id" "invalid index in $id; run: npass passkey rebuild-index $id")"
+
+	name="$(new_blob_name)"
+	blob_build "$T/blob.new" "$rp" "$login" "$T/cred"
+	blob_tmp="$FIDO/.blob.new.$$"
+	install -m 600 -- "$T/blob.new" "$blob_tmp" && mv -T -- "$blob_tmp" "$FIDO/$name" \
+		|| { rm -f -- "$blob_tmp"; die "$(t 'falha ao gravar o blob' 'failed to write the blob')"; }
+
+	# Índice depois do blob; se falhar, o blob é revertido (rollback do store).
+	if ! { map_rows; printf '%s\t%s\t%s\n' "$rp" "$login" "$name"; } | map_write; then
+		shred -u -- "$FIDO/$name" 2>/dev/null || rm -f -- "$FIDO/$name"
+		die "$(t 'falha ao atualizar o índice; blob revertido' 'failed to update the index; blob rolled back')"
+	fi
+	git_commit "$id"
+	printf '%s\n' "$name"
+}
+
+cmd_load() {
+	[[ $# -eq 2 ]] || usage
+	local id="$1" blob path plain l1 l2 l3 l4
+	blob="$(norm_blob "$2")"
+	setup_id "$id"
+	load_authorized
+	path="$FIDO/$blob"
+	[[ -f "$path" && ! -L "$path" ]] || die "$(t "blob não encontrado: $blob" "blob not found: $blob")"
+	blob_check "$path" || die "$(t "blob rejeitado ($blob)" "blob rejected ($blob)"): $(err_text "$B_ERR")"
+	"$NPASS_GPG" --quiet --batch --use-agent -d -o "$T/plain" "$T/pl" 2>"$T/err" \
+		|| die "$(t "falha ao decifrar $blob" "failed to decrypt $blob"): $(head -n1 "$T/err")"
+	{
+		IFS= read -r l1
+		IFS= read -r l2
+		IFS= read -r l3
+		IFS= read -r l4
+	} <"$T/plain"
+	# O payload cifrado repete o cabeçalho público: impede trocar rp/login por fora.
+	if [[ "$l1" != "$PAYLOAD_MAGIC" || "$l2" != "rp_id"$'\t'"$B_RP" || "$l3" != "login"$'\t'"$B_LOGIN" || "$l4" != $'credential\t'* ]]; then
+		die "$(t "payload de $blob não corresponde ao cabeçalho público" "payload of $blob does not match its public header")"
+	fi
+	printf '%s\n' "${l4#$'credential\t'}"
+}
+
+cmd_rm() {
+	[[ $# -eq 2 ]] || usage
+	local id="$1" blob path rows found=0
+	blob="$(norm_blob "$2")"
+	setup_id "$id"
+	path="$FIDO/$blob"
+	[[ -d "$FIDO" ]] || die "$(t "blob não encontrado: $blob" "blob not found: $blob")"
+	lock_map x
+	[[ -e "$path" || -L "$path" ]] && found=1
+	map_valid || die "$(t "índice inválido em $id; rode: npass passkey rebuild-index $id" "invalid index in $id; run: npass passkey rebuild-index $id")"
+	rows="$(map_rows | awk -F'\t' -v b="$blob" '$3==b{n++} END{print n+0}')"
+	((found || rows)) || die "$(t "blob não encontrado: $blob" "blob not found: $blob")"
+	# Índice primeiro: uma queda no meio deixa um órfão (detectável), nunca uma entrada pendurada.
+	if [[ -f "$MAP" ]]; then
+		map_rows | awk -F'\t' -v b="$blob" '$3!=b' | map_write \
+			|| die "$(t 'falha ao atualizar o índice' 'failed to update the index')"
+	fi
+	if ((found)); then
+		shred -u -- "$path" 2>/dev/null || rm -f -- "$path"
+	fi
+	git_commit "$id"
+}
+
+# Lista os blobs de Fido/ (um por linha, só o nome).
+blob_names() {
+	local f
+	shopt -s nullglob
+	for f in "$FIDO"/*.gpg; do printf '%s\n' "${f##*/}"; done
+	shopt -u nullglob
+}
+
+cmd_verify() {
+	local id="" deep=0 a
+	for a in "$@"; do
+		case "$a" in
+		--deep) deep=1 ;;
+		*) [[ -z "$id" ]] && id="$a" || usage ;;
+		esac
+	done
+	[[ -n "$id" ]] || usage
+	setup_id "$id"
+	load_authorized
+	if [[ ! -d "$FIDO" ]]; then
+		printf '%s\n' "$(t 'ok: nada a verificar (sem Fido/)' 'ok: nothing to verify (no Fido/)')"
+		return 0
+	fi
+	lock_map s
+
+	local problems=0 nblobs=0 nok=0 mode name
+	local -A in_map_rp=() in_map_login=() map_count=() sha_first=() cred_first=()
+	prob() { printf 'PROBLEMA %s %s %s\n' "$1" "$2" "${3:-}"; ((problems++)); }
+
+	mode="$(stat -c '%a' -- "$FIDO" 2>/dev/null)"
+	[[ "$mode" == 700 ]] || prob PERMISSAO Fido/ "modo $mode (esperado 700)"
+
+	# índice
+	local have_map=0 rp login blob
+	if [[ -e "$MAP" || -L "$MAP" ]]; then
+		have_map=1
+		if ! map_valid; then
+			prob INDICE_INVALIDO .map "$(t 'cabeçalho/arquivo inválido; use rebuild-index' 'bad header/file; use rebuild-index')"
+			have_map=0
+		else
+			mode="$(stat -c '%a' -- "$MAP" 2>/dev/null)"
+			[[ "$mode" == 600 ]] || prob PERMISSAO .map "modo $mode (esperado 600)"
+		fi
+	fi
+	if ((have_map)); then
+		while IFS=$'\t' read -r rp login blob; do
+			[[ -n "$blob" && -n "$rp" && -n "$login" ]] || { prob INDICE_LINHA .map "$(t 'linha malformada' 'malformed line')"; continue; }
+			if [[ ! "$blob" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*\.gpg$ ]]; then
+				prob INDICE_LINHA .map "$(t 'nome de blob inválido' 'invalid blob name')"
+				continue
+			fi
+			((map_count[$blob]++))
+			in_map_rp[$blob]="$rp"
+			in_map_login[$blob]="$login"
+		done < <(map_rows)
+		for blob in "${!map_count[@]}"; do
+			((map_count[$blob] > 1)) && prob DUP_INDICE "$blob" "$(t "listado ${map_count[$blob]}x no índice" "listed ${map_count[$blob]}x in the index")"
+			[[ -f "$FIDO/$blob" ]] || prob PENDURADO "$blob" "$(t 'entrada do índice sem blob' 'index entry without a blob')"
+		done
+	fi
+
+	# blobs
+	while IFS= read -r name; do
+		[[ -n "$name" ]] || continue
+		((nblobs++))
+		local path="$FIDO/$name" bad=0
+		if [[ -L "$path" ]]; then
+			prob SYMLINK "$name" "$(t 'blob é um link simbólico' 'blob is a symlink')"
+			continue
+		fi
+		mode="$(stat -c '%a' -- "$path" 2>/dev/null)"
+		[[ "$mode" == 600 ]] || prob PERMISSAO "$name" "modo $mode (esperado 600)"
+		if ! blob_check "$path"; then
+			local code="${B_ERR%%:*}"
+			prob "$code" "$name" "$(err_text "$B_ERR")"
+			continue
+		fi
+		if ((have_map)); then
+			if [[ -z "${map_count[$name]+x}" ]]; then
+				prob ORFAO "$name" "$(t "blob válido fora do índice ($B_RP / $B_LOGIN)" "valid blob missing from the index ($B_RP / $B_LOGIN)")"
+				bad=1
+			elif [[ "${in_map_rp[$name]}" != "$B_RP" || "${in_map_login[$name]}" != "$B_LOGIN" ]]; then
+				prob DIVERGENTE "$name" "$(t 'índice e cabeçalho do blob discordam' 'index and blob header disagree')"
+				bad=1
+			fi
+		else
+			prob ORFAO "$name" "$(t 'sem índice utilizável' 'no usable index')"
+			bad=1
+		fi
+		if [[ -n "${sha_first[$B_SHA]+x}" ]]; then
+			prob DUP_PAYLOAD "$name" "$(t "mesmo payload de ${sha_first[$B_SHA]}" "same payload as ${sha_first[$B_SHA]}")"
+			bad=1
+		else
+			sha_first[$B_SHA]="$name"
+		fi
+		if ((deep)); then
+			local plain l1 l2 l3 l4 chash
+			if "$NPASS_GPG" --quiet --batch --use-agent -d -o "$T/plain" "$T/pl" 2>"$T/err"; then
+				{
+					IFS= read -r l1
+					IFS= read -r l2
+					IFS= read -r l3
+					IFS= read -r l4
+				} <"$T/plain"
+				if [[ "$l1" != "$PAYLOAD_MAGIC" || "$l2" != "rp_id"$'\t'"$B_RP" || "$l3" != "login"$'\t'"$B_LOGIN" || "$l4" != $'credential\t'* ]]; then
+					prob PAYLOAD_DIVERGENTE "$name" "$(t 'payload cifrado não corresponde ao cabeçalho' 'encrypted payload does not match its header')"
+					bad=1
+				else
+					chash="$(printf '%s' "${l4#$'credential\t'}" | sha256sum | cut -d' ' -f1)"
+					if [[ -n "${cred_first[$chash]+x}" ]]; then
+						prob DUP_CREDENCIAL "$name" "$(t "mesma credencial de ${cred_first[$chash]}" "same credential as ${cred_first[$chash]}")"
+						bad=1
+					else
+						cred_first[$chash]="$name"
+					fi
+				fi
+				shred -u -- "$T/plain" 2>/dev/null || rm -f -- "$T/plain"
+			else
+				prob DECIFRAR "$name" "$(head -n1 "$T/err")"
+				bad=1
+			fi
+		fi
+		((bad)) || ((nok++))
+	done < <(blob_names)
+
+	printf '%s\n' "$(t "verificados: $nblobs blob(s), $nok sem problemas, $problems problema(s)" "checked: $nblobs blob(s), $nok clean, $problems problem(s)")"
+	((problems == 0))
+}
+
+cmd_rebuild_index() {
+	[[ $# -eq 1 ]] || usage
+	local id="$1" name n=0 rejected=0 tmp
+	setup_id "$id"
+	load_authorized
+	[[ -d "$FIDO" ]] || die "$(t "nada a reconstruir: $id não tem Fido/" "nothing to rebuild: $id has no Fido/")"
+	lock_map x
+	tmp="$T/rows"
+	: >"$tmp"
+	while IFS= read -r name; do
+		[[ -n "$name" ]] || continue
+		if [[ -L "$FIDO/$name" ]]; then
+			warn "$(t "ignorado: $name (link simbólico)" "skipped: $name (symlink)")"
+			((rejected++))
+			continue
+		fi
+		if blob_check "$FIDO/$name"; then
+			printf '%s\t%s\t%s\n' "$B_RP" "$B_LOGIN" "$name" >>"$tmp"
+			((n++))
+		else
+			warn "$(t "rejeitado: $name" "rejected: $name"): $(err_text "$B_ERR")"
+			((rejected++))
+		fi
+	done < <(blob_names)
+	LC_ALL=C sort -t $'\t' -k1,1 -k2,2 -k3,3 -o "$tmp" "$tmp"
+	map_write <"$tmp" || die "$(t 'falha ao gravar o índice' 'failed to write the index')"
+	git_commit "$id"
+	printf '%s\n' "$(t "índice reconstruído: $n entrada(s), $rejected blob(s) rejeitado(s)" "index rebuilt: $n entr(y/ies), $rejected blob(s) rejected")"
+}
+
+# --------------------------------------------------------------------------
+# helper nativo: localizar, validar, executar
+# --------------------------------------------------------------------------
+
+helpers_dir() {
+	printf '%s\n' "${NPASS_HELPERS_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/npass/helpers}"
+}
+
+# trusted_file PATH  -> 0 ou TF_ERR. Mesmas portas do npass para extensões:
+# arquivo regular (não link), sem escrita de grupo/outros, .sig que verifica
+# e fingerprint entre as SUAS chaves secretas.
+TF_ERR=""
+trusted_file() {
+	local p="$1" perms g o status fpr k
+	TF_ERR=""
+	if [[ -L "$p" ]]; then TF_ERR="symlink"; return 1; fi
+	if [[ ! -f "$p" ]]; then TF_ERR="ausente"; return 1; fi
+	perms="$(stat -c '%a' -- "$p" 2>/dev/null)"
+	g="${perms: -2:1}"
+	o="${perms: -1}"
+	if (((10#$g & 2) || (10#$o & 2))); then TF_ERR="permissao"; return 1; fi
+	if [[ ! -f "$p.sig" ]]; then TF_ERR="sem_sig"; return 1; fi
+	status="$("$NPASS_GPG" --batch --status-fd=1 --verify "$p.sig" "$p" 2>/dev/null)"
+	fpr="$(awk '$2=="VALIDSIG"{print $3; exit}' <<<"$status")"
+	if [[ -z "$fpr" ]]; then TF_ERR="assinatura_invalida"; return 1; fi
+	while IFS= read -r k; do
+		[[ "${k^^}" == "${fpr^^}" ]] && return 0
+	done < <("$NPASS_GPG" --list-secret-keys --with-colons 2>/dev/null | awk -F: '$1=="fpr"{print $10}')
+	TF_ERR="chave_nao_e_sua:$fpr"
+	return 1
+}
+
+trust_die() { # NOME
+	local what="$1"
+	case "$TF_ERR" in
+	symlink) die "$(t "$what recusado: é um link simbólico" "$what refused: it is a symlink")" ;;
+	ausente) die "$(t "$what não encontrado" "$what not found")" ;;
+	permissao) die "$(t "$what recusado: gravável por grupo/outros" "$what refused: group/other writable")" ;;
+	sem_sig) die "$(t "$what recusado: sem assinatura ($what.sig)" "$what refused: no signature ($what.sig)")" ;;
+	assinatura_invalida) die "$(t "$what recusado: assinatura inválida" "$what refused: invalid signature")" ;;
+	chave_nao_e_sua:*) die "$(t "$what recusado: assinado por chave que não é sua (${TF_ERR#*:})" "$what refused: signed by a key that is not yours (${TF_ERR#*:})")" ;;
+	*) die "$(t "$what recusado" "$what refused")" ;;
+	esac
+}
+
+cmd_serve() {
+	[[ $# -ge 1 ]] || usage
+	local id="$1" hdir helper stamp sk proto hsha esha
+	shift
+	setup_id "$id"
+	hdir="$(helpers_dir)"
+	helper="$hdir/npass-passkeyd"
+	stamp="$hdir/npass-passkeyd.stamp"
+
+	[[ -d "$hdir" && ! -L "$hdir" ]] || die "$(t "diretório de helpers ausente: $hdir (instale a extensão com o install.sh)" "helpers directory missing: $hdir (install the extension with install.sh)")"
+	[[ -O "$hdir" ]] || die "$(t "diretório de helpers não é seu: $hdir" "helpers directory is not yours: $hdir")"
+	local dm; dm="$(stat -c '%a' -- "$hdir")"
+	if (((10#${dm: -2:1} & 2) || (10#${dm: -1} & 2))); then
+		die "$(t "diretório de helpers gravável por grupo/outros: $hdir" "helpers directory writable by group/others: $hdir")"
+	fi
+
+	# 1) o executável e o selo de compatibilidade têm que estar assinados por VOCÊ
+	trusted_file "$helper" || trust_die npass-passkeyd
+	trusted_file "$stamp" || trust_die npass-passkeyd.stamp
+
+	# 2) o selo amarra helper + esta extensão + protocolo: um binário antigo (ainda
+	#    com assinatura válida) ou construído para outro código não passa
+	[[ "$(sed -n 1p -- "$stamp")" == "$STAMP_MAGIC" ]] || die "$(t 'selo do helper inválido' 'invalid helper stamp')"
+	proto="$(sed -n 's/^proto  *//p' -- "$stamp" | head -n1)"
+	hsha="$(sed -n 's/^helper-sha256  *//p' -- "$stamp" | head -n1)"
+	esha="$(sed -n 's/^extension-sha256  *//p' -- "$stamp" | head -n1)"
+	[[ "$proto" == "$PASSKEY_PROTO" ]] || die "$(t "helper incompatível: protocolo $proto, esta extensão fala $PASSKEY_PROTO (refaça: install.sh)" "incompatible helper: protocol $proto, this extension speaks $PASSKEY_PROTO (redo: install.sh)")"
+	[[ "$hsha" == "$(sha_of "$helper")" ]] || die "$(t 'helper diferente do que foi selado (binário antigo ou adulterado); refaça: install.sh' 'helper differs from the sealed one (old or tampered binary); redo: install.sh')"
+	[[ "$esha" == "$(sha_of "$SELF")" ]] || die "$(t 'o helper foi construído para outra versão desta extensão; refaça: install.sh' 'the helper was built for another version of this extension; redo: install.sh')"
+
+	local self_bin="${NPASS_BIN:-$(command -v npass 2>/dev/null || true)}"
+	[[ -x "$self_bin" ]] || die "$(t 'não achei o executável do npass (NPASS_BIN)' 'cannot find the npass executable (NPASS_BIN)')"
+	[[ "${NPASS_ENABLE_EXTENSIONS:-0}" == 1 ]] || die "$(t 'NPASS_ENABLE_EXTENSIONS=1 é necessário: o daemon chama "npass passkey ..." de volta' 'NPASS_ENABLE_EXTENSIONS=1 is required: the daemon calls "npass passkey ..." back')"
+
+	export NPASS_BIN="$self_bin" NPASS_STORE NPASS_GPG NPASS_LANG
+	cleanup
+	trap - EXIT
+	exec "$helper" --id "$id" "$@"
+}
+
+# npass passkey seal [KEYID]: chamado pelo install.sh depois de copiar o helper.
+cmd_seal() {
+	local keyid="${1:-}" hdir helper stamp
+	local -a keyargs=()
+	[[ -n "$keyid" ]] && keyargs=(--default-key "$keyid")
+	hdir="$(helpers_dir)"
+	helper="$hdir/npass-passkeyd"
+	stamp="$hdir/npass-passkeyd.stamp"
+	[[ -f "$helper" && ! -L "$helper" ]] || die "$(t "helper não encontrado: $helper" "helper not found: $helper")"
+	[[ -f "$SELF.sig" ]] || die "$(t 'a própria extensão precisa estar assinada antes (npass extension sign)' 'the extension itself must be signed first (npass extension sign)')"
+	rm -f -- "$helper.sig" "$stamp" "$stamp.sig"
+	{
+		printf '%s\n' "$STAMP_MAGIC"
+		printf 'proto %s\n' "$PASSKEY_PROTO"
+		printf 'helper-sha256 %s\n' "$(sha_of "$helper")"
+		printf 'extension-sha256 %s\n' "$(sha_of "$SELF")"
+	} >"$stamp"
+	chmod 644 -- "$stamp"
+	local f
+	for f in "$helper" "$stamp"; do
+		"$NPASS_GPG" --batch --yes --quiet "${keyargs[@]}" --detach-sign -o "$f.sig" "$f" 2>"$T/err" \
+			|| die "$(t "falha ao assinar $f" "failed to sign $f"): $(head -n1 "$T/err")"
+	done
+	printf '%s\n' "$(t "helper selado e assinado: $helper" "helper sealed and signed: $helper")"
+}
+
+# --------------------------------------------------------------------------
+
+main() {
+	local sub="${1:-}"
+	[[ $# -gt 0 ]] && shift
+	case "$sub" in
+	list | ls) cmd_list "$@" ;;
+	store) cmd_store "$@" ;;
+	load) cmd_load "$@" ;;
+	rm | remove) cmd_rm "$@" ;;
+	verify) cmd_verify "$@" ;;
+	rebuild-index) cmd_rebuild_index "$@" ;;
+	serve) cmd_serve "$@" ;;
+	seal) cmd_seal "$@" ;;
+	'' | -h | --help | help) usage ;;
+	*) usage ;;
+	esac
+}
+
+main "$@"

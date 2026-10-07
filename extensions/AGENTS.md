@@ -28,6 +28,12 @@ Use para tarefas envolvendo:
 
 Testes relacionados: `tests/import.bats`, `tests/import-pass.bats`, `tests/import-pass-secrets.bats`.
 
+### `npass-passkey`
+
+Backend de passkeys (`Fido/.map`, `Fido/*.gpg`), verificação, `serve` do helper Rust (`passkey/`) e `seal`.
+
+Teste: `tests/passkey.bats`. Daemon: `passkey/AGENTS.md`. Único `npass-*` que dispara `cargo` no `install.sh` (cabeçalho `npass-extension-cargo`).
+
 ### `npass-clip-x11.bash`
 
 Clipboard X11 usando `xclip`.

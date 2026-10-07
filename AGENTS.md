@@ -24,6 +24,8 @@ Este arquivo é o índice operacional do projeto. Use-o para localizar rapidamen
 | Assinatura de identidades/artefatos | `lib/10-signing.bash` | `tests/signing.bats` |
 | Sistema de extensões | `lib/11-extensions.bash` | `extensions/`, testes de extensão |
 | Importação de outros gerenciadores | `extensions/npass-import` | `tests/import*.bats` |
+| Passkeys / WebAuthn (backend, índice, blobs) | `extensions/npass-passkey` | `tests/passkey.bats`, `npass-passkey-arquitetura.md` |
+| Daemon FIDO2/CTAP2/UHID (Rust) | `passkey/src/` | `passkey/tests/e2e.rs`, `passkey/Cargo.toml` |
 | Clipboard X11 | `extensions/npass-clip-x11.bash` | `tests/extensions.bats` |
 | Clipboard Windows | `extensions/npass-wclip` | `windows_Requisitos.md`, `tests/extensions.bats` |
 | Instalação | `install.sh` | `tests/install.bats`, `lib/11-extensions.bash` |
