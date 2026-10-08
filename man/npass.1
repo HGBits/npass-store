@@ -634,8 +634,11 @@ Reconstrói o índice só dos blobs verificados.
 .TP
 .B npass passkey serve ID [ARGS]
 Valida o helper \fBnpass-passkeyd\fR (assinatura sua + selo de compatibilidade) e o executa.
+.TP
+.B npass passkey pin status|set|change|policy|verify ID
+PIN opcional por identidade (4 a 64 caracteres alfanuméricos), guardado em \fBFido/.pin.gpg\fR (hash, cifrado e assinado) com contador em \fBFido/.pin-tries\fR. 5 erros seguidos bloqueiam. \fBchange\fR e \fBpolicy\fR exigem o PIN atual (\fB--pin-fd N\fR ou terminal) ou a prova da chave GPG (\fB--gpg\fR), que também desbloqueia. \fB--new-pin-fd N\fR lê o PIN novo de um descritor. Política: \fBnunca\fR, \fBopcional\fR (padrão: pede PIN se houver e o site pedir verificação do usuário) ou \fBrequerido\fR (toda operação; sem PIN, nega).
 .PP
-Ambiente: \fBNPASS_HELPERS_DIR\fR (padrão ~/.local/share/npass/helpers), \fBNPASS_PASSKEY_GIT\fR=0, \fBNPASS_PASSKEY_CONFIRM\fR (comando de confirmação do daemon).
+Ambiente: \fBNPASS_HELPERS_DIR\fR (padrão ~/.local/share/npass/helpers), \fBNPASS_PASSKEY_GIT\fR=0, \fBNPASS_PASSKEY_CONFIRM\fR (comando de confirmação do daemon), \fBNPASS_PASSKEY_PIN_CMD\fR (comando que imprime o PIN).
 .SH SECURITY
 .TP
 .B A PIN has little entropy.

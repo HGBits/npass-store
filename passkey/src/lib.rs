@@ -11,6 +11,7 @@
 pub mod backend;
 pub mod callbacks;
 pub mod confirm;
+pub mod pin;
 #[cfg(target_os = "linux")]
 pub mod uhid_loop;
 

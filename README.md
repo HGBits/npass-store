@@ -364,8 +364,34 @@ npass passkey serve ID                  # valida o helper e sobe o autenticador 
   `~/.local/share/npass/helpers/` e é assinado junto com um selo que o amarra a esta versão da extensão.
 - Requer `/dev/uhid` acessível ao seu usuário (`modprobe uhid` + regra udev). A presença do
   usuário é pedida por `zenity`/`kdialog`, pelo terminal ou por `--confirm-cmd`; sem nenhum, nega.
+  Não existe modo "aprovar tudo".
 - `rp_id` e `login` ficam **em claro** nos blobs e no `.map` (e no git do store), por desenho.
   `NPASS_PASSKEY_GIT=0` desliga o commit automático de `Fido/`.
+
+#### PIN e política de exigência (por identidade)
+
+```bash
+npass passkey pin set ID                       # define o PIN: 4 a 64 caracteres [A-Za-z0-9]
+npass passkey pin change ID                    # troca: pede o PIN atual
+npass passkey pin change ID --gpg              # troca: prova com a senha da chave GPG (também desbloqueia)
+npass passkey pin policy ID                    # mostra a política
+npass passkey pin policy ID nunca|opcional|requerido   # muda (exige PIN atual ou --gpg)
+npass passkey pin status ID                    # política, se há PIN, tentativas restantes
+```
+
+| política | quando o PIN é pedido |
+|---|---|
+| `nunca` | nunca (só a confirmação de presença), mesmo com PIN definido |
+| `opcional` (padrão) | se houver PIN **e** o site pedir verificação do usuário (UV) |
+| `requerido` | em toda operação; sem PIN definido, tudo é negado |
+
+- **5 erros seguidos bloqueiam** o PIN (nem o PIN certo vale depois). O contador sobe *antes* de
+  comparar e zera no acerto. Desbloqueio: `pin change ID --gpg`.
+- Tudo fica em `ID/Fido/`: `.pin.gpg` (hash do PIN + política, cifrado **e assinado** pelas chaves da
+  identidade, 0600) e `.pin-tries` (contador, 0600, nunca vai ao git). Cada identidade só enxerga o seu.
+- O daemon pede o PIN por `zenity`, `kdialog`, terminal ou `--pin-cmd CMD` (o comando imprime o PIN).
+- Criar uma passkey descobrível sempre conta como verificação do usuário (CTAP2), então, com PIN
+  definido, o **registro** pede o PIN mesmo em `opcional`.
 
 ## Desenvolvimento
 

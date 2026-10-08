@@ -236,9 +236,9 @@ fake_helper() {
 	fake_helper
 	run pk seal "$FPR"
 	[ "$status" -eq 0 ]
-	run pk serve pessoal --auto-approve
+	run pk serve pessoal --confirm-cmd true
 	[ "$status" -eq 0 ]
-	[ "$output" = "helper-rodou: --id pessoal --auto-approve" ]
+	[ "$output" = "helper-rodou: --id pessoal --confirm-cmd true" ]
 }
 
 @test "serve recusa binário adulterado, com assinatura de chave alheia e binário velho assinado por você" {
@@ -360,11 +360,240 @@ run_install() {
 
 @test "daemon: registro + autenticação CTAP2 (assinatura ES256 verificada) guardando em Fido/*.gpg" {
 	command -v cargo >/dev/null || skip "cargo não encontrado"
-	export NPASS_E2E_BIN="$NPASS" NPASS_E2E_ID=pessoal
+	"$NPASS" init pinid "$FPR" >/dev/null
+	export NPASS_E2E_BIN="$NPASS" NPASS_E2E_ID=pessoal NPASS_E2E_PIN_ID=pinid
 	run cargo test --manifest-path "$PROJECT_DIR/passkey/Cargo.toml" --locked --test e2e
 	[ "$status" -eq 0 ] || { echo "$output" >&2; false; }
 	run pk list pessoal site.test
 	[ "$(wc -l <<<"$output")" -eq 2 ]
 	run pk verify pessoal --deep
 	[ "$status" -eq 0 ]
+	# a política/PIN foram exercitados no npass real, só dentro da identidade "pinid"
+	run pk pin status pinid
+	[[ "$output" == *"policy nunca"* && "$output" == *"set 1"* ]]
+	run pk pin status pessoal
+	[[ "$output" == *"set 0"* ]]
+}
+
+# --- PIN e política de exigência (por identidade, em Fido/) --------------------------------
+
+pin_set() { pk pin set "$1" --new-pin-fd 3 3<<<"$2"; }
+pin_verify() { pk pin verify "$1" <<<"$2"; }
+
+@test "pin status padrão: opcional, sem PIN, 5 tentativas" {
+	run pk pin status pessoal
+	[ "$status" -eq 0 ]
+	[ "$output" = $'policy opcional\nset 0\ntries-left 5\nblocked 0' ]
+}
+
+@test "pin set: arquivo cifrado 0600 + contador 0600; o PIN não aparece em claro" {
+	run pin_set pessoal "Abc12345"
+	[ "$status" -eq 0 ]
+	[ "$(stat -c %a "$FIDO/.pin.gpg")" = 600 ]
+	[ "$(stat -c %a "$FIDO/.pin-tries")" = 600 ]
+	[ "$(cat "$FIDO/.pin-tries")" = 0 ]
+	run grep -rl "Abc12345" "$FIDO"
+	[ "$status" -ne 0 ]
+	run pin_set pessoal "Outro1234"
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"pin change"* ]]
+}
+
+@test "pin: alfanumérico de 4 a 64 caracteres" {
+	run pin_set pessoal "abc"
+	[ "$status" -ne 0 ]
+	run pin_set pessoal "$(printf 'a%.0s' {1..65})"
+	[ "$status" -ne 0 ]
+	run pin_set pessoal "abc def"
+	[ "$status" -ne 0 ]
+	run pin_set pessoal "ab-c#d1"
+	[ "$status" -ne 0 ]
+	run pin_set pessoal "ação1234"
+	[ "$status" -ne 0 ]
+	[ ! -e "$FIDO/.pin.gpg" ]
+	run pin_set pessoal "$(printf 'Z9%.0s' {1..32})"      # 64
+	[ "$status" -eq 0 ]
+	run pin_verify pessoal "$(printf 'Z9%.0s' {1..32})"
+	[ "$status" -eq 0 ]
+}
+
+@test "verify: acerto passa; 5 erros bloqueiam e nem o PIN certo vale depois" {
+	pin_set pessoal "Abc12345"
+	run pin_verify pessoal "Abc12345"
+	[ "$status" -eq 0 ]
+	for n in 4 3 2 1; do
+		run pin_verify pessoal "errado$n"
+		[ "$status" -eq 10 ]
+		[[ "$output" == *"tries-left $n"* ]]
+	done
+	run pin_verify pessoal "errado0"
+	[ "$status" -eq 10 ]
+	[[ "$output" == *"BLOQUEADO"* ]]
+	[ "$(cat "$FIDO/.pin-tries")" = 5 ]
+	run pin_verify pessoal "Abc12345"
+	[ "$status" -eq 11 ]
+	run pk pin status pessoal
+	[[ "$output" == *"blocked 1"* && "$output" == *"tries-left 0"* ]]
+}
+
+@test "acerto zera o contador de erros" {
+	pin_set pessoal "Abc12345"
+	pin_verify pessoal errado1 || true
+	pin_verify pessoal errado2 || true
+	[ "$(cat "$FIDO/.pin-tries")" = 2 ]
+	run pin_verify pessoal "Abc12345"
+	[ "$status" -eq 0 ]
+	[ "$(cat "$FIDO/.pin-tries")" = 0 ]
+}
+
+@test "verify sem PIN definido devolve 12" {
+	run pin_verify pessoal qualquer1
+	[ "$status" -eq 12 ]
+	pk pin policy pessoal opcional >/dev/null
+	run pin_verify pessoal qualquer1
+	[ "$status" -eq 12 ]
+}
+
+@test "troca de PIN exige o PIN atual: errado falha e conta; certo troca" {
+	pin_set pessoal "Abc12345"
+	run pk pin change pessoal --pin-fd 3 --new-pin-fd 4 3<<<"errado99" 4<<<"Novo98765"
+	[ "$status" -eq 10 ]
+	[ "$(cat "$FIDO/.pin-tries")" = 1 ]
+	run pin_verify pessoal "Novo98765"
+	[ "$status" -eq 10 ]                                  # não trocou
+	run pk pin change pessoal --pin-fd 3 --new-pin-fd 4 3<<<"Abc12345" 4<<<"Novo98765"
+	[ "$status" -eq 0 ]
+	[ "$(cat "$FIDO/.pin-tries")" = 0 ]
+	run pin_verify pessoal "Novo98765"
+	[ "$status" -eq 0 ]
+	run pin_verify pessoal "Abc12345"
+	[ "$status" -eq 10 ]
+}
+
+@test "troca de PIN pela senha da chave GPG (--gpg) mesmo bloqueado, e restaura as tentativas" {
+	pin_set pessoal "Abc12345"
+	for n in 1 2 3 4 5; do pin_verify pessoal "errado$n" || true; done
+	run pk pin change pessoal --pin-fd 3 --new-pin-fd 4 3<<<"Abc12345" 4<<<"Novo98765"
+	[ "$status" -eq 11 ]                                  # PIN certo, mas bloqueado
+	run pk pin change pessoal --gpg --new-pin-fd 4 4<<<"Novo98765"
+	[ "$status" -eq 0 ]
+	run pk pin status pessoal
+	[[ "$output" == *"blocked 0"* && "$output" == *"tries-left 5"* ]]
+	run pin_verify pessoal "Novo98765"
+	[ "$status" -eq 0 ]
+}
+
+@test "troca de PIN valida o formato do PIN novo" {
+	pin_set pessoal "Abc12345"
+	run pk pin change pessoal --pin-fd 3 --new-pin-fd 4 3<<<"Abc12345" 4<<<"ab"
+	[ "$status" -ne 0 ]
+	run pin_verify pessoal "Abc12345"
+	[ "$status" -eq 0 ]
+}
+
+@test "política: padrão opcional; mudar exige PIN atual ou --gpg quando há PIN" {
+	run pk pin policy pessoal
+	[ "$output" = opcional ]
+	run pk pin policy pessoal talvez
+	[ "$status" -ne 0 ]
+	run pk pin policy pessoal requerido                    # sem PIN: livre (mas avisa)
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"NEGADA"* ]]
+	run pk pin policy pessoal
+	[ "$output" = requerido ]
+	pk pin policy pessoal nunca >/dev/null
+	pin_set pessoal "Abc12345"
+	run pk pin policy pessoal opcional --pin-fd 3 3<<<"errado99"
+	[ "$status" -eq 10 ]
+	run pk pin policy pessoal
+	[ "$output" = nunca ]                                  # PIN errado não mudou nada
+	run pk pin policy pessoal opcional --pin-fd 3 3<<<"Abc12345"
+	[ "$status" -eq 0 ]
+	run pk pin policy pessoal requerido --gpg
+	[ "$status" -eq 0 ]
+	run pk pin status pessoal
+	[[ "$output" == *"policy requerido"* && "$output" == *"set 1"* ]]
+	run pk pin policy pessoal nunca --pin-fd 3 3<<<"Abc12345"
+	[ "$status" -eq 0 ]
+}
+
+@test "a política e o PIN sobrevivem um ao outro (policy não apaga o PIN)" {
+	pin_set pessoal "Abc12345"
+	pk pin policy pessoal requerido --pin-fd 3 3<<<"Abc12345" >/dev/null
+	run pin_verify pessoal "Abc12345"
+	[ "$status" -eq 0 ]
+	pk pin change pessoal --pin-fd 3 --new-pin-fd 4 3<<<"Abc12345" 4<<<"Novo98765" >/dev/null
+	run pk pin policy pessoal
+	[ "$output" = requerido ]
+}
+
+@test "registro de PIN trocado por um cifrado sem assinatura é recusado (bloqueado)" {
+	pin_set pessoal "Abc12345"
+	printf 'NPASS-FIDO-PIN-V1\npolicy\tnunca\n' | gpg --batch --yes -q --trust-model always --armor -e -r "$FPR" -o "$FIDO/.pin.gpg"
+	run pk pin status pessoal
+	[[ "$output" == *"policy requerido"* && "$output" == *"blocked 1"* && "$output" == *"tampered 1"* ]]
+	run pin_verify pessoal "Abc12345"
+	[ "$status" -eq 11 ]
+}
+
+@test "registro de PIN assinado por chave não autorizada é recusado" {
+	pin_set pessoal "Abc12345"
+	GNUPGHOME="$ATACANTE_GNUPGHOME" gpg --export | gpg --import 2>/dev/null
+	printf 'NPASS-FIDO-PIN-V1\npolicy\tnunca\n' \
+		| GNUPGHOME="$ATACANTE_GNUPGHOME" gpg --batch --yes -q --sign -o "$BATS_TEST_TMPDIR/s.bin"
+	gpg --batch --yes -q --trust-model always --armor -e -r "$FPR" -o "$FIDO/.pin.gpg" "$BATS_TEST_TMPDIR/s.bin"
+	run pk pin status pessoal
+	[[ "$output" == *"blocked 1"* && "$output" == *"tampered 1"* ]]
+}
+
+@test "apagar o registro de PIN deixando o contador não rebaixa a segurança; --gpg recupera" {
+	pin_set pessoal "Abc12345"
+	pk pin policy pessoal requerido --gpg >/dev/null
+	rm "$FIDO/.pin.gpg"
+	run pk pin status pessoal
+	[[ "$output" == *"blocked 1"* && "$output" == *"tampered 1"* ]]
+	run pin_set pessoal "Novo98765"
+	[ "$status" -ne 0 ]
+	run pk pin set pessoal --gpg --new-pin-fd 3 3<<<"Novo98765"
+	[ "$status" -eq 0 ]
+	run pin_verify pessoal "Novo98765"
+	[ "$status" -eq 0 ]
+}
+
+@test "cada identidade tem o seu PIN, política e contador" {
+	"$NPASS" init trabalho "$FPR" >/dev/null
+	pin_set pessoal "Pessoal123"
+	pin_set trabalho "Trabalho456"
+	pk pin policy trabalho requerido --pin-fd 3 3<<<"Trabalho456" >/dev/null
+	for n in 1 2 3 4 5; do pin_verify pessoal "errado$n" || true; done
+	run pk pin status pessoal
+	[[ "$output" == *"blocked 1"* ]]
+	run pk pin status trabalho
+	[[ "$output" == *"policy requerido"* && "$output" == *"blocked 0"* && "$output" == *"tries-left 5"* ]]
+	run pin_verify trabalho "Pessoal123"                  # o PIN de uma não abre a outra
+	[ "$status" -eq 10 ]
+	run pin_verify trabalho "Trabalho456"
+	[ "$status" -eq 0 ]
+	[ -e "$NPASS_STORE/trabalho/Fido/.pin-tries" ] && [ -e "$NPASS_STORE/pessoal/Fido/.pin-tries" ]
+}
+
+@test "git: o registro de PIN é versionado; o contador de erros nunca" {
+	export NPASS_PASSKEY_GIT=1
+	git -C "$NPASS_STORE" init -q
+	git -C "$NPASS_STORE" config user.email t@t
+	git -C "$NPASS_STORE" config user.name t
+	pin_set pessoal "Abc12345"
+	pin_verify pessoal errado1 || true
+	store pessoal github.com ana >/dev/null
+	run git -C "$NPASS_STORE" ls-files
+	[[ "$output" == *"pessoal/Fido/.pin.gpg"* ]]
+	[[ "$output" != *".pin-tries"* && "$output" != *".map.lock"* ]]
+	run git -C "$NPASS_STORE" log --format=%s
+	[[ "$output" != *"Abc12345"* && "$output" != *"errado"* ]]
+}
+
+@test "o daemon não tem --auto-approve" {
+	command -v cargo >/dev/null || skip "cargo não encontrado"
+	run cargo test --manifest-path "$PROJECT_DIR/passkey/Cargo.toml" --locked --test cli
+	[ "$status" -eq 0 ] || { echo "$output" >&2; false; }
 }

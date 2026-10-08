@@ -12,11 +12,14 @@
 #   npass passkey verify ID [--deep]
 #   npass passkey rebuild-index ID
 #   npass passkey serve ID [ARGS-DO-DAEMON...]
+#   npass passkey pin status|set|change|policy|verify ID ...   (PIN opcional por identidade)
 #   npass passkey seal [KEYID]            (encanamento do instalador)
 #
 # Layout (por identidade):
 #   $NPASS_STORE/ID/Fido/.map        índice de DESCOBERTA (rp_id, login, blob), 0600
-#   $NPASS_STORE/ID/Fido/.map.lock   lock do índice
+#   $NPASS_STORE/ID/Fido/.map.lock   lock do índice (também serializa as operações de PIN)
+#   $NPASS_STORE/ID/Fido/.pin.gpg     registro de PIN + política: cifrado E assinado, 0600
+#   $NPASS_STORE/ID/Fido/.pin-tries   contador de erros consecutivos de PIN (nunca vai ao git), 0600
 #   $NPASS_STORE/ID/Fido/<hex>.gpg   blob: cabeçalho público assinado + payload cifrado
 #
 # O índice NUNCA é autoridade: load/verify/rebuild-index decidem pelo blob
@@ -74,6 +77,12 @@ uso: npass passkey COMANDO ...
   rm ID BLOB                     remove o blob e a entrada do índice
   verify ID [--deep]             integridade, assinaturas, órfãos, duplicatas
   rebuild-index ID               reconstrói o índice a partir dos metadados públicos dos blobs
+  pin status ID                  política, se há PIN, tentativas restantes
+  pin set ID [--new-pin-fd N]    define o PIN (1ª vez); 4 a 64 caracteres [A-Za-z0-9]
+  pin change ID [--gpg|--pin-fd N] [--new-pin-fd N]
+                                 troca o PIN: exige o PIN atual OU a senha da chave GPG (--gpg)
+  pin policy ID [nunca|opcional|requerido]   mostra ou muda a política (muda: exige PIN atual ou --gpg)
+  pin verify ID                  lê o PIN no stdin e confere (usado pelo daemon); 5 erros bloqueiam
   serve ID [ARGS...]             valida o helper e inicia o autenticador FIDO virtual
   seal [KEYID]                   (instalador) assina o helper e o selo de compatibilidade
 EOF
@@ -326,7 +335,8 @@ git_commit() {
 	local id="$1"
 	[[ "${NPASS_PASSKEY_GIT:-1}" == 0 ]] && return 0
 	[[ -d "$NPASS_STORE/.git" ]] && command -v git >/dev/null 2>&1 || return 0
-	git -C "$NPASS_STORE" add -A -- "$id/Fido" 2>/dev/null
+	# o contador de PIN e o lock são estado local: nunca vão ao git
+	git -C "$NPASS_STORE" add -A -- "$id/Fido" ":(exclude)$id/Fido/.pin-tries" ":(exclude)$id/Fido/.map.lock" 2>/dev/null
 	if ! git -C "$NPASS_STORE" diff --cached --quiet -- "$id/Fido" 2>/dev/null; then
 		git -C "$NPASS_STORE" commit -q --no-verify --no-gpg-sign -m "passkey: $id" -- "$id/Fido" 2>/dev/null \
 			|| warn "$(t 'commit automático falhou' 'automatic commit failed')"
@@ -592,6 +602,367 @@ cmd_rebuild_index() {
 }
 
 # --------------------------------------------------------------------------
+# PIN opcional e política de exigência (por identidade, tudo em Fido/)
+#
+#   .pin.gpg    "NPASS-FIDO-PIN-V1" + policy + salt + hash, cifrado para os recipients e
+#               ASSINADO por chave autorizada (quem só escreve no store não troca o PIN
+#               nem a política). Guarda o hash do PIN, nunca o PIN.
+#   .pin-tries  erros consecutivos (0..5). Incrementa ANTES de comparar; zera no acerto.
+#
+# Política: nunca (não pede PIN) | opcional (pede se houver PIN e o site pedir verificação
+# do usuário) | requerido (toda operação exige PIN; sem PIN definido, nega).
+# --------------------------------------------------------------------------
+
+readonly PIN_MAGIC="NPASS-FIDO-PIN-V1"
+readonly PIN_MAX_TRIES=5
+PINF="" TRIESF=""
+PIN_POLICY="opcional" PIN_SALT="" PIN_HASH="" PIN_TAMPER=""
+PIN_GPG=0 PIN_FD="" NEW_FD="" PIN_IN=""
+POS=()
+
+norm_policy() {
+	case "${1,,}" in
+	nunca | never) printf 'nunca' ;;
+	opcional | optional) printf 'opcional' ;;
+	requerido | required) printf 'requerido' ;;
+	*) return 1 ;;
+	esac
+}
+
+pin_format_ok() {
+	local LC_ALL=C
+	[[ "$1" =~ ^[A-Za-z0-9]{4,64}$ ]]
+}
+
+pin_hash() { printf '%s:%s' "$1" "$2" | sha256sum | cut -d' ' -f1; }
+
+tries_get() {
+	local v=0
+	if [[ -e "$TRIESF" ]]; then
+		v="$(head -c 8 -- "$TRIESF" 2>/dev/null | tr -d '[:space:]')"
+		[[ "$v" =~ ^[0-9]+$ ]] || v="$PIN_MAX_TRIES" # ilegível = bloqueado
+	fi
+	((v > PIN_MAX_TRIES)) && v="$PIN_MAX_TRIES"
+	printf '%s' "$v"
+}
+
+tries_set() {
+	local tmp="$FIDO/.pin-tries.new.$$"
+	printf '%s\n' "$1" >"$tmp" && chmod 600 -- "$tmp" && mv -T -- "$tmp" "$TRIESF" || {
+		rm -f -- "$tmp"
+		return 1
+	}
+}
+
+# Lê, decifra e valida .pin.gpg. 0 = ok (ou sem registro e sem contador: padrão);
+# 1 = adulterado/ausente com contador (tratado como BLOQUEADO); 2 = não consegui decifrar.
+pin_record_read() {
+	local fpr line key val seen_magic=0
+	PIN_POLICY="opcional" PIN_SALT="" PIN_HASH="" PIN_TAMPER=""
+	if [[ ! -e "$PINF" && ! -L "$PINF" ]]; then
+		if [[ -e "$TRIESF" ]]; then
+			PIN_TAMPER="$(t 'registro de PIN ausente, mas o contador existe' 'PIN record missing while the counter exists')"
+			return 1
+		fi
+		return 0
+	fi
+	if [[ ! -f "$PINF" || -L "$PINF" ]]; then
+		PIN_TAMPER="$(t 'registro de PIN inválido' 'invalid PIN record')"
+		return 1
+	fi
+	if ! "$NPASS_GPG" --quiet --batch --use-agent --status-fd 3 -d -o "$T/pin.plain" "$PINF" \
+		3>"$T/pin.status" 2>"$T/err"; then
+		PIN_TAMPER="$(t 'não consegui decifrar o registro de PIN' 'cannot decrypt the PIN record'): $(head -n1 "$T/err")"
+		return 2
+	fi
+	fpr="$(awk '$2=="VALIDSIG"{print $12; exit}' "$T/pin.status")"
+	fpr="${fpr^^}"
+	if [[ -z "$fpr" ]] || ! in_list "$fpr" "${AUTH_FPRS[@]}"; then
+		PIN_TAMPER="$(t 'registro de PIN sem assinatura de chave autorizada' 'PIN record not signed by an authorized key')"
+		rm -f -- "$T/pin.plain"
+		return 1
+	fi
+	while IFS= read -r line; do
+		if ((!seen_magic)); then
+			[[ "$line" == "$PIN_MAGIC" ]] || { PIN_TAMPER="$(t 'registro de PIN com formato inválido' 'PIN record with invalid format')"; return 1; }
+			seen_magic=1
+			continue
+		fi
+		key="${line%%$'\t'*}"
+		val="${line#*$'\t'}"
+		case "$key" in
+		policy) PIN_POLICY="$(norm_policy "$val")" || { PIN_TAMPER="$(t 'política inválida no registro' 'invalid policy in record')"; return 1; } ;;
+		salt) PIN_SALT="$val" ;;
+		hash) PIN_HASH="$val" ;;
+		esac
+	done <"$T/pin.plain"
+	shred -u -- "$T/pin.plain" 2>/dev/null || rm -f -- "$T/pin.plain"
+	if [[ -n "$PIN_HASH$PIN_SALT" ]] && [[ ! "$PIN_SALT" =~ ^[0-9a-f]{32}$ || ! "$PIN_HASH" =~ ^[0-9a-f]{64}$ ]]; then
+		PIN_TAMPER="$(t 'registro de PIN com salt/hash inválidos' 'PIN record with invalid salt/hash')"
+		PIN_SALT="" PIN_HASH=""
+		return 1
+	fi
+	return 0
+}
+
+# pin_record_write POLICY SALT HASH   (SALT/HASH vazios = só a política)
+pin_record_write() {
+	local r tmp="$FIDO/.pin.new.$$"
+	local -a args=()
+	for r in "${RECIPIENTS[@]}"; do args+=(-r "$r"); done
+	{
+		printf '%s\n' "$PIN_MAGIC"
+		printf 'policy\t%s\n' "$1"
+		if [[ -n "$3" ]]; then
+			printf 'salt\t%s\n' "$2"
+			printf 'hash\t%s\n' "$3"
+		fi
+	} >"$T/pin.new.plain"
+	"$NPASS_GPG" --quiet --batch --yes --use-agent --trust-model always --armor \
+		--local-user "$SIGNER" "${args[@]}" -se -o "$T/pin.new" "$T/pin.new.plain" 2>"$T/err" \
+		|| die "$(t 'falha ao cifrar/assinar o registro de PIN' 'failed to encrypt/sign the PIN record'): $(head -n1 "$T/err")"
+	shred -u -- "$T/pin.new.plain" 2>/dev/null || rm -f -- "$T/pin.new.plain"
+	install -m 600 -- "$T/pin.new" "$tmp" && mv -T -- "$tmp" "$PINF" \
+		|| { rm -f -- "$tmp"; die "$(t 'falha ao gravar o registro de PIN' 'failed to write the PIN record')"; }
+}
+
+# Confere um PIN contando a tentativa. 0 ok | 10 errado | 11 bloqueado | 12 sem PIN.
+# Mensagem humana em stderr; "tries-left N" em stdout só se PIN_VERIFY_STDOUT=1.
+pin_try() {
+	local pin="$1" n h left
+	if [[ -z "$PIN_HASH" ]]; then
+		printf '%s\n' "$(t 'nenhum PIN definido (use: npass passkey pin set)' 'no PIN set (use: npass passkey pin set)')" >&2
+		return 12
+	fi
+	n="$(tries_get)"
+	if ((n >= PIN_MAX_TRIES)); then
+		printf '%s\n' "$(t "PIN bloqueado após $PIN_MAX_TRIES erros. Desbloqueie com: npass passkey pin change ID --gpg" "PIN locked after $PIN_MAX_TRIES failures. Unlock with: npass passkey pin change ID --gpg")" >&2
+		[[ "${PIN_VERIFY_STDOUT:-0}" == 1 ]] && printf 'tries-left 0\n'
+		return 11
+	fi
+	tries_set "$((n + 1))" || die "$(t 'não consegui gravar o contador de tentativas' 'cannot write the attempt counter')"
+	h="$(pin_hash "$PIN_SALT" "$pin")"
+	if ((${#pin} <= 64)) && [[ "$h" == "$PIN_HASH" ]]; then
+		tries_set 0 || die "$(t 'não consegui zerar o contador de tentativas' 'cannot reset the attempt counter')"
+		[[ "${PIN_VERIFY_STDOUT:-0}" == 1 ]] && printf 'tries-left %s\n' "$PIN_MAX_TRIES"
+		return 0
+	fi
+	left=$((PIN_MAX_TRIES - n - 1))
+	[[ "${PIN_VERIFY_STDOUT:-0}" == 1 ]] && printf 'tries-left %s\n' "$left"
+	if ((left > 0)); then
+		printf '%s\n' "$(t "PIN incorreto; restam $left tentativa(s)" "wrong PIN; $left attempt(s) left")" >&2
+	else
+		printf '%s\n' "$(t 'PIN incorreto; BLOQUEADO. Desbloqueie com: npass passkey pin change ID --gpg' 'wrong PIN; LOCKED. Unlock with: npass passkey pin change ID --gpg')" >&2
+	fi
+	return 10
+}
+
+# Prova de posse da chave GPG: esquece a passphrase em cache das suas chaves desta identidade
+# e exige-a de novo para assinar um desafio (sem passphrase na chave, a prova é só a posse).
+gpg_reauth() {
+	local grip status fpr
+	if command -v gpg-connect-agent >/dev/null 2>&1; then
+		while IFS= read -r grip; do
+			[[ -n "$grip" ]] && gpg-connect-agent "clear_passphrase --mode=normal $grip" /bye >/dev/null 2>&1
+		done < <("$NPASS_GPG" --batch --with-colons --with-keygrip --list-secret-keys 2>/dev/null \
+			| awk -F: -v s="$SIGNER" '$1=="sec"{b=0; pend=1} pend&&$1=="fpr"{if(toupper($10)==s)b=1; pend=0} b&&$1=="grp"{print $10}')
+	fi
+	head -c 32 /dev/urandom >"$T/chal"
+	"$NPASS_GPG" --batch --yes --quiet --use-agent --local-user "$SIGNER" --detach-sign \
+		-o "$T/chal.sig" "$T/chal" 2>"$T/err" || return 1
+	status="$("$NPASS_GPG" --batch --status-fd=1 --verify "$T/chal.sig" "$T/chal" 2>/dev/null)"
+	fpr="$(awk '$2=="VALIDSIG"{print $12; exit}' <<<"$status")"
+	[[ -n "$fpr" ]] && in_list "${fpr^^}" "${AUTH_FPRS[@]}"
+}
+
+read_line_fd() { # FD -> PIN_IN
+	local fd="$1"
+	PIN_IN=""
+	IFS= read -r PIN_IN <&"$fd" || [[ -n "$PIN_IN" ]]
+}
+
+read_secret_tty() { # PROMPT -> PIN_IN
+	[[ -r /dev/tty && -w /dev/tty ]] || die "$(t 'sem terminal para digitar o PIN; use --pin-fd / --new-pin-fd' 'no terminal to type the PIN; use --pin-fd / --new-pin-fd')"
+	PIN_IN=""
+	IFS= read -r -s -p "$1" PIN_IN </dev/tty
+	printf '\n' >/dev/tty
+}
+
+get_current_pin() {
+	if [[ -n "$PIN_FD" ]]; then read_line_fd "$PIN_FD"; else read_secret_tty "$(t 'PIN atual: ' 'Current PIN: ')"; fi
+}
+
+get_new_pin() {
+	local a
+	if [[ -n "$NEW_FD" ]]; then
+		read_line_fd "$NEW_FD"
+	else
+		read_secret_tty "$(t 'Novo PIN: ' 'New PIN: ')"
+		a="$PIN_IN"
+		read_secret_tty "$(t 'Repita o novo PIN: ' 'Repeat the new PIN: ')"
+		[[ "$a" == "$PIN_IN" ]] || die "$(t 'os PINs não coincidem' 'PINs do not match')"
+	fi
+	pin_format_ok "$PIN_IN" || die "$(t 'PIN inválido: use de 4 a 64 caracteres, só letras e números (A-Z a-z 0-9)' 'invalid PIN: use 4 to 64 characters, letters and digits only (A-Z a-z 0-9)')"
+}
+
+new_pin_record() { # POLICY  (usa PIN_IN)
+	local salt hash
+	salt="$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+	hash="$(pin_hash "$salt" "$PIN_IN")"
+	pin_record_write "$1" "$salt" "$hash"
+}
+
+# Autoriza uma mudança sensível (trocar PIN/política): PIN atual (conta tentativa) ou --gpg.
+pin_authorize() {
+	local rc
+	if ((PIN_GPG)); then
+		gpg_reauth || die "$(t 'a prova com a chave GPG falhou' 'GPG key proof failed')"
+		return 0
+	fi
+	get_current_pin
+	pin_try "$PIN_IN"
+	rc=$?
+	((rc == 0)) || exit "$rc"
+}
+
+parse_pin_args() {
+	PIN_GPG=0 PIN_FD="" NEW_FD="" POS=()
+	while (($#)); do
+		case "$1" in
+		--gpg) PIN_GPG=1 ;;
+		--pin-fd) PIN_FD="${2:-}"; shift ;;
+		--new-pin-fd) NEW_FD="${2:-}"; shift ;;
+		-*) usage ;;
+		*) POS+=("$1") ;;
+		esac
+		shift
+	done
+	[[ -z "$PIN_FD" || "$PIN_FD" =~ ^[3-9]$|^[1-9][0-9]$ ]] || usage
+	[[ -z "$NEW_FD" || "$NEW_FD" =~ ^[3-9]$|^[1-9][0-9]$ ]] || usage
+}
+
+pin_print_status() { # lê o registro (já lockado) e imprime key/value estável
+	local rc n blocked=0
+	pin_record_read
+	rc=$?
+	if ((rc == 2)); then
+		printf 'npass passkey: %s\n' "$PIN_TAMPER" >&2
+		exit 13
+	elif ((rc == 1)); then
+		printf 'policy requerido\nset 0\ntries-left 0\nblocked 1\ntampered 1\n'
+		printf 'npass passkey: %s\n' "$PIN_TAMPER" >&2
+		return 0
+	fi
+	n="$(tries_get)"
+	((n >= PIN_MAX_TRIES)) && blocked=1
+	printf 'policy %s\nset %s\ntries-left %s\nblocked %s\n' "$PIN_POLICY" "$([[ -n "$PIN_HASH" ]] && echo 1 || echo 0)" "$((PIN_MAX_TRIES - n))" "$blocked"
+}
+
+cmd_pin() {
+	local sub="${1:-}" id rc newpol
+	[[ $# -gt 0 ]] && shift
+	parse_pin_args "$@"
+	id="${POS[0]:-}"
+	[[ -n "$id" ]] || usage
+	setup_id "$id"
+	load_authorized
+	PINF="$FIDO/.pin.gpg"
+	TRIESF="$FIDO/.pin-tries"
+
+	case "$sub" in
+	status)
+		if [[ ! -d "$FIDO" ]]; then
+			printf 'policy opcional\nset 0\ntries-left %s\nblocked 0\n' "$PIN_MAX_TRIES"
+			return 0
+		fi
+		lock_map s
+		pin_print_status
+		;;
+
+	verify)
+		local p=""
+		IFS= read -r p || [[ -n "$p" ]]
+		p="${p:0:256}"
+		[[ -d "$FIDO" ]] || { printf '%s\n' "$(t 'nenhum PIN definido' 'no PIN set')" >&2; exit 12; }
+		lock_map x
+		pin_record_read
+		rc=$?
+		if ((rc == 1)); then printf 'npass passkey: %s\n' "$PIN_TAMPER" >&2; printf 'tries-left 0\n'; exit 11; fi
+		((rc == 2)) && { printf 'npass passkey: %s\n' "$PIN_TAMPER" >&2; exit 13; }
+		PIN_VERIFY_STDOUT=1 pin_try "$p"
+		exit $?
+		;;
+
+	set)
+		pick_signer
+		mkdir -p -m 700 -- "$FIDO" || die "$(t 'não consegui criar Fido/' 'cannot create Fido/')"
+		lock_map x
+		pin_record_read
+		rc=$?
+		if ((rc == 2)); then die "$PIN_TAMPER"; fi
+		if ((rc == 1)); then
+			((PIN_GPG)) || die "$PIN_TAMPER. $(t 'Refaça com --gpg (prova da chave GPG); a política volta a "opcional".' 'Redo with --gpg (GPG key proof); the policy falls back to "opcional".')"
+			gpg_reauth || die "$(t 'a prova com a chave GPG falhou' 'GPG key proof failed')"
+		fi
+		[[ -z "$PIN_HASH" ]] || die "$(t "já existe um PIN em $id; use: npass passkey pin change $id" "a PIN already exists in $id; use: npass passkey pin change $id")"
+		get_new_pin
+		new_pin_record "$PIN_POLICY"
+		tries_set 0 || die "$(t 'não consegui criar o contador de tentativas' 'cannot create the attempt counter')"
+		git_commit "$id"
+		printf '%s\n' "$(t "PIN definido em $id (política: $PIN_POLICY)" "PIN set in $id (policy: $PIN_POLICY)")"
+		;;
+
+	change)
+		pick_signer
+		[[ -d "$FIDO" ]] || die "$(t "nenhum PIN definido em $id" "no PIN set in $id")"
+		lock_map x
+		pin_record_read
+		rc=$?
+		if ((rc != 0)); then die "$PIN_TAMPER. $(t 'Use: npass passkey pin set ID --gpg' 'Use: npass passkey pin set ID --gpg')"; fi
+		[[ -n "$PIN_HASH" ]] || die "$(t "nenhum PIN definido em $id; use: npass passkey pin set $id" "no PIN set in $id; use: npass passkey pin set $id")"
+		pin_authorize
+		get_new_pin
+		new_pin_record "$PIN_POLICY"
+		tries_set 0 || die "$(t 'não consegui zerar o contador de tentativas' 'cannot reset the attempt counter')"
+		git_commit "$id"
+		printf '%s\n' "$(t "PIN trocado em $id; tentativas restauradas" "PIN changed in $id; attempts restored")"
+		;;
+
+	policy)
+		newpol="${POS[1]:-}"
+		if [[ -z "$newpol" ]]; then
+			[[ -d "$FIDO" ]] || { printf 'opcional\n'; return 0; }
+			lock_map s
+			pin_record_read
+			rc=$?
+			if ((rc != 0)); then die "$PIN_TAMPER"; fi
+			printf '%s\n' "$PIN_POLICY"
+			return 0
+		fi
+		newpol="$(norm_policy "$newpol")" || die "$(t 'política inválida: use nunca, opcional ou requerido' 'invalid policy: use nunca, opcional or requerido')"
+		pick_signer
+		mkdir -p -m 700 -- "$FIDO" || die "$(t 'não consegui criar Fido/' 'cannot create Fido/')"
+		lock_map x
+		pin_record_read
+		rc=$?
+		if ((rc != 0)); then die "$PIN_TAMPER. $(t 'Use: npass passkey pin set ID --gpg' 'Use: npass passkey pin set ID --gpg')"; fi
+		if [[ -n "$PIN_HASH" ]]; then
+			pin_authorize
+			tries_set 0 2>/dev/null
+		fi
+		pin_record_write "$newpol" "$PIN_SALT" "$PIN_HASH"
+		git_commit "$id"
+		printf '%s\n' "$(t "política de $id: $newpol" "policy of $id: $newpol")"
+		if [[ "$newpol" == requerido && -z "$PIN_HASH" ]]; then
+			warn "$(t 'não há PIN: toda operação será NEGADA até você definir um (npass passkey pin set)' 'no PIN set: every operation will be DENIED until you set one (npass passkey pin set)')"
+		fi
+		;;
+
+	*) usage ;;
+	esac
+}
+
+# --------------------------------------------------------------------------
 # helper nativo: localizar, validar, executar
 # --------------------------------------------------------------------------
 
@@ -714,6 +1085,7 @@ main() {
 	rm | remove) cmd_rm "$@" ;;
 	verify) cmd_verify "$@" ;;
 	rebuild-index) cmd_rebuild_index "$@" ;;
+	pin) cmd_pin "$@" ;;
 	serve) cmd_serve "$@" ;;
 	seal) cmd_seal "$@" ;;
 	'' | -h | --help | help) usage ;;

@@ -23,7 +23,7 @@ Testes Bats do projeto. Use-os como índice de comportamento esperado antes de a
 | `store-extras.bats` | comportamentos extras do store |
 | `i18n.bats` | internacionalização |
 | `patch-m2.bats` | regressão/patch específico |
-| `passkey.bats` | `npass-passkey`: armazenamento, integridade, helper assinado, instalação, ciclo CTAP2 (usa `cargo test`) |
+| `passkey.bats` | `npass-passkey`: armazenamento, integridade, helper assinado, instalação, PIN/política/bloqueio, ciclo CTAP2 (usa `cargo test`) |
 | `diceware.bats` | `diceware`, `memorable`, lista de palavras, sorteio sem viés, instalação da lista |
 
 ## Fixtures GPG

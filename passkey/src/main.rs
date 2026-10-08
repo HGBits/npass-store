@@ -1,6 +1,7 @@
 use npass_passkeyd::backend::NpassBackend;
 use npass_passkeyd::callbacks::NpassCallbacks;
 use npass_passkeyd::confirm::Confirm;
+use npass_passkeyd::pin::PinPrompt;
 use npass_passkeyd::PROTOCOL;
 
 const USAGE: &str = "\
@@ -8,19 +9,21 @@ npass-passkeyd - autenticador FIDO2 virtual (UHID) com o npass como único armaz
 
 Não execute direto: use `npass passkey serve ID`, que valida este helper antes.
 
-uso: npass-passkeyd --id ID [--auto-approve] [--confirm-cmd CMD]
+uso: npass-passkeyd --id ID [--confirm-cmd CMD] [--pin-cmd CMD]
      npass-passkeyd --protocol | --version | --help
 
   --id ID            identidade do npass onde as passkeys ficam
   --confirm-cmd CMD  comando de shell para pedir presença (sai 0 = permitir);
                      também via NPASS_PASSKEY_CONFIRM. Padrão: zenity ou kdialog.
-  --auto-approve     aprova tudo sem perguntar (só para testes/headless)
+  --pin-cmd CMD      comando de shell que imprime o PIN no stdout (cancelar = sair != 0);
+                     também via NPASS_PASSKEY_PIN_CMD. Padrão: zenity, kdialog ou terminal.
+PIN e política (nunca|opcional|requerido): npass passkey pin ...  (guardados em Fido/)
 ambiente: NPASS_BIN (executável do npass), NPASS_STORE, NPASS_GPG";
 
 fn main() {
     let mut id: Option<String> = None;
-    let mut auto = false;
     let mut confirm_cmd = std::env::var("NPASS_PASSKEY_CONFIRM").ok();
+    let mut pin_cmd = std::env::var("NPASS_PASSKEY_PIN_CMD").ok();
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
         match a.as_str() {
@@ -37,8 +40,8 @@ fn main() {
                 return;
             }
             "--id" => id = args.next(),
-            "--auto-approve" => auto = true,
             "--confirm-cmd" => confirm_cmd = args.next(),
+            "--pin-cmd" => pin_cmd = args.next(),
             other => {
                 eprintln!("npass-passkeyd: opção desconhecida: {other}\n\n{USAGE}");
                 std::process::exit(2);
@@ -51,10 +54,15 @@ fn main() {
     };
     let npass = std::env::var("NPASS_BIN").unwrap_or_else(|_| "npass".into());
 
-    let confirm = Confirm::detect(auto, confirm_cmd);
-    eprintln!("npass-passkeyd: identidade '{id}', confirmação: {}", confirm.describe());
+    let confirm = Confirm::detect(confirm_cmd);
+    let pin = PinPrompt::detect(pin_cmd);
+    eprintln!(
+        "npass-passkeyd: identidade '{id}', confirmação: {}, PIN: {}",
+        confirm.describe(),
+        pin.describe()
+    );
 
-    let callbacks = NpassCallbacks::new(NpassBackend::new(npass, id), confirm);
+    let callbacks = NpassCallbacks::new(NpassBackend::new(npass, id), confirm, pin);
     let config = npass_passkeyd::authenticator_config();
 
     #[cfg(target_os = "linux")]

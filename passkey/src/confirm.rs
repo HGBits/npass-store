@@ -5,15 +5,13 @@
 //!      (recebe NPASS_PASSKEY_RP, NPASS_PASSKEY_USER e NPASS_PASSKEY_INFO no ambiente);
 //!   2. zenity ou kdialog, se existirem;
 //!   3. o terminal (/dev/tty) de quem iniciou o daemon, se houver;
-//!   4. nada disponível: NEGA (a menos que `--auto-approve` tenha sido pedido).
+//!   4. nada disponível: NEGA. Não existe modo "aprovar tudo".
 
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone)]
 pub enum Confirm {
-    /// Aprova tudo. Só com `--auto-approve` explícito (testes, máquina sem tela).
-    Auto,
     /// Comando de shell do usuário.
     Shell(String),
     Zenity,
@@ -33,10 +31,7 @@ fn have(bin: &str) -> bool {
 }
 
 impl Confirm {
-    pub fn detect(auto: bool, shell: Option<String>) -> Self {
-        if auto {
-            return Confirm::Auto;
-        }
+    pub fn detect(shell: Option<String>) -> Self {
         if let Some(c) = shell.filter(|c| !c.trim().is_empty()) {
             return Confirm::Shell(c);
         }
@@ -53,7 +48,6 @@ impl Confirm {
 
     pub fn describe(&self) -> &'static str {
         match self {
-            Confirm::Auto => "automático (--auto-approve)",
             Confirm::Shell(_) => "comando do usuário",
             Confirm::Zenity => "zenity",
             Confirm::Kdialog => "kdialog",
@@ -67,7 +61,6 @@ impl Confirm {
         let who = user.unwrap_or("(sem nome)");
         let text = format!("npass passkey\n\nSite: {rp_id}\nConta: {who}\n{info}\n\nPermitir?");
         let mut cmd = match self {
-            Confirm::Auto => return true,
             Confirm::Deny => {
                 eprintln!("npass-passkeyd: sem diálogo de confirmação; negado ({rp_id}). Use --confirm-cmd ou instale zenity/kdialog.");
                 return false;
@@ -164,8 +157,7 @@ mod tests {
     }
 
     #[test]
-    fn deny_nega_e_auto_aprova() {
+    fn deny_nega() {
         assert!(!Confirm::Deny.ask("x", None, "a"));
-        assert!(Confirm::Auto.ask("x", None, "a"));
     }
 }

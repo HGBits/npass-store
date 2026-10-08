@@ -5,8 +5,9 @@
 //! pedido. Nenhuma credencial fica em memória entre chamadas, e nada vai
 //! para disco por aqui.
 
-use crate::backend::{Backend, Entry};
+use crate::backend::{Backend, Entry, PinCheck, Policy};
 use crate::confirm::Confirm;
+use crate::pin::PinPrompt;
 use soft_fido2::{
     AuthenticatorCallbacks, Credential, CredentialRef, Error, Result, UpResult, UvResult,
 };
@@ -20,12 +21,43 @@ const SAME_CEREMONY: Duration = Duration::from_secs(15);
 /// Depois de uma varredura completa, id desconhecido não dispara outra varredura por este tempo.
 const SCAN_COOLDOWN: Duration = Duration::from_secs(5);
 
+/// Qual callback pediu a autorização: só presença (UP) ou verificação do usuário (UV).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Kind {
+    Up,
+    Uv,
+}
+
+/// A política manda: quando esta operação exige PIN.
+///  - nunca: jamais; opcional: só em UV e se houver PIN; requerido: sempre (UP e UV).
+pub fn needs_pin(policy: Policy, kind: Kind, pin_set: bool) -> bool {
+    match (policy, kind) {
+        (Policy::Nunca, _) => false,
+        (Policy::Opcional, Kind::Uv) => pin_set,
+        (Policy::Opcional, Kind::Up) => false,
+        (Policy::Requerido, _) => true,
+    }
+}
+
+/// Aviso ao usuário: stderr e, se existir, notify-send.
+fn notify(msg: &str) {
+    eprintln!("npass-passkeyd: {msg}");
+    let _ = std::process::Command::new("notify-send")
+        .args(["npass passkey", msg])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn();
+}
+
 pub struct NpassCallbacks<B: Backend> {
     backend: B,
     confirm: Confirm,
+    pin: PinPrompt,
     /// credential id -> blob (volátil, sem segredo)
     index: Mutex<HashMap<Vec<u8>, String>>,
-    last_approval: Mutex<Option<(String, Instant)>>,
+    /// (rp, quando, foi com PIN?)
+    last_approval: Mutex<Option<(String, Instant, bool)>>,
     last_scan: Mutex<Option<Instant>>,
 }
 
@@ -55,30 +87,82 @@ pub fn login_for(name: Option<&str>, display: Option<&str>, user_id: &[u8]) -> S
 }
 
 impl<B: Backend> NpassCallbacks<B> {
-    pub fn new(backend: B, confirm: Confirm) -> Self {
+    pub fn new(backend: B, confirm: Confirm, pin: PinPrompt) -> Self {
         Self {
             backend,
             confirm,
+            pin,
             index: Mutex::new(HashMap::new()),
             last_approval: Mutex::new(None),
             last_scan: Mutex::new(None),
         }
     }
 
-    fn approved_recently(&self, rp_id: &str) -> bool {
+    fn approved_recently(&self, rp_id: &str, with_pin: bool) -> bool {
         matches!(&*self.last_approval.lock().unwrap(),
-            Some((rp, at)) if rp == rp_id && at.elapsed() < SAME_CEREMONY)
+            Some((rp, at, pin)) if rp == rp_id && at.elapsed() < SAME_CEREMONY && (*pin || !with_pin))
     }
 
-    fn ask(&self, info: &str, user: Option<&str>, rp_id: &str) -> bool {
-        if self.approved_recently(rp_id) {
+    fn remember(&self, rp_id: &str, with_pin: bool) {
+        *self.last_approval.lock().unwrap() = Some((rp_id.to_string(), Instant::now(), with_pin));
+    }
+
+    /// Decide UP/UV conforme a política de PIN da identidade. Qualquer dúvida = nega.
+    fn authorize(&self, kind: Kind, info: &str, user: Option<&str>, rp_id: &str) -> bool {
+        // PIN já digitado para este RP na mesma cerimônia vale para UV e UP seguidos.
+        if self.approved_recently(rp_id, true) {
             return true;
         }
-        let ok = self.confirm.ask(info, user, rp_id);
-        if ok {
-            *self.last_approval.lock().unwrap() = Some((rp_id.to_string(), Instant::now()));
+        let st = match self.backend.pin_status() {
+            Ok(st) => st,
+            Err(e) => {
+                notify(&format!("não consegui ler a política de PIN; negado ({rp_id}): {e}"));
+                return false;
+            }
+        };
+        if st.blocked {
+            notify("PIN bloqueado após 5 erros; negado. Desbloqueie com: npass passkey pin change ID --gpg");
+            return false;
         }
-        ok
+        if !needs_pin(st.policy, kind, st.set) {
+            if self.approved_recently(rp_id, false) {
+                return true;
+            }
+            let ok = self.confirm.ask(info, user, rp_id);
+            if ok {
+                self.remember(rp_id, false);
+            }
+            return ok;
+        }
+        if !st.set {
+            notify("política 'requerido' sem PIN definido; negado. Defina com: npass passkey pin set ID");
+            return false;
+        }
+        let Some(pin) = self.pin.ask(rp_id, user, st.tries_left) else {
+            return false;
+        };
+        match self.backend.pin_verify(pin.as_str()) {
+            Ok(PinCheck::Ok) => {
+                self.remember(rp_id, true);
+                true
+            }
+            Ok(PinCheck::Wrong { tries_left: 0 }) | Ok(PinCheck::Blocked) => {
+                notify("PIN incorreto; BLOQUEADO. Desbloqueie com: npass passkey pin change ID --gpg");
+                false
+            }
+            Ok(PinCheck::Wrong { tries_left }) => {
+                notify(&format!("PIN incorreto; restam {tries_left} tentativa(s)"));
+                false
+            }
+            Ok(PinCheck::NotSet) => {
+                notify("não há PIN definido; negado");
+                false
+            }
+            Err(e) => {
+                notify(&format!("falha ao conferir o PIN; negado: {e}"));
+                false
+            }
+        }
     }
 
     /// Carrega e decodifica um blob. Blob rejeitado pelo npass (adulterado, assinatura
@@ -135,13 +219,14 @@ impl<B: Backend> NpassCallbacks<B> {
 
 impl<B: Backend> AuthenticatorCallbacks for NpassCallbacks<B> {
     fn request_up(&self, info: &str, user_name: Option<&str>, rp_id: &str) -> Result<UpResult> {
-        Ok(if self.ask(info, user_name, rp_id) { UpResult::Accepted } else { UpResult::Denied })
+        Ok(if self.authorize(Kind::Up, info, user_name, rp_id) { UpResult::Accepted } else { UpResult::Denied })
     }
 
-    /// UV aqui = confirmação explícita do usuário + o pinentry do GPG ao decifrar
-    /// (se a chave tiver passphrase e o agent não a tiver em cache). Não há biometria.
+    /// UV = PIN conferido (se a política pedir) ou confirmação explícita, mais o pinentry do
+    /// GPG ao decifrar (se a chave tiver passphrase e o agent não a tiver em cache).
+    /// Não há biometria.
     fn request_uv(&self, info: &str, user_name: Option<&str>, rp_id: &str) -> Result<UvResult> {
-        Ok(if self.ask(info, user_name, rp_id) { UvResult::AcceptedWithUp } else { UvResult::Denied })
+        Ok(if self.authorize(Kind::Uv, info, user_name, rp_id) { UvResult::AcceptedWithUp } else { UvResult::Denied })
     }
 
     fn write_credential(&self, cred: &CredentialRef) -> Result<()> {
@@ -225,6 +310,20 @@ impl<B: Backend> AuthenticatorCallbacks for NpassCallbacks<B> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn politica_decide_quando_pedir_pin() {
+        use Kind::*;
+        use Policy::*;
+        // nunca: jamais
+        assert!(!needs_pin(Nunca, Up, true) && !needs_pin(Nunca, Uv, true));
+        // opcional: só UV e só se houver PIN
+        assert!(!needs_pin(Opcional, Up, true));
+        assert!(needs_pin(Opcional, Uv, true));
+        assert!(!needs_pin(Opcional, Uv, false));
+        // requerido: sempre, haja PIN ou não (sem PIN, authorize nega)
+        assert!(needs_pin(Requerido, Up, false) && needs_pin(Requerido, Uv, true));
+    }
 
     #[test]
     fn login_prefere_nome_depois_display_depois_hex() {
