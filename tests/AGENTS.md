@@ -18,6 +18,7 @@ Testes Bats do projeto. Use-os como índice de comportamento esperado antes de a
 | `import-pass-secrets.bats` | importação de `pass-secrets` |
 | `otp.bats` | OTP |
 | `pin.bats` | PIN (`--password`, `--field`) |
+| `backup.bats` | `backup` e a cascata dos anexos em `rm`, `mv`, `update` e `audit` |
 | `signing.bats` | assinatura |
 | `update.bats` | atualização/rotação |
 | `store-extras.bats` | comportamentos extras do store |

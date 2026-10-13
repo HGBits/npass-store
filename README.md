@@ -189,6 +189,32 @@ npass clip pin pessoal banco/app               # copia o campo pin
 - **Um PIN tem pouca entropia** (6 dígitos ≈ 19,9 bits). Só é seguro onde o sistema limita as tentativas (cartão, celular, TPM). Não o use como senha de conta que aceite tentativas ilimitadas ou que possa ser atacada offline.
 - Se a entrada existe mas não pode ser decifrada, o comando para sem alterar nada. A única exceção é `--password -f`, que a sobrescreve de propósito.
 
+## Senhas de backup
+
+`npass backup` guarda **N senhas de backup** (códigos de recuperação) num arquivo cifrado, anexo a uma entrada que já existe. Você digita as senhas de forma interativa (ocultas, cada uma com confirmação); nada vai ao disco em claro.
+
+```bash
+npass backup -n 3 pessoal email/gmail
+```
+
+Gera dois blobs na mesma identidade, cifrados para os mesmos destinatários do `.gpg-id`:
+
+| Caminho lógico | Conteúdo |
+|---|---|
+| `email/gmail/Backup-gmail.md` | ponteiro **sem segredo**: nome do arquivo de dados, quantidade e data |
+| `email/gmail/Backup-gmail.dados.md` | as senhas, uma por seção (`## Backup 1`, `## Backup 2`, ...) |
+
+```bash
+npass show pessoal email/gmail/Backup-gmail.dados.md
+```
+
+- `-n N`: de 1 a 50. Senha vazia, repetida ou com confirmação diferente interrompe o comando antes de gravar qualquer coisa.
+- **A entrada precisa existir**, como em `pin --field`: um erro de digitação no caminho não cria um anexo órfão.
+- Já existe backup: pergunta antes de substituir (`-f` não pergunta). Só substitui anexos de verdade.
+- Os anexos acompanham a entrada: `rm` remove os dois (com aviso antes de perguntar), `mv` os leva para o novo caminho (também entre identidades) e `update` e `audit` os ignoram, para não rotacionar nem auditar um arquivo de backup como se fosse senha de login.
+- Um arquivo só é tratado como anexo quando o **nome** (`Backup-*.md`, filho direto da entrada) **e** o marcador na primeira linha (`<!-- npass:backup-index v1 -->` ou `...backup-data v1 -->`) batem. Uma entrada sua chamada `Backup-x.md` nunca é arrastada por `rm`/`mv`.
+- Como as senhas ficam em `show`/`ls` como qualquer outra entrada, quem tem a chave do `.gpg-id` lê tudo: o anexo separa o backup da entrada principal (`show` e `clip all` da entrada não o despejam), não cria um segundo nível de proteção.
+
 ## OTP
 
 Gerar código:

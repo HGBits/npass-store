@@ -107,7 +107,14 @@ cmd_rm() {
 	[[ -z "$id" || -z "$logical" ]] && npass_die "uso: npass rm [-f] ID DIR/PASS"
 	local dir
 	dir="$(npass_identity_dir "$id")"
+	# anexos de backup (npass backup) seguem a entrada: removidos junto
+	local atts_out att
+	local -a atts=()
+	atts_out="$(npass_backup_attachments "$id" "$dir" "$logical")" \
+		|| npass_die "$(npass_t erro_backup_ler_anexos "$id" "$logical")"
+	[[ -n "$atts_out" ]] && mapfile -t atts <<<"$atts_out"
 	if [[ $force -eq 0 ]]; then
+		((${#atts[@]})) && npass_t msg_backup_rm_aviso "$id" "${#atts[@]}"
 		read -r -p "$(npass_t prompt_remover "$id" "$logical")" reply
 		[[ "$reply" == [yY] ]] || { npass_t msg_cancelado; return 1; }
 	fi
@@ -119,8 +126,13 @@ cmd_rm() {
 	if [[ -f "$blob" ]]; then
 		shred -u -- "$blob" 2>/dev/null || rm -f -- "$blob"
 	fi
+	for att in "${atts[@]}"; do
+		npass_backup_drop "$dir" "$att"
+	done
 	npass_git_commit "$id" "rm"
 	npass_t msg_removido "$id" "$logical"
+	((${#atts[@]})) && npass_t msg_backup_removidos "$id" "${#atts[@]}"
+	return 0
 }
 
 # npass mv ID DIR/PASS ID2 DIR2/PASS2   -> cross-identity: decrypt+recrypt
@@ -138,10 +150,26 @@ cmd_mv() {
 		local existing
 		existing="$(npass_map_resolve "$dst_dir" "$dst_logical" 2>/dev/null)"
 		[[ -n "$existing" ]] && npass_die "$(npass_t erro_dest_ja_existe "$dst_id" "$dst_logical")"
+		# anexos de backup acompanham a entrada (decifra e recifra para o destino)
+		local atts_out att
+		local -a atts=()
+		atts_out="$(npass_backup_attachments "$id" "$dir" "$from")" \
+			|| npass_die "$(npass_t erro_backup_ler_anexos "$id" "$from")"
+		[[ -n "$atts_out" ]] && mapfile -t atts <<<"$atts_out"
+		for att in "${atts[@]}"; do
+			[[ -n "$(npass_map_resolve "$dst_dir" "$dst_logical/${att#"$from"/}" 2>/dev/null)" ]] \
+				&& npass_die "$(npass_t erro_backup_dest_existe "$dst_logical/${att#"$from"/}")"
+		done
 		npass_blob_write "$dst_dir" "$dst_logical" "$plaintext"
+		for att in "${atts[@]}"; do
+			npass_blob_write "$dst_dir" "$dst_logical/${att#"$from"/}" "$(cmd_show "$id" "$att")"
+		done
 		local old_physical; old_physical="$(npass_map_delete "$dir" "$from")"
 		local old_blob; old_blob="$(npass_blob_path "$dir" "$old_physical")"
 		[[ -f "$old_blob" ]] && shred -u -- "$old_blob" 2>/dev/null
+		for att in "${atts[@]}"; do
+			npass_backup_drop "$dir" "$att"
+		done
 		npass_git_commit "$dst_id" "mv-in"
 		npass_git_commit "$id" "mv-out"
 		printf '%s: %s -> %s: %s\n' "$id" "$from" "$dst_id" "$dst_logical"
@@ -149,7 +177,20 @@ cmd_mv() {
 		# same-identity rename: map-only, ciphertext untouched
 		local to="$a"
 		[[ -z "$to" ]] && npass_die "uso: npass mv ID DIR/PASS DIR2/PASS2"
+		# anexos de backup mudam de prefixo junto (nomes e conteudo intactos)
+		local atts_out att
+		local -a atts=()
+		atts_out="$(npass_backup_attachments "$id" "$dir" "$from")" \
+			|| npass_die "$(npass_t erro_backup_ler_anexos "$id" "$from")"
+		[[ -n "$atts_out" ]] && mapfile -t atts <<<"$atts_out"
+		for att in "${atts[@]}"; do
+			[[ -n "$(npass_map_resolve "$dir" "$to/${att#"$from"/}" 2>/dev/null)" ]] \
+				&& npass_die "$(npass_t erro_backup_dest_existe "$to/${att#"$from"/}")"
+		done
 		npass_map_rename "$dir" "$from" "$to"
+		for att in "${atts[@]}"; do
+			npass_map_rename "$dir" "$att" "$to/${att#"$from"/}"
+		done
 		npass_git_commit "$id" "mv"
 		printf '%s: %s -> %s\n' "$id" "$from" "$to"
 	fi

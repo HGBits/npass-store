@@ -277,6 +277,37 @@ be decrypted, nothing is changed, except by
 .BR "\-\-password \-f" ,
 which overwrites it on purpose.
 .TP
+.BI "backup [\-f] \-n " N " " ID " " DIR/PASS
+Prompt for
+.I N
+backup passwords (1 to 50; hidden input, each one confirmed) and store them
+in an encrypted attachment of the existing entry
+.IR DIR/PASS :
+a pointer
+.I DIR/PASS/Backup\-svc.md
+(no secrets: data file name, count, date) and a data file
+.I DIR/PASS/Backup\-svc.dados.md
+with one
+.B ## Backup i
+section per password. Both blobs live in the same identity and are encrypted for
+its
+.BR .gpg\-id .
+The entry must already exist. An existing backup is replaced after a prompt, or
+silently with
+.BR \-f ;
+empty or repeated passwords abort before anything is written. Attachments follow
+the entry:
+.B rm
+removes them,
+.B mv
+moves them (across identities too), and
+.B update
+and the
+.B audit
+extension skip them. A file counts as an attachment only if both its name
+.RB ( Backup\-*.md ,
+direct child of the entry) and the marker on its first line match.
+.TP
 .BI "otp " ID " " DIR/PASS
 Generate the current TOTP/HOTP code for an entry. For HOTP, also
 increments and persists the stored counter. The OTP secret is never

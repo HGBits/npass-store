@@ -78,6 +78,8 @@ cmd_update() {
 
 	local logical content oldpw
 	for logical in "${targets[@]}"; do
+		# anexos de backup nao sao senha de login: nunca rotacionar nem editar aqui
+		npass_backup_is_attachment "$id" "$logical" && continue
 		if [[ $edit -eq 1 ]]; then
 			cmd_edit "$id" "$logical"
 			continue
