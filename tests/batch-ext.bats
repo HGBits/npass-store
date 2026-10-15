@@ -17,34 +17,56 @@ commits() { git -C "$NPASS_STORE" rev-list --count HEAD; }
 
 # --- insert --batch -----------------------------------------------------------
 
-@test "insert --batch grava varias entradas, inclusive com varias linhas" {
-	printf 'a/um\0l1\nl2\nl3\0b/dois\0so\0' | "$NPASS" insert --batch HG
+@test "insert --batch grava varias entradas md1, inclusive com varias linhas de notas" {
+	local um two
+	um="$(md1_doc 'p1' 'login: fulano')"$'\n\n## Notas\nl1\nl2\nl3'
+	two="$(md1_doc 'so')"
+	printf 'a/um\0%s\0b/dois\0%s\0' "$um" "$two" | "$NPASS" insert --batch HG
 	run "$NPASS" show HG a/um
-	[ "$output" = $'l1\nl2\nl3' ]
-	run "$NPASS" show HG b/dois
+	[ "$output" = "$um" ]
+	run "$NPASS" get login HG a/um
+	[ "$output" = "fulano" ]
+	run "$NPASS" get HG b/dois
 	[ "$output" = "so" ]
+}
+
+@test "insert --batch recusa registro fora do md1 (nao grava) e sai com erro; os md1 do lote entram" {
+	local ok; ok="$(md1_doc 'boa')"
+	run bash -c "printf 'a/antigo\0texto puro\nlogin: x\0b/novo\0%s\0' '$ok' | '$NPASS' insert --batch HG"
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"a/antigo"* ]]
+	run "$NPASS" ls HG
+	[[ "$output" != *"a/antigo"* ]]
+	[[ "$output" == *"b/novo"* ]]
+}
+
+@test "insert --batch aceita os marcadores de anexo de backup" {
+	local a=$'<!-- npass:backup-data v1 -->\n## Backup 1\nx'
+	printf 'a/Backup-a.dados.md\0%s\0' "$a" | "$NPASS" insert --batch HG
+	run "$NPASS" show HG a/Backup-a.dados.md
+	[ "$output" = "$a" ]
 }
 
 @test "insert --batch pula existentes sem -f e sobrescreve com -f" {
 	printf 'velha\nvelha\n' | "$NPASS" insert HG a/um >/dev/null
-	printf 'a/um\0nova\0' | "$NPASS" insert --batch HG
-	run "$NPASS" show HG a/um
+	printf 'a/um\0%s\0' "$(md1_doc nova)" | "$NPASS" insert --batch HG
+	run "$NPASS" get HG a/um
 	[ "$output" = "velha" ]
-	printf 'a/um\0nova\0' | "$NPASS" insert --batch -f HG
-	run "$NPASS" show HG a/um
+	printf 'a/um\0%s\0' "$(md1_doc nova)" | "$NPASS" insert --batch -f HG
+	run "$NPASS" get HG a/um
 	[ "$output" = "nova" ]
 }
 
 @test "insert --batch faz UM commit para o lote inteiro" {
 	local antes; antes="$(commits)"
-	printf 'a\0x\0b\0y\0c\0z\0' | "$NPASS" insert --batch HG
+	printf 'a\0%s\0b\0%s\0c\0%s\0' "$(md1_doc x)" "$(md1_doc y)" "$(md1_doc z)" | "$NPASS" insert --batch HG
 	[ "$(commits)" -eq $((antes + 1)) ]
 	run git -C "$NPASS_STORE" log -1 --format=%s
 	[ "$output" = "insert-batch: HG" ]
 }
 
 @test "insert --batch recusa caminho logico com .. e nao grava nada" {
-	run bash -c "printf '../fuga\0x\0' | '$NPASS' insert --batch HG"
+	run bash -c "printf '../fuga\0%s\0' '$(md1_doc x)' | '$NPASS' insert --batch HG"
 	[ "$status" -ne 0 ]
 	run "$NPASS" ls HG
 	[[ "$output" == *"(vazio)"* ]]

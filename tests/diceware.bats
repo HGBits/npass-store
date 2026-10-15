@@ -111,12 +111,12 @@ in_section() { awk -F'\t' -v w="$1" -v sec="[$2]" '/^\[/{s=$0} s==sec && $2==w {
 	[ "$status" -eq 0 ]
 	read -r -a H <<<"$(heights)"
 	[ "${#H[@]}" -eq 6 ]
-	[ "$(rebuild '-' "${H[@]}")" = "$("$NPASS" show HG Banco/Itau)" ]
+	[ "$(rebuild '-' "${H[@]}")" = "$("$NPASS" get HG Banco/Itau)" ]
 }
 
 @test "diceware: a frase NAO aparece na saida, so as alturas; nada vai para o stdout" {
 	run "$NPASS" diceware HG a/b
-	local frase; frase="$("$NPASS" show HG a/b)"
+	local frase; frase="$("$NPASS" get HG a/b)"
 	[[ "$output" != *"$frase"* ]]
 	run bash -c "'$NPASS' diceware -f HG a/b 2>/dev/null"
 	[ "$status" -eq 0 ]
@@ -132,11 +132,12 @@ in_section() { awk -F'\t' -v w="$1" -v sec="[$2]" '/^\[/{s=$0} s==sec && $2==w {
 	[[ "$output" == *"anote também"* ]]
 }
 
-@test "diceware: toda palavra da frase esta na secao [large], e o cofre guarda so a frase (uma linha)" {
+@test "diceware: toda palavra da frase esta na secao [large], e o cofre guarda so a frase (documento md1 so com a senha)" {
 	# separador ESPACO: a lista tem palavras com hifen (yo-yo, t-shirt) que um '-' confundiria
 	"$NPASS" diceware -s ' ' HG a/b 12 >/dev/null 2>&1
-	run "$NPASS" show HG a/b
+	run "$NPASS" get HG a/b
 	[ "$(wc -l <<<"$output")" -eq 1 ]
+	[ "$("$NPASS" show HG a/b)" = "$(md1_doc "$output")" ]
 	local w n=0
 	for w in $output; do
 		in_section "$w" large
@@ -152,7 +153,7 @@ in_section() { awk -F'\t' -v w="$1" -v sec="[$2]" '/^\[/{s=$0} s==sec && $2==w {
 	run "$NPASS" diceware -f HG a/b 8
 	read -r -a H <<<"$(heights)"
 	[ "${#H[@]}" -eq 8 ]
-	[ "$(rebuild '-' "${H[@]}")" = "$("$NPASS" show HG a/b)" ]
+	[ "$(rebuild '-' "${H[@]}")" = "$("$NPASS" get HG a/b)" ]
 }
 
 @test "numero de palavras fora de 4..20 ou nao numerico e recusado" {
@@ -180,7 +181,7 @@ in_section() { awk -F'\t' -v w="$1" -v sec="[$2]" '/^\[/{s=$0} s==sec && $2==w {
 	[ "$status" -eq 0 ]
 	[[ "$output" == *'Separador: "::"'* ]]
 	read -r -a H <<<"$(heights)"
-	[ "$(rebuild '::' "${H[@]}")" = "$("$NPASS" show HG a/b)" ]
+	[ "$(rebuild '::' "${H[@]}")" = "$("$NPASS" get HG a/b)" ]
 }
 
 @test "separador vazio concatena as palavras" {
@@ -188,7 +189,7 @@ in_section() { awk -F'\t' -v w="$1" -v sec="[$2]" '/^\[/{s=$0} s==sec && $2==w {
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"Separador: (nenhum)"* ]]
 	read -r -a H <<<"$(heights)"
-	[ "$(rebuild '' "${H[@]}")" = "$("$NPASS" show HG a/b)" ]
+	[ "$(rebuild '' "${H[@]}")" = "$("$NPASS" get HG a/b)" ]
 }
 
 @test "separador: ate 3 caracteres (contados como caracteres, nao bytes); 4 ou controle e recusado" {
@@ -210,9 +211,9 @@ in_section() { awk -F'\t' -v w="$1" -v sec="[$2]" '/^\[/{s=$0} s==sec && $2==w {
 @test "NPASS_DICEWARE_SEP predefine o separador; --sep vence; valor invalido cita a variavel" {
 	NPASS_DICEWARE_SEP='.' run "$NPASS" memorable HG a/b
 	[[ "$output" == *"."* ]]
-	[[ "$("$NPASS" show HG a/b)" == *.*.*.*.*.* ]]
+	[[ "$("$NPASS" get HG a/b)" == *.*.*.*.*.* ]]
 	NPASS_DICEWARE_SEP='.' run "$NPASS" memorable -f -s '+' HG a/b
-	[[ "$("$NPASS" show HG a/b)" == *+*+*+*+*+* ]]
+	[[ "$("$NPASS" get HG a/b)" == *+*+*+*+*+* ]]
 	NPASS_DICEWARE_SEP='muito-longo' run "$NPASS" memorable -f HG a/b
 	[ "$status" -ne 0 ]
 	[[ "$output" == *"NPASS_DICEWARE_SEP"* ]]
@@ -223,7 +224,7 @@ in_section() { awk -F'\t' -v w="$1" -v sec="[$2]" '/^\[/{s=$0} s==sec && $2==w {
 @test "memorable: a frase sai no stdout e e a do cofre; sem alturas e sem aviso de indice" {
 	run bash -c "'$NPASS' memorable HG a/b 2>/dev/null"
 	[ "$status" -eq 0 ]
-	[ "$output" = "$("$NPASS" show HG a/b)" ]
+	[ "$output" = "$("$NPASS" get HG a/b)" ]
 	run "$NPASS" memorable -f HG a/b
 	[[ "$output" != *"ALTURAS"* ]]
 	[[ "$output" != *"ATENÇÃO"* ]]
@@ -235,18 +236,18 @@ in_section() { awk -F'\t' -v w="$1" -v sec="[$2]" '/^\[/{s=$0} s==sec && $2==w {
 	# separador ESPACO: yo-yo existe nas listas e um '-' o partiria em duas "palavras"
 	"$NPASS" memorable -f -s ' ' HG a/b 12 >/dev/null 2>&1
 	n=0
-	for w in $("$NPASS" show HG a/b); do
+	for w in $("$NPASS" get HG a/b); do
 		in_section "$w" short1 || in_section "$w" short2
 		n=$((n + 1))
 	done
 	[ "$n" -eq 12 ]
 	"$NPASS" memorable -f -s ' ' -l short1 HG a/b 12 >/dev/null 2>&1
-	for w in $("$NPASS" show HG a/b); do
+	for w in $("$NPASS" get HG a/b); do
 		in_section "$w" short1
 		[ "${#w}" -le 5 ]
 	done
 	"$NPASS" memorable -f -s ' ' --list=short2 HG a/b 12 >/dev/null 2>&1
-	for w in $("$NPASS" show HG a/b); do
+	for w in $("$NPASS" get HG a/b); do
 		in_section "$w" short2
 	done
 	run "$NPASS" memorable -f -l xx HG a/b
@@ -273,30 +274,30 @@ in_section() { awk -F'\t' -v w="$1" -v sec="[$2]" '/^\[/{s=$0} s==sec && $2==w {
 	run "$NPASS" diceware -c HG a/b
 	[ "$status" -eq 0 ]
 	sleep 0.3
-	[ "$(cat "$CLIPFILE")" = "$("$NPASS" show HG a/b)" ]
+	[ "$(cat "$CLIPFILE")" = "$("$NPASS" get HG a/b)" ]
 	[ -n "$(heights)" ]
 	: >"$CLIPFILE"
 	run bash -c "'$NPASS' memorable -c -f HG a/b 2>/dev/null"
 	sleep 0.3
 	[ -z "$output" ]
-	[ "$(cat "$CLIPFILE")" = "$("$NPASS" show HG a/b)" ]
+	[ "$(cat "$CLIPFILE")" = "$("$NPASS" get HG a/b)" ]
 }
 
 @test "entrada existente: N cancela e mantem, y e -f sobrescrevem" {
 	printf 'antiga\nantiga\n' | "$NPASS" insert HG a/b >/dev/null
 	run bash -c "printf 'n\n' | '$NPASS' diceware HG a/b"
 	[ "$status" -ne 0 ]
-	[ "$("$NPASS" show HG a/b)" = "antiga" ]
+	[ "$("$NPASS" get HG a/b)" = "antiga" ]
 	run bash -c "printf 'y\n' | '$NPASS' diceware HG a/b"
 	[ "$status" -eq 0 ]
-	[ "$("$NPASS" show HG a/b)" != "antiga" ]
+	[ "$("$NPASS" get HG a/b)" != "antiga" ]
 	printf 'antiga\nantiga\n' | "$NPASS" insert -f HG a/b >/dev/null
 	"$NPASS" memorable -f HG a/b >/dev/null 2>&1
-	[ "$("$NPASS" show HG a/b)" != "antiga" ]
+	[ "$("$NPASS" get HG a/b)" != "antiga" ]
 }
 
-@test "--in-place troca so a primeira linha e preserva OTP e notas" {
-	printf 'senha-velha\nlogin: eu\notpauth://totp/X?secret=ABCDEFGHIJKLMNOP\n' >"$BATS_TEST_TMPDIR/corpo"
+@test "--in-place troca so a senha e preserva campos, OTP e notas" {
+	{ md1_doc 'senha-velha' 'login: eu'; printf '\n\n## OTP\notpauth://totp/X?secret=ABCDEFGHIJKLMNOP\n\n## Notas\numa nota\n'; } >"$BATS_TEST_TMPDIR/corpo"
 	printf '#!/bin/bash\ncp "%s" "$1"\n' "$BATS_TEST_TMPDIR/corpo" >"$BATS_TEST_TMPDIR/ed.sh"
 	chmod +x "$BATS_TEST_TMPDIR/ed.sh"
 	printf 'x\nx\n' | "$NPASS" insert HG a/b >/dev/null
@@ -304,8 +305,19 @@ in_section() { awk -F'\t' -v w="$1" -v sec="[$2]" '/^\[/{s=$0} s==sec && $2==w {
 	run "$NPASS" diceware --in-place HG a/b
 	[ "$status" -eq 0 ]
 	run "$NPASS" show HG a/b
-	[[ "$output" == *$'\nlogin: eu\notpauth://totp/X?secret=ABCDEFGHIJKLMNOP' ]]
-	[[ "${output%%$'\n'*}" != "senha-velha" ]]
+	[[ "$output" == *$'\n\n## Campos\n- login: eu\n\n## OTP\notpauth://totp/X?secret=ABCDEFGHIJKLMNOP\n\n## Notas\numa nota' ]]
+	[ "$("$NPASS" get HG a/b)" != "senha-velha" ]
+}
+
+@test "--in-place numa entrada no formato antigo manda converter e nao altera nada" {
+	npass_test_legacy HG a/velha $'senha-velha\nlogin: eu'
+	local cmd antes; antes="$("$NPASS" show HG a/velha)"
+	for cmd in diceware memorable; do
+		run "$NPASS" "$cmd" --in-place HG a/velha
+		[ "$status" -ne 0 ]
+		[[ "$output" == *"npass import npass-legacy HG"* ]]
+	done
+	[ "$("$NPASS" show HG a/velha)" = "$antes" ]
 }
 
 # --- git, ajuda, uso ----------------------------------------------------------------------------
@@ -451,5 +463,5 @@ hash_blob() { sha256sum "$(ls "$NPASS_STORE"/HG/blobs/*.gpg | head -1)" | cut -d
 	corromper_blob
 	run "$NPASS" diceware -f HG a/b
 	[ "$status" -eq 0 ]
-	[[ "$("$NPASS" show HG a/b)" =~ ^[a-z-]+$ ]]
+	[[ "$("$NPASS" get HG a/b)" =~ ^[a-z-]+$ ]]
 }

@@ -93,18 +93,28 @@ Alias:
 .TP
 .BI "clip " "[FIELD] " ID " " DIR/PASS
 Decrypt a secret and copy part of it to the Wayland clipboard. With two
-arguments (ID and path) the password (first line) is copied. With three,
-the first is
+arguments (ID and path) the password (the
+.B ## Senha
+section) is copied. With three, the first is
 .IR FIELD :
 .B pass
 (the password),
 .B all
-(the whole entry), or the key of a
-.I key: value
-line in the entry, matched case\-insensitively, exact key first, then a
-unique prefix. Cleared after
+(the whole md1 document), or the key of a
+.I \- key: value
+line in the entry's
+.B ## Campos
+section, matched case\-insensitively, exact key first, then a unique prefix.
+Cleared after
 .B $NPASS_CLIP_TIME
 seconds (default 45) or on first paste, whichever comes first.
+.TP
+.BI "get " "[FIELD] " ID " " DIR/PASS
+Same arguments and same selection as
+.BR clip ,
+but print the value on stdout instead of copying it. The clipboard extensions
+.RB ( npass\-wclip ", " npass\-clip\-x11 )
+call it, so the md1 format is parsed in one place only.
 .TP
 .BI "insert " "[\-f] " ID " " DIR/PASS
 Prompt twice (no echo) for a new secret and store it. With an existing
@@ -129,8 +139,8 @@ drops symbols (alphanumeric only).
 .B \-c
 copies it to the clipboard instead of printing it.
 .B \-\-in\-place
-replaces only the first line of an existing multi\-line entry,
-preserving any following lines (notably an OTP URI) untouched.
+replaces only the password of an existing entry, preserving its fields, OTP
+and notes untouched.
 .TP
 .BI "diceware " "[\-c] [\-f] [\-\-in\-place] [\-s " SEP "] " ID " " DIR/PASS " [" WORDS ]
 Generate a diceware passphrase of
@@ -150,7 +160,7 @@ sets the separator (0 to 3 characters; default
 .B \-c
 copies the passphrase to the clipboard, and
 .B \-\-in\-place
-replaces only the first line of an existing entry, as in
+replaces only the password of an existing entry, as in
 .BR generate .
 .TP
 .BI "memorable " "[\-c] [\-f] [\-\-in\-place] [\-s " SEP "] [\-l " LIST "] " ID " " DIR/PASS " [" WORDS ]
@@ -253,17 +263,18 @@ digits (4 to 32; default
 be chosen, because some systems take a PIN as the password itself and others as an
 extra factor next to a password. With
 .B \-\-password
-the PIN becomes the entry's password (line 1), creating the entry if needed; an
+the PIN becomes the entry's password, creating the entry if needed; an
 existing entry is overwritten after a prompt, or silently with
 .BR \-f ,
 and
 .B \-\-in\-place
-replaces only the first line, keeping login, OTP and notes. With
+replaces only the password, keeping fields, OTP and notes. With
 .B \-\-field
 the PIN is stored as a
-.B pin:
-line, replacing the first existing one, or added after the entry's other fields and
-before its notes; the password and every other line are left as they were. The entry
+.B \- pin:
+field, replacing the first existing one, or added at the end of the
+.B ## Campos
+section (created if missing), before the OTP and the notes; the password and every other line are left as they were. The entry
 must already exist, so a mistyped path cannot create an orphan entry; an existing
 .B pin:
 field is replaced after a prompt, or silently with
@@ -370,6 +381,56 @@ anything.
 .TP
 .B help
 Show a command summary.
+.SH ENTRY FORMAT
+The decrypted content of every entry is a markdown document (md1):
+.PP
+.nf
+<!\-\- npass:md1 \-\->
+## Senha
+the\-password
+\&
+## Campos
+\- login: someone
+\- url: https://example.com
+\&
+## OTP
+otpauth://totp/...
+\&
+## Notas
+free text, always the last section
+.fi
+.PP
+Line 1 is exactly the marker; without it the entry is not in md1.
+.B ## Senha
+is mandatory and first, and the password is the line right below it, read by
+position and never trimmed (so a password may itself be
+.RB \(dq "## Campos" \(dq
+or start with
+.BR # ).
+.BR "## Campos" ", " "## OTP " "and " "## Notas"
+are optional, in that order, at most once each. A field line is
+.BR "\- key: value" ,
+the key being case\-insensitive. Everything after
+.B ## Notas
+is a note, even a line that looks like a header or a field. An unrecognised line
+inside Campos or OTP is preserved on rewrite; an invalid structure is refused,
+never silently repaired. The only parser is
+.IR lib/14\-entry.bash .
+.PP
+Only md1 is accepted:
+.BR insert ", " generate ", " pin ", " diceware ", " "otp insert"
+and the importers write it,
+.B insert \-\-batch
+and
+.B edit
+reject anything else, and
+.B update \-m
+expects the complete document. An entry still in the old format is not read by
+.BR get ", " clip ", " otp ", " pin ", " "generate \-\-in\-place" ", " update " or " edit :
+the command stops and points to
+.BR "npass import npass\-legacy" .
+.BR show ", " ls ", " grep ", " mv " and " rm
+still work on it.
 .SH ENVIRONMENT
 .TP
 .B NPASS_ENABLE_EXTENSIONS
@@ -557,9 +618,32 @@ if the source also has a
 importing into an existing identity never signs it. For
 .BR pass\-secrets ,
 the codename becomes the logical path unchanged, and the real name and email
-alias are appended as note lines
-.RI ( "# nome\-real: ..." ", " "# email\-alias: ..." )
+alias become the fields
+.RI ( "\- nome\-real: ..." ", " "\- email\-alias: ..." )
 inside the encrypted blob, never in the map, a git commit or the command line.
+Every import writes md1 (see
+.BR "ENTRY FORMAT" ):
+the plain\-text body of each
+.B pass
+file is converted on the way in.
+.PP
+.B npass import npass\-legacy
+.RB [ \-\-dry\-run ]
+.I ID
+converts, in place, the entries of one identity that are still in the old
+plain\-text format (password on line 1) to md1: it reads each entry with
+.BR "npass show" ,
+converts it, verifies the result (same password and
+.B otpauth://
+lines, and every non\-empty original line present the same number of times) and
+writes the batch with
+.B insert \-\-batch \-f
+as a single git commit, so the old format stays in the git history. Entries already
+in md1 and the attachments of
+.B backup
+are left alone, so it is idempotent; an entry whose conversion fails verification is
+kept as it was and counted as a failure (non\-zero exit).
+.PP
 .B npass\-clip\-x11
 copies the password or a field to the X11 clipboard (needs
 .BR xclip ).

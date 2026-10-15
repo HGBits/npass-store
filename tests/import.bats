@@ -63,14 +63,14 @@ setup() {
 	run "$NPASS" import csv HG "$F.csv" --cols 'url,login,,password'
 	[ "$status" -eq 0 ]
 	run "$NPASS" show HG a.com
-	[ "$output" = $'s3cr3t\nlogin: alice\nurl: https://www.a.com' ]
+	[ "$output" = "$(md1_doc s3cr3t 'login: alice' 'url: https://www.a.com')" ]
 }
 
 @test "csv generico: coluna com nome desconhecido vira campo extra; --skip-header" {
 	printf 'titulo,senha,pin\nBanco,pw,1234\n' >"$F.csv"
 	"$NPASS" import csv HG "$F.csv" --cols 'title,password,pin' --skip-header
 	run "$NPASS" show HG Banco
-	[ "$output" = $'pw\npin: 1234' ]
+	[ "$output" = "$(md1_doc pw 'pin: 1234')" ]
 }
 
 @test "csv sem --cols falha com mensagem clara" {
@@ -100,11 +100,11 @@ CSV
 	run "$NPASS" import keepassxc HG "$F.csv"
 	[ "$status" -eq 0 ]
 	run "$NPASS" show HG "Root/Email/Gmail/nat@x.com"
-	[ "$output" = $'p@ss,word\nlogin: nat@x.com\nurl: https://mail.google.com\notpauth://totp/Gmail:nat%40x.com?secret=JBSWY3DPEHPK3PXP&issuer=Gmail\n\nlinha 1\nlinha 2, com "aspas"' ]
-	run "$NPASS" show HG "Root/Email/Gmail/outra@x.com"
-	[ "${output%%$'\n'*}" = "s3nh4" ]
-	run "$NPASS" show HG "Banco/Itaú"
-	[ "${output%%$'\n'*}" = "numerica" ]
+	[ "$output" = $'<!-- npass:md1 -->\n## Senha\np@ss,word\n\n## Campos\n- login: nat@x.com\n- url: https://mail.google.com\n\n## OTP\notpauth://totp/Gmail:nat%40x.com?secret=JBSWY3DPEHPK3PXP&issuer=Gmail\n\n## Notas\nlinha 1\nlinha 2, com "aspas"' ]
+	run "$NPASS" get HG "Root/Email/Gmail/outra@x.com"
+	[ "$output" = "s3nh4" ]
+	run "$NPASS" get HG "Banco/Itaú"
+	[ "$output" = "numerica" ]
 }
 
 @test "bitwarden csv: pasta aninhada, varias URLs, campos personalizados, TOTP e nota segura" {
@@ -118,18 +118,19 @@ Trabalho/Dev,,login,GitHub,,,0,https://github.com,bob,pw2,
 CSV
 	run "$NPASS" import bitwarden HG "$F.csv"
 	[ "$status" -eq 0 ]
+	run "$NPASS" get HG "Trabalho/Dev/GitHub/alice"
+	[ "$output" = "pw1" ]
 	run "$NPASS" show HG "Trabalho/Dev/GitHub/alice"
-	[ "${output%%$'\n'*}" = "pw1" ]
-	[[ "$output" == *$'\nlogin: alice\n'* ]]
+	[[ "$output" == *$'\n- login: alice\n'* ]]
 	[[ "$output" == *"url: https://github.com"* ]]
 	[[ "$output" == *"url-2: https://gist.github.com"* ]]
 	[[ "$output" == *"Pergunta: Rex"* ]]
 	[[ "$output" == *"otpauth://totp/GitHub:alice?secret=JBSWY3DPEHPK3PXP&issuer=GitHub"* ]]
-	[[ "$output" == *$'\n\nn1\nn2' ]]
-	run "$NPASS" show HG "Trabalho/Dev/GitHub/bob"
-	[ "${output%%$'\n'*}" = "pw2" ]
+	[[ "$output" == *$'\n\n## Notas\nn1\nn2' ]]
+	run "$NPASS" get HG "Trabalho/Dev/GitHub/bob"
+	[ "$output" = "pw2" ]
 	run "$NPASS" show HG "Nota solta"
-	[ "${output%%$'\n'*}" = "" ]
+	[[ "$output" == $'<!-- npass:md1 -->\n## Senha\n\n'* ]]
 	[[ "$output" == *"so texto" ]]
 }
 
@@ -144,12 +145,13 @@ CSV
 JSON
 	run "$NPASS" import bitwarden HG "$F.json"
 	[ "$status" -eq 0 ]
+	run "$NPASS" get HG "Pessoal/Site"
+	[ "$output" = "p" ]
 	run "$NPASS" show HG "Pessoal/Site"
-	[ "${output%%$'\n'*}" = "p" ]
 	[[ "$output" == *"PIN: 1234"* ]]
 	[[ "$output" == *"otpauth://totp/Site:u?secret=JBSWY3DPEHPK3PXP&issuer=Site"* ]]
 	run "$NPASS" show HG "Cartão"
-	[ "${output%%$'\n'*}" = "" ]
+	[[ "$output" == $'<!-- npass:md1 -->\n## Senha\n\n'* ]]
 	[[ "$output" == *"card-number: 4111"* ]]
 	[[ "$output" == *"card-code: 123"* ]]
 }
@@ -170,14 +172,14 @@ JSON
 CSV
 	"$NPASS" import firefox HG "$F.csv"
 	run "$NPASS" show HG exemplo.com
-	[ "$output" = $'p1\nlogin: u1\nurl: https://www.exemplo.com' ]
+	[ "$output" = "$(md1_doc p1 'login: u1' 'url: https://www.exemplo.com')" ]
 }
 
 @test "chrome: nome vira titulo e a nota vai depois de uma linha em branco" {
 	printf 'name,url,username,password,note\nExemplo,https://ex.com,u,p,uma nota\n' >"$F.csv"
 	"$NPASS" import chrome HG "$F.csv"
 	run "$NPASS" show HG Exemplo
-	[ "$output" = $'p\nlogin: u\nurl: https://ex.com\n\numa nota' ]
+	[ "$output" = "$(md1_doc p 'login: u' 'url: https://ex.com')"$'\n\n## Notas\numa nota' ]
 }
 
 @test "lastpass: grupo com barra invertida vira pasta; http://sn (nota segura) nao vira URL" {
@@ -188,8 +190,8 @@ http://sn,,,,texto da nota,Cofre,,0
 CSV
 	run "$NPASS" import lastpass HG "$F.csv"
 	[ "$status" -eq 0 ]
-	run "$NPASS" show HG "Pessoal/Compras/Loja"
-	[ "${output%%$'\n'*}" = "p" ]
+	run "$NPASS" get HG "Pessoal/Compras/Loja"
+	[ "$output" = "p" ]
 	run "$NPASS" show HG Cofre
 	[[ "$output" != *"url:"* ]]
 	[[ "$output" == *"texto da nota" ]]
@@ -282,10 +284,10 @@ JSON
 	printf 'Site,nova\n' >"$F.csv"
 	run "$NPASS" import csv HG "$F.csv" --cols 'title,password'
 	[[ "$output" == *"1 pulada"* ]]
-	run "$NPASS" show HG Site
+	run "$NPASS" get HG Site
 	[ "$output" = "velha" ]
 	"$NPASS" import csv HG "$F.csv" --cols 'title,password' -f
-	run "$NPASS" show HG Site
+	run "$NPASS" get HG Site
 	[ "$output" = "nova" ]
 }
 
@@ -314,7 +316,7 @@ JSON
 	run "$NPASS" import csv HG "$F.csv" --cols 'title,password'
 	[ "$status" -eq 1 ]
 	[[ "$output" == *"quebra de linha"* ]]
-	run "$NPASS" show HG Boa
+	run "$NPASS" get HG Boa
 	[ "$output" = "ok" ]
 }
 
@@ -343,14 +345,14 @@ JSON
 	rm -f "$F.csv"
 	run "$NPASS" import csv HG "$F.csv.gpg" --cols 'title,password'
 	[ "$status" -eq 0 ]
-	run "$NPASS" show HG Site
+	run "$NPASS" get HG Site
 	[ "$output" = "pw-gpg" ]
 }
 
 @test "origem '-' le do stdin" {
 	run bash -c "printf 'Site,pw-stdin\n' | '$NPASS' import csv HG - --cols 'title,password'"
 	[ "$status" -eq 0 ]
-	run "$NPASS" show HG Site
+	run "$NPASS" get HG Site
 	[ "$output" = "pw-stdin" ]
 }
 

@@ -50,30 +50,56 @@ def list_paths(identity, prefix):
     return sorted(set(paths))
 
 
-def parse_entry(path, raw):
-    lines = raw.splitlines()
-    entry = {"path": path, "password": "", "values": []}
-    if not lines:
-        return entry
-    first = lines[0]
-    if ": " in first:
-        key, value = first.split(": ", 1)
-        entry["values"].append(value)
-        if key.strip().lower() in ("password", "senha"):
-            entry["password"] = value
-    else:
-        entry["password"] = first
+MD1_MARKER = "<!-- npass:md1 -->"
+_FIELD = re.compile(r"^-\s+([^:]+):\s*(.*)$")
+
+
+def parse_md1(text):
+    """Le um documento md1 (mesmas regras de lib/14-entry.bash). Devolve
+    {password, fields[(chave|None, valor|linha)], otp[], notes} ou None se o texto
+    nao esta em md1 (formato antigo) ou tem a estrutura invalida."""
+    lines = text.rstrip("\n").split("\n")
+    if lines[0] != MD1_MARKER:
+        return None
+    doc = {"password": "", "fields": [], "otp": [], "notes": []}
+    state, rank = "", 0
     for line in lines[1:]:
-        if ": " in line:
-            key, value = line.split(": ", 1)
-            entry["values"].extend((key, value))
-            if key.strip().lower() in ("password", "senha"):
-                entry["password"] = value
-        elif line.startswith("otpauth://"):
+        if state == "notes":
+            doc["notes"].append(line)
+        elif state == "pw":
+            doc["password"], state = line, "pwdone"
+        elif line == "## Senha" and rank < 1:
+            rank, state = 1, "pw"
+        elif line == "## Campos" and 1 <= rank < 2:
+            rank, state = 2, "fields"
+        elif line == "## OTP" and 1 <= rank < 3:
+            rank, state = 3, "otp"
+        elif line == "## Notas" and 1 <= rank < 4:
+            rank, state = 4, "notes"
+        elif line.startswith("## ") and line in ("## Senha", "## Campos", "## OTP", "## Notas"):
+            return None  # secao repetida ou fora de ordem
+        elif not line.strip():
             continue
+        elif state == "fields":
+            m = _FIELD.match(line)
+            doc["fields"].append((m.group(1).strip(), m.group(2)) if m else (None, line))
+        elif state == "otp":
+            doc["otp"].append(line)
         else:
-            entry["values"].append(line)
-    return entry
+            return None
+    return doc if rank >= 1 else None
+
+
+def parse_entry(path, raw):
+    doc = parse_md1(raw)
+    if doc is None:
+        raise RuntimeError(tr("não está em md1 (converta com: npass import npass-legacy ID)",
+                              "not in md1 (convert with: npass import npass-legacy ID)"))
+    values = []
+    for key, value in doc["fields"]:
+        values.extend((key, value) if key is not None else (value,))
+    values.extend(n for n in doc["notes"] if n.strip())
+    return {"path": path, "password": doc["password"], "values": values}
 
 
 def hibp_count(password, cache):

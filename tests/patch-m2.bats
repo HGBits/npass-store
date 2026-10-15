@@ -24,7 +24,7 @@ teardown() { pkill -f "sleep 5$" 2>/dev/null || true; }
 mkentry() {
 	"$NPASS" init HG "$FPR" >/dev/null
 	printf 'pw\npw\n' | "$NPASS" insert HG Mips/Natty >/dev/null
-	printf 'S3nh4!\nemail: nat@x.com\nuser: natty\n# nome-real: Natty Corp\n# email-alias: a@x.com\n' >"$BATS_TEST_TMPDIR/body"
+	md1_doc 'S3nh4!' 'email: nat@x.com' 'user: natty' 'nome-real: Natty Corp' 'email-alias: a@x.com' >"$BATS_TEST_TMPDIR/body"
 	printf '#!/bin/bash\ncp "%s" "$1"\n' "$BATS_TEST_TMPDIR/body" >"$BATS_TEST_TMPDIR/ed.sh"
 	chmod +x "$BATS_TEST_TMPDIR/ed.sh"
 	EDITOR="$BATS_TEST_TMPDIR/ed.sh" "$NPASS" edit HG Mips/Natty >/dev/null
@@ -60,7 +60,7 @@ mkentry() {
 
 # --- 2. clip por campo -------------------------------------------------------
 
-@test "clip ID CAMINHO copia so a senha (primeira linha)" {
+@test "clip ID CAMINHO copia so a senha (secao Senha)" {
 	mkentry
 	run "$NPASS" clip HG Mips/Natty
 	[ "$status" -eq 0 ]
@@ -92,7 +92,7 @@ mkentry() {
 	[ "$(cat "$CLIPFILE")" = "a@x.com" ]
 }
 
-@test "clip acha campos gravados como '# chave: valor' (formato do import pass-secrets)" {
+@test "clip acha os campos nome-real e email-alias (gravados pelo import pass-secrets)" {
 	mkentry
 	"$NPASS" clip nome-real HG Mips/Natty
 	sleep 0.3
@@ -103,7 +103,8 @@ mkentry() {
 	mkentry
 	"$NPASS" clip all HG Mips/Natty
 	sleep 0.3
-	[ "$(wc -l <"$CLIPFILE")" -ge 3 ]
+	[ "$(head -n1 "$CLIPFILE")" = "<!-- npass:md1 -->" ]
+	grep -qx -- '- user: natty' "$CLIPFILE"
 }
 
 @test "clip com campo inexistente falha e lista so as chaves, nunca valores" {

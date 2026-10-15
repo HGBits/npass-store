@@ -44,9 +44,15 @@ cmd_insert_batch() {
 	local force="$1" id="$2"
 	[[ -z "$id" ]] && npass_die "uso: npass insert --batch [-f] ID   (registros CAMINHO\\0CONTEUDO\\0 no stdin)"
 	local dir; dir="$(npass_identity_dir "$id")"
-	local logical content existing written=0 skipped=0
+	local logical content existing written=0 skipped=0 rejected=0
 	while IFS= read -r -d '' logical && IFS= read -r -d '' content; do
 		npass_check_sneaky_path "$logical"
+		# so md1 entra: um registro em outro formato e recusado, nunca gravado
+		if ! npass_entry_load "$content" && ! npass_backup_is_marker "$content"; then
+			npass_warn "$(npass_t warn_batch_nao_md1 "$logical")"
+			((rejected++))
+			continue
+		fi
 		if [[ $force -eq 0 ]]; then
 			existing="$(npass_map_resolve "$dir" "$logical" 2>/dev/null)"
 			if [[ -n "$existing" ]]; then
@@ -59,6 +65,7 @@ cmd_insert_batch() {
 	done
 	npass_git_commit "$id" "insert-batch"
 	npass_t msg_batch_resumo "$id" "$written" "$skipped"
+	((rejected == 0))
 }
 
 cmd_insert() {
@@ -89,7 +96,7 @@ cmd_insert() {
 	read -r -s -p "$(npass_t prompt_repita_senha)" secret2; echo
 	[[ "$secret" == "$secret2" ]] || npass_die "$(npass_t erro_senhas_diferentes)"
 
-	npass_blob_write "$dir" "$logical" "$secret"
+	npass_blob_write "$dir" "$logical" "$(npass_entry_new "$secret")"
 	npass_git_commit "$id" "insert"
 	npass_t msg_salvo "$id" "$logical"
 }
@@ -196,20 +203,6 @@ cmd_mv() {
 	fi
 }
 
-# Replace only the first line of a multi-line blob, preserving the rest
-# (an otpauth:// line, notes, etc.) untouched. Used by generate --in-place
-# and by update's password rotation, so rotating a password never drops
-# the OTP secret that lives alongside it.
-npass_replace_first_line() {
-	local content="$1" newline="$2" rest
-	rest="$(tail -n +2 <<<"$content")"
-	if [[ -n "$rest" ]]; then
-		printf '%s\n%s' "$newline" "$rest"
-	else
-		printf '%s' "$newline"
-	fi
-}
-
 : "${NPASS_GENERATED_LENGTH:=25}"
 
 cmd_generate() {
@@ -245,9 +238,10 @@ cmd_generate() {
 
 	local new_content
 	if [[ $inplace -eq 1 && -n "$existing" ]]; then
-		new_content="$(npass_replace_first_line "$existing" "$pw")"
+		npass_entry_require "$id" "$logical" "$existing"
+		new_content="$(npass_entry_with_password "$existing" "$pw")"
 	else
-		new_content="$pw"
+		new_content="$(npass_entry_new "$pw")"
 	fi
 	npass_blob_write "$dir" "$logical" "$new_content"
 	npass_git_commit "$id" "generate"
@@ -265,13 +259,20 @@ cmd_edit() {
 	local dir; dir="$(npass_identity_dir "$id")"
 	local existing; existing="$(cmd_show "$id" "$logical" 2>/dev/null || true)"
 	local tmp; tmp="$(npass_mktemp edit)"
-	[[ -n "$existing" ]] && printf '%s' "$existing" >"$tmp"
+	# entrada nova abre num gabarito md1; existente abre como esta (e precisa estar em md1)
+	if [[ -n "$existing" ]]; then
+		npass_entry_require "$id" "$logical" "$existing"
+		printf '%s' "$existing" >"$tmp"
+	else
+		npass_entry_new "" >"$tmp"
+	fi
 	"${EDITOR:-vi}" "$tmp" || npass_die "$(npass_t erro_editor)"
 	local new_content; new_content="$(cat "$tmp")"
 	if [[ "$new_content" == "$existing" ]]; then
 		npass_t msg_sem_alteracoes
 		return 0
 	fi
+	npass_entry_load "$new_content" || npass_die "$(npass_t erro_edit_invalido "$NPASS_ENTRY_MARKER")"
 	npass_blob_write "$dir" "$logical" "$new_content"
 	npass_git_commit "$id" "edit"
 	npass_t msg_atualizado "$id" "$logical"

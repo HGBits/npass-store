@@ -10,7 +10,7 @@
 #   npass wclip all ID DIR/PASS
 #
 # Default:
-#   copies the password (first line).
+#   copies the password (section "## Senha").
 #
 # This extension is intended for Windows only.
 
@@ -23,59 +23,6 @@ npass_wclip_die() {
 
 command -v wclip >/dev/null 2>&1 ||
 	npass_wclip_die "wclip não encontrado"
-
-npass_entry_parse() {
-	local content="$1"
-	local line key first=1
-	local re='^(#[[:space:]]*)?([^:[:space:]#][^:]*):[[:space:]]*(.*)$'
-
-	NPASS_FK=()
-	NPASS_FV=()
-
-	while IFS= read -r line; do
-		if ((first)); then
-			first=0
-			continue
-		fi
-
-		[[ "$line" == otpauth://* ]] && continue
-		[[ "$line" =~ $re ]] || continue
-
-		key="${BASH_REMATCH[2]}"
-		key="${key%"${key##*[![:space:]]}"}"
-
-		NPASS_FK+=("${key,,}")
-		NPASS_FV+=("${BASH_REMATCH[3]}")
-	done <<< "$content"
-}
-
-npass_entry_lookup() {
-	local want="${1,,}"
-	local i hit=-1 hits=0
-
-	# Exact match first.
-	for i in "${!NPASS_FK[@]}"; do
-		if [[ "${NPASS_FK[i]}" == "$want" ]]; then
-			REPLY="${NPASS_FV[i]}"
-			return 0
-		fi
-	done
-
-	# Then unique prefix.
-	for i in "${!NPASS_FK[@]}"; do
-		if [[ "${NPASS_FK[i]}" == "$want"* ]]; then
-			hit=$i
-			((hits++))
-		fi
-	done
-
-	if ((hits == 1)); then
-		REPLY="${NPASS_FV[hit]}"
-		return 0
-	fi
-
-	return 1
-}
 
 cmd_wclip() {
 	local field="pass"
@@ -99,34 +46,13 @@ cmd_wclip() {
 			;;
 	esac
 
-	local content value
+	local value
 
-	content="$(npass show "$id" "$logical")" ||
+	# The extension does not parse the entry: the md1 format lives only in the
+	# core, so ask it through its public `get` command (it reports a missing
+	# field, an empty value or a non-md1 entry itself).
+	value="$("${NPASS_BIN:-npass}" get "$field" "$id" "$logical")" ||
 		exit 1
-
-	case "${field,,}" in
-		pass | password | senha)
-			value="${content%%$'\n'*}"
-			;;
-
-		all | tudo)
-			value="$content"
-			;;
-
-		*)
-			npass_entry_parse "$content"
-
-			if ! npass_entry_lookup "$field"; then
-				npass_wclip_die \
-					"campo não encontrado ou ambíguo: $field"
-			fi
-
-			value="$REPLY"
-			;;
-	esac
-
-	[[ -n "$value" ]] ||
-		npass_wclip_die "campo vazio: $field"
 
 	printf '%s' "$value" | wclip --secret ||
 		npass_wclip_die "não foi possível copiar para o clipboard"

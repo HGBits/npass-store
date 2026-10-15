@@ -14,6 +14,7 @@ Este arquivo é o índice operacional do projeto. Use-o para localizar rapidamen
 | Funções comuns, validações e utilitários | `lib/01-common.bash` | módulo chamador |
 | Identidades, chaves GPG, `.gpg-id` | `lib/02-identity.bash` | `lib/10-signing.bash` se assinatura |
 | Store, mapa, blobs, CRUD | `lib/03-store.bash` | `lib/07-git.bash` se persistência/Git |
+| **Formato do conteúdo das entradas (md1)**: parser, renderizador, `get` de campos | `lib/14-entry.bash` | `lib/04-clipboard.bash` (`get`/`clip`), `tests/entry-md1.bats` |
 | Clipboard Wayland | `lib/04-clipboard.bash` | extensão correspondente se backend externo |
 | Diceware/frases (`diceware`, `memorable`) e lista de palavras | `lib/12-diceware.bash` | `tests/diceware.bats`, `encrypts_alternatives/wordlist.txt` |
 | OTP/TOTP/HOTP | `lib/05-otp.bash` | `tests/otp.bats` |
@@ -24,11 +25,11 @@ Este arquivo é o índice operacional do projeto. Use-o para localizar rapidamen
 | Senhas de backup (`backup`, anexos cifrados) | `lib/13-backup.bash` | `lib/03-store.bash` (cascata em `rm`/`mv`), `lib/06-update.bash`, `extensions/npass-audit`, `tests/backup.bats` |
 | Assinatura de identidades/artefatos | `lib/10-signing.bash` | `tests/signing.bats` |
 | Sistema de extensões | `lib/11-extensions.bash` | `extensions/`, testes de extensão |
-| Importação de outros gerenciadores | `extensions/npass-import` | `tests/import*.bats` |
+| Importação de outros gerenciadores e conversão do formato antigo (`import npass-legacy`) | `extensions/npass-import` | `tests/import*.bats`, `tests/import-legacy.bats` |
 | Passkeys / WebAuthn (backend, índice, blobs) | `extensions/npass-passkey` | `tests/passkey.bats`, `npass-passkey-arquitetura.md` |
 | Daemon FIDO2/CTAP2/UHID (Rust) | `passkey/src/` | `passkey/tests/e2e.rs`, `passkey/Cargo.toml` |
-| Clipboard X11 | `extensions/npass-clip-x11.bash` | `tests/extensions.bats` |
-| Clipboard Windows | `extensions/npass-wclip` | `windows_Requisitos.md`, `tests/extensions.bats` |
+| Clipboard X11 | `extensions/npass-clip-x11.bash` | `tests/clip-ext.bats` |
+| Clipboard Windows | `extensions/npass-wclip.bash` | `windows_Requisitos.md`, `tests/clip-ext.bats` |
 | Instalação | `install.sh` | `tests/install.bats`, `lib/11-extensions.bash` |
 | Build do executável | `build.sh` | `lib/*.bash`, `tests/install.bats` |
 | Testes de uma funcionalidade | `tests/<funcionalidade>.bats` | implementação correspondente |
@@ -56,6 +57,7 @@ lib/00-main.bash
    +--> 11-extensions.bash
    +--> 12-diceware.bash
    +--> 13-backup.bash
+   +--> 14-entry.bash   (formato md1: usado por 03, 04, 05, 06, 08, 12)
              |
              +--> extensions/*
              |
@@ -73,6 +75,8 @@ build.sh ---> gera bin/npass a partir de lib/
 5. Não modificar fixtures GPG só para fazer um teste passar sem entender o motivo.
 6. Em segurança, distinguir claramente comportamento observado de inferência.
 7. Não assumir que uma função em outro módulo pode ser alterada sem verificar seu contrato.
+8. **O conteúdo de uma entrada é md1 e só `lib/14-entry.bash` o interpreta.** Nenhum outro módulo (nem extensão em shell) pode ler "a 1ª linha", casar `chave: valor` ou procurar `otpauth://` por conta própria: use `npass_entry_load`/`_require`/`_render` no core e `npass get` nas extensões. As exceções são os dois conversores em Python (`extensions/npass-import`, `extensions/npass-audit`), que espelham as regras e são cruzados com o parser do core em `tests/import-legacy.bats`. Mudou o formato? Mude os três e os testes juntos.
+9. Não existe leitura do formato antigo no core: entrada em texto puro é recusada com instrução para `npass import npass-legacy ID`.
 8. Documentação deve refletir o comportamento real, não uma intenção futura.
 9. `pin.md` e `diceware.md` ficam fora deste índice de trabalho conforme solicitado.
 

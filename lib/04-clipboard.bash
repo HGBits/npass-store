@@ -35,10 +35,14 @@ npass_clip() {
 
 # --- clip: choose WHAT gets copied ----------------------------------------------
 #
-#   npass clip ID DIR/PASS           the password (first line)   [default]
+#   npass clip ID DIR/PASS           the password (section "## Senha")   [default]
 #   npass clip pass ID DIR/PASS      same, explicit
-#   npass clip CAMPO ID DIR/PASS     the value of a "campo: valor" line
-#   npass clip all ID DIR/PASS       the whole entry (old behaviour)
+#   npass clip CAMPO ID DIR/PASS     the value of a "- campo: valor" line
+#   npass clip all ID DIR/PASS       the whole entry (the md1 document)
+#
+# `npass get` takes the same arguments but prints the value on stdout instead
+# of copying it: it is what the clipboard extensions (wclip, clip-x11) call, so
+# the md1 format is parsed in ONE place (lib/14-entry.bash).
 #
 # Argument count is what disambiguates: 2 args = ID PATH, 3 args =
 # FIELD ID PATH. A field name is matched case-insensitively, exact key
@@ -48,27 +52,20 @@ npass_clip() {
 NPASS_FK=()
 NPASS_FV=()
 
-# Parse the lines AFTER the first (the first is the password) that look
-# like "key: value" into NPASS_FK / NPASS_FV (keys lower-cased). A leading
-# "# " is accepted because npass-import (pass-secrets) writes its note lines that way
-# ("# email-alias: ...", "# nome-real: ...").
+# Fill NPASS_FK / NPASS_FV (keys lower-cased) from the "## Campos" section of an
+# md1 document. Returns the npass_entry_load status (1 = not md1, 2 = invalid).
 npass_entry_parse() {
-	local content="$1" line key first=1
-	local re='^(#[[:space:]]*)?([^:[:space:]#][^:]*):[[:space:]]*(.*)$'
+	local l
+	npass_entry_load "$1" || return $?
 	NPASS_FK=()
 	NPASS_FV=()
-	while IFS= read -r line; do
-		if ((first)); then
-			first=0
-			continue
-		fi
-		[[ "$line" == otpauth://* ]] && continue
-		[[ "$line" =~ $re ]] || continue
-		key="${BASH_REMATCH[2]}"
-		key="${key%"${key##*[![:space:]]}"}"
-		NPASS_FK+=("${key,,}")
-		NPASS_FV+=("${BASH_REMATCH[3]}")
-	done <<<"$content"
+	for l in "${NPASS_E_FIELDS[@]}"; do
+		npass_entry_field_key "$l" || continue
+		NPASS_FK+=("$REPLY")
+		npass_entry_field_value "$l"
+		NPASS_FV+=("$REPLY")
+	done
+	return 0
 }
 
 # npass_entry_lookup FIELD -> value in $REPLY; returns 1 if not found or
@@ -94,24 +91,14 @@ npass_entry_lookup() {
 	return 1
 }
 
-cmd_clip() {
-	local field="pass" id logical
-	case $# in
-	2)
-		id="$1"
-		logical="$2"
-		;;
-	3)
-		field="$1"
-		id="$2"
-		logical="$3"
-		;;
-	*) npass_die "uso: npass clip [CAMPO] ID DIR/PASS   (CAMPO: pass [padrão] | all | chave de uma linha 'chave: valor')" ;;
-	esac
-	local content value label="$id: $logical"
-	content="$(cmd_show "$id" "$logical")" || exit 1
+# npass_entry_pick FIELD CONTENT ID LOGICAL -> the chosen value in $REPLY.
+# FIELD: pass (default) | all | the key of a "- chave: valor" line. Dies on a
+# non-md1 entry, an unknown/ambiguous field or an empty value.
+npass_entry_pick() {
+	local field="$1" content="$2" id="$3" logical="$4" value
+	npass_entry_require "$id" "$logical" "$content"
 	case "${field,,}" in
-	pass | password | senha) value="${content%%$'\n'*}" ;;
+	pass | password | senha) value="$NPASS_E_PW" ;;
 	all | tudo) value="$content" ;;
 	*)
 		npass_entry_parse "$content"
@@ -119,9 +106,40 @@ cmd_clip() {
 			npass_die "$(npass_t erro_campo_nao_encontrado "$field" "${NPASS_FK[*]:-(nenhum)}")"
 		fi
 		value="$REPLY"
-		label+=" [$field]"
 		;;
 	esac
 	[[ -n "$value" ]] || npass_die "$(npass_t erro_campo_vazio "$field")"
-	npass_clip "$value" "$label"
+	REPLY="$value"
+}
+
+# [CAMPO] ID DIR/PASS -> field, id, logical (2 args = ID PATH, 3 = FIELD ID PATH)
+npass_entry_args() {
+	local cmd="$1"
+	shift
+	case $# in
+	2) NPASS_A_FIELD="pass"; NPASS_A_ID="$1"; NPASS_A_LOGICAL="$2" ;;
+	3) NPASS_A_FIELD="$1"; NPASS_A_ID="$2"; NPASS_A_LOGICAL="$3" ;;
+	*) npass_die "uso: npass $cmd [CAMPO] ID DIR/PASS   (CAMPO: pass [padrão] | all | chave de uma linha '- chave: valor')" ;;
+	esac
+}
+
+cmd_clip() {
+	local content label
+	npass_entry_args clip "$@"
+	content="$(cmd_show "$NPASS_A_ID" "$NPASS_A_LOGICAL")" || exit 1
+	npass_entry_pick "$NPASS_A_FIELD" "$content" "$NPASS_A_ID" "$NPASS_A_LOGICAL"
+	label="$NPASS_A_ID: $NPASS_A_LOGICAL"
+	case "${NPASS_A_FIELD,,}" in
+	pass | password | senha | all | tudo) ;;
+	*) label+=" [$NPASS_A_FIELD]" ;;
+	esac
+	npass_clip "$REPLY" "$label"
+}
+
+cmd_get() {
+	local content
+	npass_entry_args get "$@"
+	content="$(cmd_show "$NPASS_A_ID" "$NPASS_A_LOGICAL")" || exit 1
+	npass_entry_pick "$NPASS_A_FIELD" "$content" "$NPASS_A_ID" "$NPASS_A_LOGICAL"
+	printf '%s\n' "$REPLY"
 }

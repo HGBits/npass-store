@@ -172,29 +172,19 @@ npass_otp_generate() {
 	printf '%s\n' "$out"
 }
 
-# --- content helpers: an OTP URI lives as an "otpauth://" line inside
-# the same multi-line blob a normal password uses (line 1 = password,
-# if any; any otpauth:// line = the OTP key). ---------------------------
+# --- content helpers: an OTP URI lives in the "## OTP" section of the md1
+# document (lib/14-entry.bash). An entry with no password is fine: `otp
+# insert` on a new path creates one with an empty "## Senha". ----------------
 
 npass_otp_extract_uri() {
-	local content="$1" line
-	while IFS= read -r line; do
-		[[ "$line" == otpauth://* ]] && { printf '%s\n' "$line"; return 0; }
-	done <<<"$content"
-	return 1
+	npass_entry_load "$1" || return 1
+	npass_entry_otp_uri
 }
 
 npass_otp_replace_or_append_uri() {
-	local content="$1" new_uri="$2" found=0 out="" line
-	while IFS= read -r line; do
-		if [[ "$line" == otpauth://* ]]; then
-			line="$new_uri"
-			found=1
-		fi
-		out+="$line"$'\n'
-	done <<<"$content"
-	[[ $found -eq 0 ]] && out+="$new_uri"$'\n'
-	printf '%s' "$out"
+	npass_entry_load "$1" || return $?
+	npass_entry_otp_set "$2"
+	npass_entry_render
 }
 
 # --- commands --------------------------------------------------------------
@@ -204,6 +194,7 @@ cmd_otp_code() {
 	[[ -z "$id" || -z "$logical" ]] && npass_die "uso: npass otp ID DIR/PASS"
 	local dir; dir="$(npass_identity_dir "$id")"
 	local content; content="$(cmd_show "$id" "$logical")" || return 1
+	npass_entry_require "$id" "$logical" "$content"
 	local uri; uri="$(npass_otp_extract_uri "$content")" || npass_die "$(npass_t erro_sem_otp "$id" "$logical")"
 	otp_parse_uri "$uri"
 	local code; code="$(npass_otp_generate)"
@@ -248,6 +239,7 @@ cmd_otp_uri() {
 	id="$1" logical="$2"
 	[[ -z "$id" || -z "$logical" ]] && npass_die "uso: npass otp-uri [-c|-q] ID DIR/PASS"
 	local content; content="$(cmd_show "$id" "$logical")" || return 1
+	npass_entry_require "$id" "$logical" "$content"
 	local uri; uri="$(npass_otp_extract_uri "$content")" || npass_die "$(npass_t erro_sem_otp "$id" "$logical")"
 	case "$mode" in
 	clip) npass_clip "$uri" "URI OTP $id: $logical" ;;
@@ -275,6 +267,7 @@ cmd_otp_insert() {
 	[[ -z "$id" || -z "$logical" ]] && npass_die "uso: npass otp-insert [-f] [-s -i issuer -a account] ID DIR/PASS"
 	local dir; dir="$(npass_identity_dir "$id")"
 	local existing; existing="$(cmd_show "$id" "$logical" 2>/dev/null || true)"
+	[[ -n "$existing" ]] && npass_entry_require "$id" "$logical" "$existing"
 	if [[ -n "$existing" ]] && npass_otp_extract_uri "$existing" >/dev/null 2>&1 && [[ $force -eq 0 ]]; then
 		read -r -p "$(npass_t prompt_otp_sobrescrever "$id" "$logical")" reply
 		[[ "$reply" == [yY] ]] || { npass_t msg_cancelado; return 1; }
@@ -291,7 +284,9 @@ cmd_otp_insert() {
 	if [[ -n "$existing" ]]; then
 		new_content="$(npass_otp_replace_or_append_uri "$existing" "$otp_uri")"
 	else
-		new_content="$otp_uri"
+		npass_entry_reset ""
+		npass_entry_otp_set "$otp_uri"
+		new_content="$(npass_entry_render)"
 	fi
 	npass_blob_write "$dir" "$logical" "$new_content"
 	npass_git_commit "$id" "otp-insert"

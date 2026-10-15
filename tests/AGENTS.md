@@ -18,6 +18,9 @@ Testes Bats do projeto. Use-os como índice de comportamento esperado antes de a
 | `import-pass-secrets.bats` | importação de `pass-secrets` |
 | `otp.bats` | OTP |
 | `pin.bats` | PIN (`--password`, `--field`) |
+| `entry-md1.bats` | formato md1 (contrato, preservação, recusa do formato antigo em todos os comandos), `get`, OTP e `audit` |
+| `import-legacy.bats` | `import npass-legacy` (conversão, verificação, idempotência, `--dry-run`) e imports de árvore em md1 |
+| `clip-ext.bats` | `npass-wclip` e `npass-clip-x11` (chamam `npass get`) |
 | `backup.bats` | `backup` e a cascata dos anexos em `rm`, `mv`, `update` e `audit` |
 | `signing.bats` | assinatura |
 | `update.bats` | atualização/rotação |

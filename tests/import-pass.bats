@@ -25,11 +25,11 @@ setup() {
 
 @test "import pass importa todos os arquivos com caminho logico preservado" {
 	"$NPASS" import pass personal "$OLD_STORE" >/dev/null
-	run "$NPASS" show personal email/gmail
+	run "$NPASS" get personal email/gmail
 	[ "$output" = "senhaGmail1" ]
-	run "$NPASS" show personal email/outlook
+	run "$NPASS" get personal email/outlook
 	[ "$output" = "senhaOutlook2" ]
-	run "$NPASS" show personal work/aws/root
+	run "$NPASS" get personal work/aws/root
 	[ "$output" = "senhaAws3" ]
 }
 
@@ -51,7 +51,7 @@ setup() {
 	# nao sobrescreve sem -f; o aviso e a contagem sao responsabilidade da extensao)
 	[[ "$output" == *"email/gmail já existe em personal"* ]]
 	[[ "$output" == *"2 importado(s), 1 pulado(s), 0 falhou(aram)"* ]]
-	run "$NPASS" show personal email/gmail
+	run "$NPASS" get personal email/gmail
 	[ "$output" = "jasalvo" ]
 }
 
@@ -60,7 +60,7 @@ setup() {
 	printf 'antigo\nantigo\n' | "$NPASS" insert personal email/gmail
 	run "$NPASS" import pass -f personal "$OLD_STORE"
 	[ "$status" -eq 0 ]
-	run "$NPASS" show personal email/gmail
+	run "$NPASS" get personal email/gmail
 	[ "$output" = "senhaGmail1" ]
 }
 
@@ -80,7 +80,7 @@ setup() {
 	run "$NPASS" import pass personal "$OLD_STORE"
 	[ "$status" -ne 0 ]
 	[[ "$output" == *"1 falhou"* ]] || [[ "$output" == *"falhou"* ]]
-	run "$NPASS" show personal email/gmail
+	run "$NPASS" get personal email/gmail
 	[ "$output" = "senhaGmail1" ]
 }
 
@@ -112,7 +112,7 @@ setup() {
 	"$NPASS" init work "$FPR2"
 	run "$NPASS" import pass work "$OLD_STORE"
 	[ "$status" -eq 0 ]
-	run "$NPASS" show work email/gmail
+	run "$NPASS" get work email/gmail
 	[ "$output" = "senhaGmail1" ]
 	local blob; blob="$(find "$NPASS_STORE/work/blobs" -type f | head -1)"
 	run gpg --list-packets "$blob"
@@ -134,7 +134,7 @@ setup() {
 	"$NPASS" import pass personal "$OLD_STORE" -p Antigo
 	run "$NPASS" ls personal
 	[[ "$output" == *"Antigo/email/gmail"* ]]
-	run "$NPASS" show personal Antigo/email/gmail
+	run "$NPASS" get personal Antigo/email/gmail
 	[ "$output" = "senhaGmail1" ]
 }
 
@@ -173,7 +173,7 @@ setup() {
 	run "$NPASS" import pass personal "$OLD_STORE"
 	[ "$status" -ne 0 ]
 	[[ "$output" == *"inválido"* ]]
-	run "$NPASS" show personal email/gmail
+	run "$NPASS" get personal email/gmail
 	[ "$output" = "senhaGmail1" ]
 }
 

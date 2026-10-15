@@ -25,7 +25,7 @@ setup() {
 @test "insert + show roundtrip" {
 	"$NPASS" init personal "$FPR"
 	printf 'hunter2\nhunter2\n' | "$NPASS" insert personal email/gmail
-	run "$NPASS" show personal email/gmail
+	run "$NPASS" get personal email/gmail
 	[ "$status" -eq 0 ]
 	[ "$output" = "hunter2" ]
 }
@@ -62,7 +62,7 @@ setup() {
 	local blob_after
 	blob_after="$(find "$NPASS_STORE/personal/blobs" -type f)"
 	[ "$blob_before" = "$blob_after" ]
-	run "$NPASS" show personal email/gmail-novo
+	run "$NPASS" get personal email/gmail-novo
 	[ "$output" = "hunter2" ]
 	run "$NPASS" show personal email/gmail
 	[ "$status" -ne 0 ]
@@ -74,7 +74,7 @@ setup() {
 	printf 'hunter2\nhunter2\n' | "$NPASS" insert personal email/gmail
 	run "$NPASS" mv personal email/gmail work aws/root
 	[ "$status" -eq 0 ]
-	run "$NPASS" show work aws/root
+	run "$NPASS" get work aws/root
 	[ "$output" = "hunter2" ]
 	run "$NPASS" show personal email/gmail
 	[ "$status" -ne 0 ]
@@ -117,7 +117,7 @@ setup() {
 	"$NPASS" init work "$FPR"
 	run "$NPASS" mv personal email/gmail work email/gmail
 	[ "$status" -eq 0 ]
-	run "$NPASS" show work email/gmail
+	run "$NPASS" get work email/gmail
 	[ "$output" = "a" ]
 }
 
@@ -138,7 +138,7 @@ setup() {
 	[[ "$output" == *"$(npass_test_encr_keyid "$FPR2")"* ]]
 	[[ "$output" != *"$(npass_test_encr_keyid "$FPR")"* ]]
 
-	run "$NPASS" show work aws/root
+	run "$NPASS" get work aws/root
 	[ "$status" -eq 0 ]
 	[ "$output" = "segredo-x" ]
 }
@@ -148,6 +148,6 @@ setup() {
 	printf 'a\na\n' | "$NPASS" insert personal email/gmail
 	run bash -c "printf 'N\n' | '$NPASS' insert personal email/gmail"
 	[ "$status" -ne 0 ]
-	run "$NPASS" show personal email/gmail
+	run "$NPASS" get personal email/gmail
 	[ "$output" = "a" ]
 }

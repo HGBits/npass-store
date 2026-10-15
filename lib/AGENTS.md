@@ -21,6 +21,7 @@ Este é o código-fonte principal do `npass`. O executável em `bin/npass` é ge
 | `10-signing.bash` | assinatura e verificação |
 | `11-extensions.bash` | descoberta, instalação e execução de extensões |
 | `12-diceware.bash` | comandos `diceware` (com alturas) e `memorable` (sem índice); lista de palavras em `$NPASS_STORE/wordlist.txt` |
+| `14-entry.bash` | formato md1: `npass_entry_load/_render/_new/_with_password/_require`, campos (`_field_get/_set/_has`) e OTP (`_otp_uri/_otp_set`); estado em globais `NPASS_E_*` (chame direto, nunca em `$(...)`) |
 | `13-backup.bash` | comando `backup` e helpers de anexo (`npass_backup_attachments`, `npass_backup_is_attachment`, `npass_backup_drop`); `rm`/`mv`/`update` o chamam |
 
 ## Como localizar

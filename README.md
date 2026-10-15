@@ -119,11 +119,14 @@ npass show pessoal email/gmail
 Copiar para o clipboard (só a senha, por padrão):
 
 ```bash
-npass clip pessoal email/gmail          # senha (1ª linha)
+npass clip pessoal email/gmail          # senha (seção "## Senha")
 npass clip pass pessoal email/gmail     # idem, explícito
-npass clip email pessoal email/gmail    # valor da linha "email: ..."
-npass clip all pessoal email/gmail      # entrada inteira
+npass clip email pessoal email/gmail    # valor da linha "- email: ..."
+npass clip all pessoal email/gmail      # o documento md1 inteiro
+npass get email pessoal email/gmail     # imprime no stdout em vez de copiar (mesmos argumentos)
 ```
+
+`get` recebe os mesmos argumentos do `clip` e imprime o valor em vez de copiá-lo: é o que as extensões de clipboard (`wclip`, `clip-x11`) chamam, para o formato ser lido em um lugar só.
 
 Com 2 argumentos é `ID CAMINHO`; com 3, `CAMPO ID CAMINHO`. O campo é
 comparado sem diferenciar maiúsculas e aceita prefixo único (`email` acha
@@ -173,18 +176,46 @@ Rotacionar senhas:
 npass update pessoal email/
 ```
 
+## Formato das entradas (md1)
+
+O conteúdo cifrado de **toda** entrada é um documento markdown com este formato (`npass show` o imprime como está):
+
+```markdown
+<!-- npass:md1 -->
+## Senha
+valor-cru-sem-trim
+
+## Campos
+- login: fulano
+- url: https://exemplo.com
+
+## OTP
+otpauth://totp/...
+
+## Notas
+texto livre; sempre a última seção
+```
+
+- A 1ª linha é exatamente o marcador. Sem ele a entrada **não está em md1** (veja "Migração e importação").
+- `## Senha` é obrigatória e vem primeiro. A senha é a linha logo abaixo do cabeçalho, lida **por posição e sem tirar espaços**: uma senha pode ser `## Campos`, `- x: y` ou começar com `#` sem confundir o parser.
+- `## Campos`, `## OTP` e `## Notas` são opcionais, nessa ordem e no máximo uma vez cada. Uma linha de campo é `- chave: valor`; a chave não diferencia maiúsculas. Entrada só de OTP tem `## Senha` vazia.
+- `## Notas` vai até o fim do documento: tudo depois dela é nota, mesmo que pareça cabeçalho ou campo (e por isso nunca vira campo).
+- Linha não reconhecida dentro de Campos/OTP é mantida como está ao reescrever. Estrutura inválida (seção fora de ordem ou repetida, texto solto) é recusada, nunca "consertada" em silêncio.
+- **Só md1 entra:** `insert`, `generate`, `pin`, `diceware`, `otp insert` e os imports gravam md1; `insert --batch` e `edit` recusam qualquer outra coisa; `update -m` espera o documento completo. O único parser do formato é `lib/14-entry.bash`.
+- Uma entrada ainda no formato antigo (texto puro, senha na 1ª linha) **não é lida** por `get`, `clip`, `otp`, `pin`, `generate --in-place`, `update` nem `edit`: o comando para e manda rodar `npass import npass-legacy ID`. `show`, `ls`, `grep`, `mv` e `rm` continuam funcionando com ela.
+
 ## PIN
 
 `npass pin` gera um PIN numérico. O **modo é obrigatório**: há sistemas que usam o PIN como a própria senha e outros que o usam como fator extra ao lado de uma senha, e adivinhar o modo sobrescreveria uma senha de verdade ou deixaria o PIN onde se espera uma senha.
 
 ```bash
 npass pin --password pessoal cartao/debito     # o PIN É a senha da entrada (6 dígitos)
-npass pin --field pessoal banco/app 8          # o PIN vira o campo "pin:" (8 dígitos); a senha não é tocada
+npass pin --field pessoal banco/app 8          # o PIN vira o campo "- pin:" (8 dígitos); a senha não é tocada
 npass clip pin pessoal banco/app               # copia o campo pin
 ```
 
-- **`--password`**: o PIN substitui a senha da entrada (ou a constitui, se a entrada não existe). Em entrada existente pergunta antes de sobrescrever; `-f` não pergunta; `--in-place` troca só a 1ª linha e preserva login, OTP e notas.
-- **`--field`**: acrescenta (ou atualiza) a linha `pin: NNNN` no fim do bloco de campos, antes das notas; a senha e tudo o mais ficam intactos. **A entrada precisa existir**: um erro de digitação no caminho não pode criar uma entrada órfã que parece anexada à certa. Crie-a antes com `insert` ou `generate`. Se já houver `pin:`, pergunta antes de substituir (`-f` não pergunta); só a primeira ocorrência é trocada, que é a que `npass clip pin` lê.
+- **`--password`**: o PIN substitui a senha da entrada (ou a constitui, se a entrada não existe). Em entrada existente pergunta antes de sobrescrever; `-f` não pergunta; `--in-place` troca só a senha e preserva campos, OTP e notas.
+- **`--field`**: acrescenta (ou atualiza) a linha `- pin: NNNN` no fim da seção `## Campos` (que é criada se não existir), antes do OTP e das notas; a senha e tudo o mais ficam intactos. **A entrada precisa existir**: um erro de digitação no caminho não pode criar uma entrada órfã que parece anexada à certa. Crie-a antes com `insert` ou `generate`. Se já houver `pin:`, pergunta antes de substituir (`-f` não pergunta); só a primeira ocorrência é trocada, que é a que `npass clip pin` lê.
 - Dígitos: 4 a 32, padrão 6 (`NPASS_PIN_LENGTH` muda o padrão). O PIN é copiado para o clipboard por padrão; as mensagens saem no stderr. Zeros à esquerda são preservados (o PIN é texto, nunca número).
 - **Um PIN tem pouca entropia** (6 dígitos ≈ 19,9 bits). Só é seguro onde o sistema limita as tentativas (cartão, celular, TPM). Não o use como senha de conta que aceite tentativas ilimitadas ou que possa ser atacada offline.
 - Se a entrada existe mas não pode ser decifrada, o comando para sem alterar nada. A única exceção é `--password -f`, que a sobrescreve de propósito.
@@ -265,7 +296,7 @@ Se você perder o gerenciador, a senha se refaz: ache cada altura na lista (a su
 
 **`memorable`** usa as listas Short (#1 e #2.0 juntas: 2.448 palavras distintas; `-l short1` ou `-l short2` escolhe uma só) e **não tem índice**: a frase aparece no terminal (ou vai para o clipboard com `-c`) para ser decorada.
 
-Opções dos dois: `-s/--sep SEP` (0 a 3 caracteres, padrão `-`), `-c`, `-f`, `--in-place` (troca só a 1ª linha e preserva OTP e notas) e o número de palavras (4 a 20, padrão 6). O separador pode ser predefinido com `export NPASS_DICEWARE_SEP='.'` (vazio = sem separador); `--sep` vence. A entropia sai calculada sobre a lista realmente usada.
+Opções dos dois: `-s/--sep SEP` (0 a 3 caracteres, padrão `-`), `-c`, `-f`, `--in-place` (troca só a senha e preserva campos, OTP e notas) e o número de palavras (4 a 20, padrão 6). O separador pode ser predefinido com `export NPASS_DICEWARE_SEP='.'` (vazio = sem separador); `--sep` vence. A entropia sai calculada sobre a lista realmente usada.
 
 A lista fica em `~/.npass/wordlist.txt` (ou `NPASS_WORDLIST`). Na primeira vez o npass a copia da que acompanha a instalação (`PREFIX/share/npass/encrypts_alternatives/`, ou `encrypts_alternatives/` num clone do repositório; `NPASS_WORDLIST_SRC` força a origem). É só dado, nunca executado, e o npass recusa uma lista com menos de 1296 palavras utilizáveis (sinal de arquivo truncado ou adulterado). Formato: seções `[large]`, `[short1]`, `[short2]`, linhas `ALTURA<TAB>palavra`. Listas da EFF, licença CC BY 3.0 US.
 
@@ -293,9 +324,26 @@ npass import pass-secrets pessoal /caminho/da/identidade     # layout pass-secre
 
 - Se a identidade `pessoal` ainda não existir e a origem tiver `.gpg-id`, ela é criada com os mesmos destinatários, e já **assinada** se a origem tiver `.gpg-id.sig`. Uma identidade que já existia nunca é assinada como efeito colateral (isso continua sendo `npass sign`).
 - As fontes não são removidas por padrão (`--delete-source` apaga cada `.gpg` depois de importar com sucesso). O que já existe é pulado; `-f` sobrescreve. `-p PREFIXO` e `--dry-run` também valem aqui.
-- No `pass-secrets` o codinome continua sendo o caminho lógico (para não ir parar no histórico do shell nem em `/proc/*/cmdline`); o nome real e o alias de e-mail viram notas dentro do segredo cifrado (`# nome-real: ...`, `# email-alias: ...`).
+- No `pass-secrets` o codinome continua sendo o caminho lógico (para não ir parar no histórico do shell nem em `/proc/*/cmdline`); o nome real e o alias de e-mail viram os campos `- nome-real: ...` e `- email-alias: ...` dentro do segredo cifrado.
+- O corpo de cada `.gpg` de um store `pass` é texto puro (formato antigo); o import o **converte para md1** na hora, pelas regras de "Converter do formato antigo" abaixo.
 
-> `npass migrate` e `npass migrate-secrets` não existem mais no core: viraram `npass import pass` e `npass import pass-secrets`. Rodar o comando antigo mostra esse aviso.
+> `npass migrate` e `npass migrate-secrets` não existem mais no core: viraram `npass import pass`, `npass import pass-secrets` e `npass import npass-legacy`. Rodar o comando antigo mostra esse aviso.
+
+### Converter do formato antigo (`npass-legacy`)
+
+Entradas gravadas antes do md1 (texto puro, senha na 1ª linha) não são lidas pelo core. Convertê-las é um fluxo da mesma extensão, **no próprio store**:
+
+```bash
+npass import npass-legacy pessoal --dry-run   # lista o que seria convertido (~ caminho); não grava
+npass import npass-legacy pessoal             # converte e grava
+```
+
+- Lê cada entrada com `npass show`, converte as que ainda estão no formato antigo e grava o lote com `insert --batch -f`: **um** commit Git, e o formato antigo continua no histórico (`git -C ~/.npass log`).
+- **Idempotente:** o que já está em md1 e os anexos do `npass backup` não são tocados; rodar de novo diz que não há nada a converter.
+- Regras da conversão: a 1ª linha é a senha (se for `otpauth://`, a entrada era só de OTP e a senha fica vazia); o **bloco de campos** é o prefixo de linhas `chave: valor` (ou `# chave: valor`) e `otpauth://`; uma linha em branco logo depois dele é só o separador; o resto vai para `## Notas` sem mudar uma vírgula. Linhas `otpauth://` e as etiquetas `# nome-real:` / `# email-alias:` que estiverem soltas nas notas **sobem** para OTP/Campos, para o OTP e a busca por campo continuarem funcionando.
+- **O que muda de comportamento:** uma linha `chave: valor` que estava *depois* da primeira linha em branco (nas notas) era achada pelo `clip CAMPO` do formato antigo e agora fica nas notas, sem virar campo. O comando avisa, entrada por entrada (`ficaram nas notas`).
+- **Cada conversão é verificada** antes de gravar: relê o md1 gerado e confere que a senha e as linhas `otpauth://` são idênticas e que toda linha não vazia do original aparece no resultado (como campo ou nota) o mesmo número de vezes. Se não passar, a entrada é mantida como estava e entra na contagem de falhas (saída ≠ 0).
+- Identidade inexistente, ilegível ou entrada não decifrável: a entrada fica como está e o comando relata.
 
 Para importar de **outros gerenciadores** (Bitwarden, KeePassXC, Firefox, Chrome, LastPass, 1Password, Aegis, andOTP, CSV genérico), é a mesma extensão: seção abaixo.
 
@@ -355,11 +403,11 @@ npass import pass pessoal ~/.password-store                  # store pass tradic
 npass import pass-secrets pessoal /caminho/da/identidade     # layout pass-secrets-redesign
 ```
 
-Formatos: `csv` (genérico), `bitwarden` (csv/json), `keepassxc`/`keepass`, `firefox`, `chrome`, `lastpass`, `1password`, `aegis`, `andotp`, `pass`, `pass-secrets`.
+Formatos: `csv` (genérico), `bitwarden` (csv/json), `keepassxc`/`keepass`, `firefox`, `chrome`, `lastpass`, `1password`, `aegis`, `andotp`, `pass`, `pass-secrets` e `npass-legacy` (converte o próprio store, sem arquivo de origem).
 
 - Por padrão **pula** o que já existe (reimportar é seguro); `-f` sobrescreve. Títulos repetidos viram `titulo/login`.
 - Opções: `-p PREFIXO`, `-f`, `-d/--dry-run`, `-v`, `--delete-source`, `--encoding`, `--del`, `--cols`, `--skip-header`.
-- O conteúdo segue o formato do `pass` (`senha` na 1ª linha, depois `login:`, `url:`, campos extras, URI OTP e notas), então `npass clip login ...` e `npass otp ...` funcionam.
+- Todo import grava **md1** (`## Senha`, `## Campos` com `login`, `email`, `url` e extras, `## OTP`, `## Notas`), então `npass clip login ...` e `npass otp ...` funcionam. Senha com quebra de linha é recusada (não cabe em md1).
 - Os segredos trafegam por pipe no stdin do `npass insert --batch`: nunca em argv, variável de ambiente ou arquivo temporário. O lote inteiro gera **um** commit Git.
 - Exports **criptografados** (Bitwarden, Aegis, andOTP) são recusados: exporte a versão sem criptografia, importe e apague. **O arquivo exportado é uma cópia em claro de todas as suas senhas.** Prefira cifrá-lo com `gpg` antes (a extensão lê `.gpg`) ou usar `/dev/shm`. `--delete-source` usa `shred`, que **não é confiável em btrfs** (copy-on-write) nem em SSD.
 - Os parsers de formatos exportados foram escritos a partir do formato documentado de cada gerenciador e testados com fixtures sintéticos. Antes de confiar em um formato, importe um export real com `--dry-run` e confira.

@@ -36,13 +36,45 @@ setup() {
 
 # --- edit ---------------------------------------------------------------
 
-@test "edit grava o conteudo produzido pelo \$EDITOR" {
-	printf 'echo novo-conteudo > "$1"' > "$BATS_TEST_TMPDIR/fake_editor.sh"
+@test "edit grava o documento md1 produzido pelo \$EDITOR" {
+	md1_doc novo-conteudo 'login: eu' >"$BATS_TEST_TMPDIR/doc"
+	printf 'cp "%s" "$1"' "$BATS_TEST_TMPDIR/doc" > "$BATS_TEST_TMPDIR/fake_editor.sh"
 	chmod +x "$BATS_TEST_TMPDIR/fake_editor.sh"
 	EDITOR="$BATS_TEST_TMPDIR/fake_editor.sh" run "$NPASS" edit personal notes/x
 	[ "$status" -eq 0 ]
-	run "$NPASS" show personal notes/x
+	run "$NPASS" get personal notes/x
 	[ "$output" = "novo-conteudo" ]
+	run "$NPASS" get login personal notes/x
+	[ "$output" = "eu" ]
+}
+
+@test "edit de entrada nova abre num gabarito md1" {
+	printf '#!/bin/sh\ncat "$1" > "%s"\n' "$BATS_TEST_TMPDIR/visto" > "$BATS_TEST_TMPDIR/espia.sh"
+	chmod +x "$BATS_TEST_TMPDIR/espia.sh"
+	EDITOR="$BATS_TEST_TMPDIR/espia.sh" run "$NPASS" edit personal notes/nova
+	[ "$status" -eq 0 ]
+	[ "$(cat "$BATS_TEST_TMPDIR/visto")" = $'<!-- npass:md1 -->\n## Senha' ]
+}
+
+@test "edit recusa o que nao e md1 e nao grava nada" {
+	printf 'a\na\n' | "$NPASS" insert personal notes/v
+	printf 'echo texto-puro > "$1"' > "$BATS_TEST_TMPDIR/ruim.sh"
+	chmod +x "$BATS_TEST_TMPDIR/ruim.sh"
+	EDITOR="$BATS_TEST_TMPDIR/ruim.sh" run "$NPASS" edit personal notes/v
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"formato md1"* ]]
+	run "$NPASS" get personal notes/v
+	[ "$output" = "a" ]
+}
+
+@test "edit de entrada no formato antigo manda converter e nao abre o editor" {
+	npass_test_legacy personal notes/velha $'senha-velha\nlogin: x'
+	printf '#!/bin/sh\ntouch "%s"\n' "$BATS_TEST_TMPDIR/abriu" > "$BATS_TEST_TMPDIR/e.sh"
+	chmod +x "$BATS_TEST_TMPDIR/e.sh"
+	EDITOR="$BATS_TEST_TMPDIR/e.sh" run "$NPASS" edit personal notes/velha
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"npass import npass-legacy personal"* ]]
+	[ ! -e "$BATS_TEST_TMPDIR/abriu" ]
 }
 
 @test "edit sem mudanca real nao falha e nao regrava" {
@@ -51,7 +83,7 @@ setup() {
 	chmod +x "$BATS_TEST_TMPDIR/noop_editor.sh"
 	EDITOR="$BATS_TEST_TMPDIR/noop_editor.sh" run "$NPASS" edit personal notes/y
 	[ "$status" -eq 0 ]
-	run "$NPASS" show personal notes/y
+	run "$NPASS" get personal notes/y
 	[ "$output" = "a" ]
 }
 
@@ -62,9 +94,9 @@ setup() {
 	local uri="otpauth://totp/x?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
 	printf '%s\n%s\n' "$uri" "$uri" | "$NPASS" otp insert -f personal work/aws
 	printf 'y\n' | "$NPASS" update -f -l 14 personal work/aws
+	run "$NPASS" get personal work/aws
+	[ "${#output}" -eq 14 ]
 	run "$NPASS" show personal work/aws
-	local newpw; newpw="$(head -n1 <<<"$output")"
-	[ "${#newpw}" -eq 14 ]
 	[[ "$output" == *"otpauth://"* ]]
 	[[ "$output" != *"senhavelha"* ]]
 }
@@ -72,7 +104,7 @@ setup() {
 @test "update --auto-length usa o comprimento da senha antiga" {
 	printf 'abcdefgh\nabcdefgh\n' | "$NPASS" insert personal email/x
 	printf 'y\n' | "$NPASS" update -f -a personal email/x
-	run "$NPASS" show personal email/x
+	run "$NPASS" get personal email/x
 	[ "${#output}" -eq 8 ]
 }
 
@@ -80,7 +112,7 @@ setup() {
 	printf 'abc\nabc\n' | "$NPASS" insert personal email/z
 	run "$NPASS" update -f -l 10 personal email/z
 	[ "$status" -eq 0 ]
-	run "$NPASS" show personal email/z
+	run "$NPASS" get personal email/z
 	[ "${#output}" -eq 10 ]
 	[ "$output" != "abc" ]
 }
@@ -88,7 +120,7 @@ setup() {
 @test "update sem -f e resposta N mantem a senha antiga" {
 	printf 'mantemesta\nmantemesta\n' | "$NPASS" insert personal email/keep
 	printf 'N\n' | "$NPASS" update personal email/keep
-	run "$NPASS" show personal email/keep
+	run "$NPASS" get personal email/keep
 	[ "$output" = "mantemesta" ]
 }
 
@@ -107,11 +139,34 @@ setup() {
 
 # --- update: --multiline --------------------------------------------------
 
-@test "update --multiline substitui o conteudo inteiro" {
+@test "update --multiline substitui o documento md1 inteiro" {
 	printf 'linha1\nlinha1\n' | "$NPASS" insert personal notes/m
-	printf 'novaLinha1\nnovaLinha2\n' | "$NPASS" update -f -m personal notes/m
+	local doc; doc="$(md1_doc novaLinha1 'login: x')"
+	printf '%s\n' "$doc" | "$NPASS" update -f -m personal notes/m
 	run "$NPASS" show personal notes/m
-	[ "$output" = $'novaLinha1\nnovaLinha2' ]
+	[ "$output" = "$doc" ]
+}
+
+@test "update --multiline recusa texto fora do md1 e nao grava" {
+	printf 'linha1\nlinha1\n' | "$NPASS" insert personal notes/m
+	run bash -c "printf 'novaLinha1\nnovaLinha2\n' | '$NPASS' update -f -m personal notes/m"
+	[ "$status" -ne 0 ]
+	run "$NPASS" get personal notes/m
+	[ "$output" = "linha1" ]
+}
+
+# --- update: entrada no formato antigo e pulada com aviso -----------------
+
+@test "update pula entrada no formato antigo, avisa como converter e atualiza as outras" {
+	npass_test_legacy personal g/velha 'segredo-velho'
+	printf 'novo1\nnovo1\n' | "$NPASS" insert personal g/nova
+	run "$NPASS" update -f -l 11 personal 'g/'
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"g/velha"*"npass import npass-legacy personal"* ]]
+	run "$NPASS" get personal g/nova
+	[ "${#output}" -eq 11 ]
+	run "$NPASS" show personal g/velha
+	[ "$output" = "segredo-velho" ]
 }
 
 # --- update: include/exclude ----------------------------------------------
@@ -120,9 +175,9 @@ setup() {
 	printf 'skip-me\nskip-me\n' | "$NPASS" insert personal a/one
 	printf 'change-me\nchange-me\n' | "$NPASS" insert personal a/two
 	printf 'y\ny\n' | "$NPASS" update -f -e '^skip' -l 12 personal 'a/'
-	run "$NPASS" show personal a/one
+	run "$NPASS" get personal a/one
 	[ "$output" = "skip-me" ]
-	run "$NPASS" show personal a/two
+	run "$NPASS" get personal a/two
 	[ "${#output}" -eq 12 ]
 }
 
@@ -130,9 +185,9 @@ setup() {
 	printf 'target-x\ntarget-x\n' | "$NPASS" insert personal b/one
 	printf 'other-y\nother-y\n' | "$NPASS" insert personal b/two
 	printf 'y\n' | "$NPASS" update -f -i '^target' -l 12 personal 'b/'
-	run "$NPASS" show personal b/one
+	run "$NPASS" get personal b/one
 	[ "${#output}" -eq 12 ]
-	run "$NPASS" show personal b/two
+	run "$NPASS" get personal b/two
 	[ "$output" = "other-y" ]
 }
 
@@ -140,11 +195,12 @@ setup() {
 
 @test "update -E chama o editor e ignora confirmacao/geracao" {
 	printf 'original\noriginal\n' | "$NPASS" insert personal e/one
-	printf 'echo editado > "$1"' > "$BATS_TEST_TMPDIR/ed.sh"
+	md1_doc editado >"$BATS_TEST_TMPDIR/doc"
+	printf 'cp "%s" "$1"' "$BATS_TEST_TMPDIR/doc" > "$BATS_TEST_TMPDIR/ed.sh"
 	chmod +x "$BATS_TEST_TMPDIR/ed.sh"
 	EDITOR="$BATS_TEST_TMPDIR/ed.sh" run "$NPASS" update -E personal e/one
 	[ "$status" -eq 0 ]
-	run "$NPASS" show personal e/one
+	run "$NPASS" get personal e/one
 	[ "$output" = "editado" ]
 }
 
@@ -155,10 +211,10 @@ setup() {
 	printf 'p2\np2\n' | "$NPASS" insert personal grp/y
 	printf 'p3\np3\n' | "$NPASS" insert personal outro/z
 	printf 'y\ny\n' | "$NPASS" update -f -l 9 personal 'grp/'
-	run "$NPASS" show personal grp/x
+	run "$NPASS" get personal grp/x
 	[ "${#output}" -eq 9 ]
-	run "$NPASS" show personal grp/y
+	run "$NPASS" get personal grp/y
 	[ "${#output}" -eq 9 ]
-	run "$NPASS" show personal outro/z
+	run "$NPASS" get personal outro/z
 	[ "$output" = "p3" ]
 }

@@ -16,7 +16,7 @@ cmd_update_usage() {
 		  -l, --length N     comprimento da senha gerada
 		  -a, --auto-length  usa o comprimento da senha antiga
 		  -p, --provide      digita a nova senha manualmente
-		  -m, --multiline    substitui o conteúdo inteiro (Ctrl+D para terminar)
+		  -m, --multiline    substitui o documento md1 inteiro (Ctrl+D para terminar)
 		  -i, --include RE   só atualiza entradas cuja senha antiga casa RE
 		  -e, --exclude RE   pula entradas cuja senha antiga casa RE
 		  -E, --edit         abre cada entrada no \$EDITOR, ignora as opções acima
@@ -86,7 +86,11 @@ cmd_update() {
 		fi
 
 		content="$(cmd_show "$id" "$logical")" || { npass_warn "$(npass_t warn_falha_decifrar "$logical")"; continue; }
-		oldpw="$(head -n1 <<<"$content")"
+		if ! npass_entry_load "$content"; then
+			npass_warn "$(npass_t warn_update_nao_md1 "$id" "$logical" "$id")"
+			continue
+		fi
+		oldpw="$NPASS_E_PW"
 
 		[[ -n "$include" && ! "$oldpw" =~ $include ]] && continue
 		[[ -n "$exclude" && "$oldpw" =~ $exclude ]] && continue
@@ -112,11 +116,12 @@ cmd_update() {
 			read -r -s -p "$(npass_t prompt_repita)" newpw2 || exit 1
 			echo
 			[[ "$newpw" == "$newpw2" ]] || npass_die "$(npass_t erro_senhas_diferentes)"
-			npass_blob_write "$dir" "$logical" "$(npass_replace_first_line "$content" "$newpw")"
+			npass_blob_write "$dir" "$logical" "$(npass_entry_with_password "$content" "$newpw")"
 			npass_git_commit "$id" "update-provide"
 		elif [[ $multiline -eq 1 ]]; then
-			npass_t msg_digite_conteudo "$logical"
+			npass_t msg_digite_conteudo "$logical" "$NPASS_ENTRY_MARKER"
 			local newcontent; newcontent="$(cat)"
+			npass_entry_load "$newcontent" || npass_die "$(npass_t erro_edit_invalido "$NPASS_ENTRY_MARKER")"
 			npass_blob_write "$dir" "$logical" "$newcontent"
 			npass_git_commit "$id" "update-multiline"
 		else

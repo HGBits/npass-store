@@ -205,6 +205,7 @@ npass_passphrase_cmd() {
 	if ((has_entry)) && [[ $inplace -eq 1 ]]; then
 		existing="$(cmd_show "$id" "$logical")" \
 			|| npass_die "$(npass_t erro_entrada_ilegivel "$id" "$logical")"
+		npass_entry_require "$id" "$logical" "$existing"
 	fi
 	if ((has_entry)) && [[ $inplace -eq 0 && $force -eq 0 ]]; then
 		read -r -p "$(npass_t prompt_sobrescrever_existe "$id" "$logical")" reply
@@ -219,9 +220,11 @@ npass_passphrase_cmd() {
 		heights+="${NPASS_WL_H[idx]}"
 	done
 
-	local content="$phrase"
+	local content
 	if [[ $inplace -eq 1 && $has_entry -eq 1 ]]; then
-		content="$(npass_replace_first_line "$existing" "$phrase")"
+		content="$(npass_entry_with_password "$existing" "$phrase")"
+	else
+		content="$(npass_entry_new "$phrase")"
 	fi
 	npass_blob_write "$dir" "$logical" "$content"
 	npass_git_commit "$id" "$mode"

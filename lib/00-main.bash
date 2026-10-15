@@ -27,6 +27,7 @@ npass_main() {
 	sign) cmd_sign "$@" ;;
 	extension) cmd_extension "$@" ;;
 	clip) cmd_clip "$@" ;;
+	get) cmd_get "$@" ;;
 	pin) cmd_pin "$@" ;;
 	backup) cmd_backup "$@" ;;
 	otp)
@@ -54,7 +55,8 @@ npass_main() {
 			  extension sign CAMINHO [KEYID]   assina um executável de extensão
 			  extension list           lista extensões e se cada uma passaria nas checagens
 			  show ID DIR/PASS         mostra um segredo
-			  clip [CAMPO] ID DIR/PASS copia a senha (padrão), 'all' ou um campo 'chave: valor'
+			  clip [CAMPO] ID DIR/PASS copia a senha (padrão), 'all' ou um campo '- chave: valor'
+			  get [CAMPO] ID DIR/PASS  imprime (em vez de copiar) o mesmo valor que o clip copiaria
 			  pin (--password|--field) [-c|-f] [--in-place] ID DIR/PASS [N]   gera um PIN numérico: como a senha ou como o campo 'pin:'
 			  backup [-f] -n N ID DIR/PASS   grava N senhas de backup (interativo) num arquivo cifrado anexo à entrada
 			  insert [-f] ID DIR/PASS  insere/atualiza um segredo

@@ -24,7 +24,7 @@ setup() {
 @test "identidade nao assinada continua funcionando normalmente (retrocompatibilidade)" {
 	"$NPASS" init personal "$FPR"
 	printf 'a\na\n' | "$NPASS" insert personal x/y
-	run "$NPASS" show personal x/y
+	run "$NPASS" get personal x/y
 	[ "$status" -eq 0 ]
 	[ "$output" = "a" ]
 }
@@ -32,7 +32,7 @@ setup() {
 @test "identidade assinada continua funcionando normalmente quando a assinatura e valida" {
 	"$NPASS" init --sign personal "$FPR"
 	printf 'a\na\n' | "$NPASS" insert personal x/y
-	run "$NPASS" show personal x/y
+	run "$NPASS" get personal x/y
 	[ "$status" -eq 0 ]
 	[ "$output" = "a" ]
 }
@@ -71,7 +71,7 @@ setup() {
 	printf 'a\na\n' | "$NPASS" insert personal x/y
 	run "$NPASS" mv personal x/y work x/z
 	[ "$status" -eq 0 ]
-	run "$NPASS" show work x/z
+	run "$NPASS" get work x/z
 	[ "$output" = "a" ]
 	run "$NPASS" rm -f work x/z
 	[ "$status" -eq 0 ]

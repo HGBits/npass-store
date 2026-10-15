@@ -29,59 +29,6 @@ npass_pin_digits() {
 	printf '%s\n' "$pin"
 }
 
-# npass_pin_has_field CONTENT -> success if a line after the first is a "pin:" field.
-# The key rule is the one `npass clip` uses: text before the first ":", trimmed,
-# case-insensitive. Line 1 is the password and is never a field.
-npass_pin_has_field() {
-	local line key first=1 re='^([^:[:space:]][^:]*):'
-	while IFS= read -r line; do
-		if ((first)); then
-			first=0
-			continue
-		fi
-		if [[ "$line" =~ $re ]]; then
-			key="${BASH_REMATCH[1]}"
-			key="${key%"${key##*[![:space:]]}"}"
-			[[ "${key,,}" == pin ]] && return 0
-		fi
-	done <<<"$1"
-	return 1
-}
-
-# npass_pin_set_field CONTENT PIN -> new content on stdout. Replaces the FIRST "pin:"
-# line (the one `npass clip pin` reads) or, if there is none, adds "pin: PIN" at the
-# end of the field block - before the first blank line after line 1, which is where
-# notes start - or at the very end. Every other line is left byte for byte as it was,
-# line 1 (the password) included.
-npass_pin_set_field() {
-	local content="$1" pin="$2" line key i blank=-1 replaced=0 re='^([^:[:space:]][^:]*):'
-	local -a lines=()
-	while IFS= read -r line; do lines+=("$line"); done <<<"$content"
-	for ((i = 1; i < ${#lines[@]}; i++)); do
-		line="${lines[i]}"
-		if ((blank < 0)) && [[ -z "${line//[[:space:]]/}" ]]; then
-			blank=$i
-		fi
-		if [[ "$line" =~ $re ]]; then
-			key="${BASH_REMATCH[1]}"
-			key="${key%"${key##*[![:space:]]}"}"
-			if [[ "${key,,}" == pin ]]; then
-				lines[i]="pin: $pin"
-				replaced=1
-				break
-			fi
-		fi
-	done
-	if ((!replaced)); then
-		if ((blank >= 0)); then
-			lines=("${lines[@]:0:blank}" "pin: $pin" "${lines[@]:blank}")
-		else
-			lines+=("pin: $pin")
-		fi
-	fi
-	printf '%s\n' "${lines[@]}"
-}
-
 cmd_pin() {
 	local mode="" clip=1 force=0 inplace=0
 	while [[ "${1:-}" == -* ]]; do
@@ -117,11 +64,12 @@ cmd_pin() {
 	if ((has_entry)) && [[ "$mode" == field || $inplace -eq 1 ]]; then
 		existing="$(cmd_show "$id" "$logical")" \
 			|| npass_die "$(npass_t erro_pin_ilegivel "$id" "$logical")"
+		npass_entry_require "$id" "$logical" "$existing"
 	fi
 
 	if [[ "$mode" == field ]]; then
 		((has_entry)) || npass_die "$(npass_t erro_pin_sem_entrada "$id" "$logical")"
-		if npass_pin_has_field "$existing" && [[ $force -eq 0 ]]; then
+		if npass_entry_field_has pin && [[ $force -eq 0 ]]; then
 			read -r -p "$(npass_t prompt_pin_existe "$id" "$logical")" reply
 			[[ "$reply" == [yY] ]] || { npass_t msg_cancelado; return 1; }
 		fi
@@ -133,11 +81,12 @@ cmd_pin() {
 	local pin content
 	pin="$(npass_pin_digits "$digits")" || exit 1
 	if [[ "$mode" == field ]]; then
-		content="$(npass_pin_set_field "$existing" "$pin")"
+		npass_entry_field_set pin "$pin"
+		content="$(npass_entry_render)"
 	elif [[ $inplace -eq 1 && $has_entry -eq 1 ]]; then
-		content="$(npass_replace_first_line "$existing" "$pin")"
+		content="$(npass_entry_with_password "$existing" "$pin")"
 	else
-		content="$pin"
+		content="$(npass_entry_new "$pin")"
 	fi
 	npass_blob_write "$dir" "$logical" "$content"
 	npass_git_commit "$id" "pin"

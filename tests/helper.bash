@@ -92,3 +92,26 @@ npass_test_install_ext() {
 	"$NPASS" extension sign "$dest" "$FPR" >/dev/null || return 1
 	export NPASS_ENABLE_EXTENSIONS=1
 }
+
+# md1_doc SENHA [CHAVE: VALOR]... -> documento md1 (sem \n final) com os campos dados.
+# E o que `npass show` imprime para uma entrada criada por insert/generate/pin.
+md1_doc() {
+	local pw="$1" f
+	shift
+	printf '<!-- npass:md1 -->\n## Senha\n%s' "$pw"
+	if (($#)); then
+		printf '\n\n## Campos'
+		for f in "$@"; do printf '\n- %s' "$f"; done
+	fi
+}
+
+# npass_test_legacy ID LOGICAL CORPO -> grava no store um conteudo no formato
+# ANTIGO (texto puro, linha 1 = senha) chamando as funcoes internas do npass.
+# O comando `insert` so grava md1, entao este e o unico jeito de semear uma
+# entrada legada para testar a conversao (npass-legacy) e a recusa do core.
+npass_test_legacy() {
+	NPASS_SRC="$BATS_TEST_DIRNAME/../bin/npass" bash -c '
+		source <(sed "\$d" "$NPASS_SRC")
+		npass_tmp_init
+		dir="$(npass_identity_dir "$1")" && npass_blob_write "$dir" "$2" "$3"' _ "$@"
+}

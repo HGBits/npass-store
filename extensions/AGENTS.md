@@ -24,9 +24,12 @@ Use para tarefas envolvendo:
 - andOTP;
 - CSV genérico;
 - `pass`;
-- `pass-secrets`.
+- `pass-secrets`;
+- `npass-legacy`: converte, no próprio store, as entradas do formato antigo (texto puro) para md1.
 
-Testes relacionados: `tests/import.bats`, `tests/import-pass.bats`, `tests/import-pass-secrets.bats`.
+Todo import grava **md1** (`render()` / `render_md1()`); o corpo dos stores `pass` passa por `legacy_to_md1()` e por `verify_conversion()`, que reprova a conversão que perder ou duplicar uma linha. `parse_md1()` aqui e em `npass-audit` espelha `lib/14-entry.bash`: mudou o formato, mude os três.
+
+Testes relacionados: `tests/import.bats`, `tests/import-pass.bats`, `tests/import-pass-secrets.bats`, `tests/import-legacy.bats`.
 
 ### `npass-passkey`
 
@@ -42,10 +45,11 @@ Use para:
 
 - seleção CLIPBOARD;
 - expiração/limpeza;
-- parsing de campos;
 - comportamento do comando `clip-x11`.
 
-Teste principal: `tests/extensions.bats`.
+Não interpreta a entrada: chama `"${NPASS_BIN:-npass}" get [CAMPO] ID CAMINHO` e copia o que o core devolve (o formato md1 só é lido em `lib/14-entry.bash`).
+
+Teste principal: `tests/clip-ext.bats`.
 
 ### `npass-wclip`
 

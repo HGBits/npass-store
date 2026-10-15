@@ -111,7 +111,7 @@ setup() {
 	"$NPASS" init personal "$FPR"
 	printf 'jasalvo\njasalvo\n' | "$NPASS" insert personal IST/Bvop
 	"$NPASS" import pass-secrets personal "$OLD" >/dev/null
-	run "$NPASS" show personal IST/Bvop
+	run "$NPASS" get personal IST/Bvop
 	[ "$output" = "jasalvo" ]
 }
 

@@ -71,7 +71,7 @@ count_blobs() { find "$NPASS_STORE/HG/blobs" -name '*.gpg' | wc -l; }
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"3 senhas de backup salvas em email/gmail/Backup-gmail.dados.md"* ]]
 	[ "$(count_blobs)" -eq 3 ]
-	[ "$("$NPASS" show HG email/gmail)" = "S3nhaPrincipal!" ]
+	[ "$("$NPASS" get HG email/gmail)" = "S3nhaPrincipal!" ]
 
 	run "$NPASS" show HG email/gmail/Backup-gmail.md
 	[ "$status" -eq 0 ]
@@ -164,7 +164,7 @@ count_blobs() { find "$NPASS_STORE/HG/blobs" -name '*.gpg' | wc -l; }
 	run bk 1 HG email/gmail
 	[ "$status" -ne 0 ]
 	[[ "$output" == *"não é um anexo de backup"* ]]
-	[ "$("$NPASS" show HG email/gmail/Backup-gmail.md)" = "minha" ]
+	[ "$("$NPASS" get HG email/gmail/Backup-gmail.md)" = "minha" ]
 }
 
 @test "backup sobre um anexo e recusado" {
@@ -206,14 +206,14 @@ count_blobs() { find "$NPASS_STORE/HG/blobs" -name '*.gpg' | wc -l; }
 	printf 'minha\nminha\n' | "$NPASS" insert HG email/gmail/Backup-x.md >/dev/null
 	run "$NPASS" rm -f HG email/gmail
 	[ "$status" -eq 0 ]
-	[ "$("$NPASS" show HG email/gmail/Backup-x.md)" = "minha" ]
+	[ "$("$NPASS" get HG email/gmail/Backup-x.md)" = "minha" ]
 }
 
 @test "rm de um anexo direto remove so ele" {
 	bk 1 HG email/gmail >/dev/null
 	run "$NPASS" rm -f HG email/gmail/Backup-gmail.dados.md
 	[ "$status" -eq 0 ]
-	[ "$("$NPASS" show HG email/gmail)" = "S3nhaPrincipal!" ]
+	[ "$("$NPASS" get HG email/gmail)" = "S3nhaPrincipal!" ]
 	run "$NPASS" show HG email/gmail/Backup-gmail.md
 	[ "$status" -eq 0 ]
 	[ "$(count_blobs)" -eq 2 ]
@@ -241,8 +241,8 @@ count_blobs() { find "$NPASS_STORE/HG/blobs" -name '*.gpg' | wc -l; }
 	[ "$status" -ne 0 ]
 	[[ "$output" == *"destino já tem anexo de backup"* ]]
 	[ "$("$NPASS" ls HG)" = "$antes" ]
-	[ "$("$NPASS" show HG email/novo/Backup-gmail.md)" = "minha" ]
-	[ "$("$NPASS" show HG email/gmail)" = "S3nhaPrincipal!" ]
+	[ "$("$NPASS" get HG email/novo/Backup-gmail.md)" = "minha" ]
+	[ "$("$NPASS" get HG email/gmail)" = "S3nhaPrincipal!" ]
 }
 
 @test "mv entre identidades recifra os anexos para o destino e limpa a origem" {
@@ -250,7 +250,7 @@ count_blobs() { find "$NPASS_STORE/HG/blobs" -name '*.gpg' | wc -l; }
 	bk 2 HG email/gmail >/dev/null
 	run "$NPASS" mv HG email/gmail HG2 conta/google
 	[ "$status" -eq 0 ]
-	run "$NPASS" show HG2 conta/google
+	run "$NPASS" get HG2 conta/google
 	[ "$output" = "S3nhaPrincipal!" ]
 	run "$NPASS" show HG2 conta/google/Backup-gmail.dados.md
 	[ "$status" -eq 0 ]
@@ -290,7 +290,7 @@ count_blobs() { find "$NPASS_STORE/HG/blobs" -name '*.gpg' | wc -l; }
 	bk 1 HG email/gmail >/dev/null
 	run "$NPASS" update -f HG email/gmail
 	[ "$status" -eq 0 ]
-	[ "$("$NPASS" show HG email/gmail)" != "S3nhaPrincipal!" ]
+	[ "$("$NPASS" get HG email/gmail)" != "S3nhaPrincipal!" ]
 	run "$NPASS" show HG email/gmail/Backup-gmail.dados.md
 	[[ "$output" == *"c1"* ]]
 }

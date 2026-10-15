@@ -22,9 +22,20 @@ setup() {
 
 teardown() { pkill -f "sleep 5$" 2>/dev/null || true; }
 
-# entrada com senha, campos e notas (como a que o import produz)
+# O PIN vai para o clipboard por padrao (nao para o stdout): run_pin roda o pin
+# e deixa em $output o que foi copiado (o clipboard falso grava o stdin num arquivo).
+run_pin() {
+	run bash -c "'$NPASS' pin $* 2>/dev/null"
+	local st="$status"
+	sleep 0.3
+	output="$(cat "$CLIPFILE" 2>/dev/null)"
+	status="$st"
+}
+
+# entrada com senha, campos e notas (como a que o import produz), em md1
+NOTAS_PIN=$'\n\n## Notas\nnota do usuario\nsegunda linha'
 mkentry() {
-	printf 'S3nhaF0rte!\nlogin: eu@x.com\nurl: https://banco.x\n\nnota do usuario\nsegunda linha\n' >"$BATS_TEST_TMPDIR/corpo"
+	{ md1_doc 'S3nhaF0rte!' 'login: eu@x.com' 'url: https://banco.x'; printf '%s\n' "$NOTAS_PIN"; } >"$BATS_TEST_TMPDIR/corpo"
 	printf '#!/bin/bash\ncp "%s" "$1"\n' "$BATS_TEST_TMPDIR/corpo" >"$BATS_TEST_TMPDIR/ed.sh"
 	chmod +x "$BATS_TEST_TMPDIR/ed.sh"
 	printf 'x\nx\n' | "$NPASS" insert -f HG "${1:-banco/app}" >/dev/null
@@ -69,17 +80,18 @@ mkentry() {
 
 # --- --password: o PIN e a senha ------------------------------------------------------------
 
-@test "--password em entrada nova: a senha do cofre E o PIN (6 digitos por padrao)" {
-	run bash -c "'$NPASS' pin --password HG cartao/debito 2>/dev/null"
+@test "--password em entrada nova: a senha do cofre E o PIN (6 digitos por padrao), em md1" {
+	run_pin --password HG cartao/debito
 	[ "$status" -eq 0 ]
 	[[ "$output" =~ ^[0-9]{6}$ ]]
-	[ "$("$NPASS" show HG cartao/debito)" = "$output" ]
+	[ "$("$NPASS" get HG cartao/debito)" = "$output" ]
+	[ "$("$NPASS" show HG cartao/debito)" = "$(md1_doc "$output")" ]
 }
 
 @test "digitos: 4 a 32 aceitos; 3, 33, 0, abc, -1 e 5.5 recusados" {
 	local n
 	for n in 4 8 32; do
-		run bash -c "'$NPASS' pin --password -f HG a/b $n 2>/dev/null"
+		run_pin --password -f HG a/b $n
 		[ "$status" -eq 0 ]
 		[ "${#output}" -eq "$n" ]
 	done
@@ -91,9 +103,9 @@ mkentry() {
 }
 
 @test "NPASS_PIN_LENGTH muda o padrao, o argumento vence, valor invalido e recusado" {
-	NPASS_PIN_LENGTH=9 run bash -c "'$NPASS' pin --password -f HG a/b 2>/dev/null"
+	NPASS_PIN_LENGTH=9 run_pin --password -f HG a/b
 	[ "${#output}" -eq 9 ]
-	NPASS_PIN_LENGTH=9 run bash -c "'$NPASS' pin --password -f HG a/b 5 2>/dev/null"
+	NPASS_PIN_LENGTH=9 run_pin --password -f HG a/b 5
 	[ "${#output}" -eq 5 ]
 	NPASS_PIN_LENGTH=2 run "$NPASS" pin --password -f HG a/b
 	[ "$status" -ne 0 ]
@@ -103,29 +115,30 @@ mkentry() {
 	mkentry
 	run bash -c "printf 'n\n' | '$NPASS' pin --password HG banco/app"
 	[ "$status" -ne 0 ]
-	[ "$("$NPASS" show HG banco/app | head -1)" = "S3nhaF0rte!" ]
+	[ "$("$NPASS" get HG banco/app)" = "S3nhaF0rte!" ]
 	run bash -c "printf 'y\n' | '$NPASS' pin --password HG banco/app 2>/dev/null"
 	[ "$status" -eq 0 ]
-	[ "$("$NPASS" show HG banco/app)" = "$output" ]
+	sleep 0.3
+	[ "$("$NPASS" show HG banco/app)" = "$(md1_doc "$(cat "$CLIPFILE")")" ]
 	mkentry
-	"$NPASS" pin --password -f HG banco/app >/dev/null 2>&1
-	[[ "$("$NPASS" show HG banco/app)" =~ ^[0-9]{6}$ ]]
+	run_pin --password -f HG banco/app
+	[ "$("$NPASS" show HG banco/app)" = "$(md1_doc "$output")" ]
 }
 
-@test "--password --in-place troca so a 1a linha: login, url e notas ficam" {
+@test "--password --in-place troca so a senha: login, url e notas ficam" {
 	mkentry
-	run bash -c "'$NPASS' pin --password --in-place HG banco/app 2>/dev/null"
+	run_pin --password --in-place HG banco/app
 	[ "$status" -eq 0 ]
 	local pin="$output"
 	run "$NPASS" show HG banco/app
-	[ "$output" = "$pin"$'\nlogin: eu@x.com\nurl: https://banco.x\n\nnota do usuario\nsegunda linha' ]
+	[ "$output" = "$(md1_doc "$pin" 'login: eu@x.com' 'url: https://banco.x')$NOTAS_PIN" ]
 }
 
 @test "--password nunca escreve um campo pin: (os modos nao se misturam)" {
 	mkentry
 	"$NPASS" pin --password --in-place HG banco/app >/dev/null 2>&1
 	run "$NPASS" show HG banco/app
-	[[ "$output" != *"pin:"* ]]
+	[[ "$output" != *"- pin:"* ]]
 }
 
 # --- --field: o PIN e um campo independente ---------------------------------------------------------
@@ -138,45 +151,43 @@ mkentry() {
 	[[ "$output" == *"(vazio)"* ]]
 }
 
-@test "--field acrescenta pin: depois dos campos e antes das notas, sem tocar em mais nada" {
+@test "--field acrescenta '- pin:' ao fim dos campos, antes das notas, sem tocar em mais nada" {
 	mkentry
-	run bash -c "'$NPASS' pin --field HG banco/app 8 2>/dev/null"
+	run_pin --field HG banco/app 8
 	[ "$status" -eq 0 ]
 	local pin="$output"
 	[[ "$pin" =~ ^[0-9]{8}$ ]]
 	run "$NPASS" show HG banco/app
-	[ "$output" = $'S3nhaF0rte!\nlogin: eu@x.com\nurl: https://banco.x\npin: '"$pin"$'\n\nnota do usuario\nsegunda linha' ]
+	[ "$output" = "$(md1_doc 'S3nhaF0rte!' 'login: eu@x.com' 'url: https://banco.x' "pin: $pin")$NOTAS_PIN" ]
 }
 
-@test "--field em entrada so com senha, ou sem linha em branco: acrescenta no fim" {
+@test "--field em entrada so com senha, ou sem notas: cria/acrescenta o bloco de campos" {
 	printf 'so-senha\nso-senha\n' | "$NPASS" insert HG a/um >/dev/null
 	"$NPASS" pin --field HG a/um >/dev/null 2>&1
 	run "$NPASS" show HG a/um
-	[[ "$output" =~ ^so-senha$'\n'pin:\ [0-9]{6}$ ]]
-	printf '#!/bin/bash\nprintf "senha\\nlogin: x\\nurl: y\\n" > "$1"\n' >"$BATS_TEST_TMPDIR/ed2.sh"
+	[[ "$output" =~ ^$'<!-- npass:md1 -->\n## Senha\nso-senha\n\n## Campos\n- pin: '[0-9]{6}$ ]]
+	md1_doc senha 'login: x' 'url: y' >"$BATS_TEST_TMPDIR/doc2"
+	printf '#!/bin/bash\ncp "%s" "$1"\n' "$BATS_TEST_TMPDIR/doc2" >"$BATS_TEST_TMPDIR/ed2.sh"
 	chmod +x "$BATS_TEST_TMPDIR/ed2.sh"
 	printf 'x\nx\n' | "$NPASS" insert HG a/dois >/dev/null
 	EDITOR="$BATS_TEST_TMPDIR/ed2.sh" "$NPASS" edit HG a/dois >/dev/null
 	"$NPASS" pin --field HG a/dois >/dev/null 2>&1
 	run "$NPASS" show HG a/dois
-	[[ "$output" =~ ^senha$'\n'login:\ x$'\n'url:\ y$'\n'pin:\ [0-9]{6}$ ]]
+	[[ "$output" =~ ^$'<!-- npass:md1 -->\n## Senha\nsenha\n\n## Campos\n- login: x\n- url: y\n- pin: '[0-9]{6}$ ]]
 }
 
 @test "--field: clip padrao continua copiando a SENHA e 'clip pin' copia o PIN" {
-    mkentry
-    run bash -c "'$NPASS' pin --field HG banco/app 2>/dev/null"
-    [ "$status" -eq 0 ]
-    [ -z "$output" ]
-    sleep 0.3
-    local pin
-    pin="$(cat "$CLIPFILE")"
-    [[ "$pin" =~ ^[0-9]{6}$ ]]
-    "$NPASS" clip HG banco/app >/dev/null
-    sleep 0.3
-    [ "$(cat "$CLIPFILE")" = "S3nhaF0rte!" ]
-    "$NPASS" clip pin HG banco/app >/dev/null
-    sleep 0.3
-    [ "$(cat "$CLIPFILE")" = "$pin" ]
+	mkentry
+	run_pin --field HG banco/app
+	[ "$status" -eq 0 ]
+	local pin="$output"
+	[[ "$pin" =~ ^[0-9]{6}$ ]]
+	"$NPASS" clip HG banco/app >/dev/null
+	sleep 0.3
+	[ "$(cat "$CLIPFILE")" = "S3nhaF0rte!" ]
+	"$NPASS" clip pin HG banco/app >/dev/null
+	sleep 0.3
+	[ "$(cat "$CLIPFILE")" = "$pin" ]
 }
 
 @test "--field com pin: ja existente: N cancela; y e -f substituem; continua UMA linha pin" {
@@ -190,27 +201,33 @@ mkentry() {
 	[ "$status" -eq 0 ]
 	[ "$("$NPASS" show HG banco/app)" != "$antes" ]
 	"$NPASS" pin --field -f HG banco/app >/dev/null 2>&1
-	[ "$("$NPASS" show HG banco/app | grep -ci '^pin *:')" -eq 1 ]
-	[ "$("$NPASS" show HG banco/app | head -1)" = "S3nhaF0rte!" ]
+	[ "$("$NPASS" show HG banco/app | grep -ci '^- pin *:')" -eq 1 ]
+	[ "$("$NPASS" get HG banco/app)" = "S3nhaF0rte!" ]
 }
 
-@test "--field reconhece 'PIN :' (caixa e espacos) e troca so a PRIMEIRA ocorrencia" {
-	printf '#!/bin/bash\nprintf "senha\\nPIN : 1111\\nlogin: x\\npin: 2222\\n" > "$1"\n' >"$BATS_TEST_TMPDIR/ed3.sh"
+@test "--field reconhece '- PIN :' (caixa e espacos) e troca so a PRIMEIRA ocorrencia" {
+	md1_doc senha 'PIN : 1111' 'login: x' 'pin: 2222' >"$BATS_TEST_TMPDIR/doc3"
+	printf '#!/bin/bash\ncp "%s" "$1"\n' "$BATS_TEST_TMPDIR/doc3" >"$BATS_TEST_TMPDIR/ed3.sh"
 	chmod +x "$BATS_TEST_TMPDIR/ed3.sh"
 	printf 'x\nx\n' | "$NPASS" insert HG a/b >/dev/null
 	EDITOR="$BATS_TEST_TMPDIR/ed3.sh" "$NPASS" edit HG a/b >/dev/null
-	run bash -c "'$NPASS' pin --field -f HG a/b 2>/dev/null"
+	run_pin --field -f HG a/b
 	local pin="$output"
 	run "$NPASS" show HG a/b
-	[ "$output" = $'senha\npin: '"$pin"$'\nlogin: x\npin: 2222' ]
+	[ "$output" = "$(md1_doc senha "pin: $pin" 'login: x' 'pin: 2222')" ]
 }
 
-@test "uma 1a linha que parece 'pin: ...' e a senha, nao um campo" {
+@test "uma senha que parece '- pin: ...' ou '## Campos' e so a senha, nao um campo nem um cabecalho" {
 	printf 'pin: abc\npin: abc\n' | "$NPASS" insert HG a/b >/dev/null
+	printf '## Campos\n## Campos\n' | "$NPASS" insert HG a/c >/dev/null
 	"$NPASS" pin --field HG a/b >/dev/null 2>&1
+	"$NPASS" pin --field HG a/c >/dev/null 2>&1
+	[ "$("$NPASS" get HG a/b)" = "pin: abc" ]
+	[ "$("$NPASS" get HG a/c)" = "## Campos" ]
 	run "$NPASS" show HG a/b
-	[ "$(head -1 <<<"$output")" = "pin: abc" ]
-	[[ "$output" =~ $'\n'pin:\ [0-9]{6}$ ]]
+	[[ "$output" =~ $'\n- pin: '[0-9]{6}$ ]]
+	run "$NPASS" show HG a/c
+	[[ "$output" =~ $'\n- pin: '[0-9]{6}$ ]]
 }
 
 @test "--field --in-place e recusado (o modo field ja altera so o campo)" {
@@ -218,6 +235,17 @@ mkentry() {
 	run "$NPASS" pin --field --in-place HG banco/app
 	[ "$status" -ne 0 ]
 	[[ "$output" == *"--in-place só vale com --password"* ]]
+}
+
+@test "entrada no formato antigo: --field e --password --in-place mandam converter e nao alteram nada" {
+	npass_test_legacy HG banco/velho $'senha-velha\nlogin: x'
+	local antes; antes="$("$NPASS" show HG banco/velho)"
+	run "$NPASS" pin --field HG banco/velho
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"npass import npass-legacy HG"* ]]
+	run "$NPASS" pin --password --in-place HG banco/velho
+	[ "$status" -ne 0 ]
+	[ "$("$NPASS" show HG banco/velho)" = "$antes" ]
 }
 
 # --- saida ------------------------------------------------------------------------------------------------
@@ -247,7 +275,7 @@ mkentry() {
 	[ "$status" -eq 0 ]
 	[ -z "$output" ]
 	sleep 0.3
-	[ "$(cat "$CLIPFILE")" = "$("$NPASS" show HG a/b)" ]
+	[ "$(cat "$CLIPFILE")" = "$("$NPASS" get HG a/b)" ]
 }
 
 @test "commit automatico generico (sem caminho logico)" {
@@ -288,9 +316,9 @@ hash_blob() { sha256sum "$(ls "$NPASS_STORE"/HG/blobs/*.gpg | head -1)" | cut -d
 	run bash -c "'$NPASS' pin --password HG banco/app </dev/null"
 	[ "$status" -ne 0 ]
 	[ "$(hash_blob)" = "$antes" ]
-	run bash -c "'$NPASS' pin --password -f HG banco/app 2>/dev/null"
+	run_pin --password -f HG banco/app
 	[ "$status" -eq 0 ]
-	[ "$("$NPASS" show HG banco/app)" = "$output" ]
+	[ "$("$NPASS" get HG banco/app)" = "$output" ]
 }
 
 # --- geracao dos digitos --------------------------------------------------------------------------------------
