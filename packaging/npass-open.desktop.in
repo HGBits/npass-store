@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=npass
+Comment=Abre links npass:// (mostra uma entrada do npass numa janela de terminal)
+Exec=@NPASS@ open %u
+Terminal=false
+NoDisplay=true
+MimeType=x-scheme-handler/npass;
+Categories=Utility;Security;

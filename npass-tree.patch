@@ -1,0 +1,862 @@
+diff -ruN '--exclude=bin' '--exclude=gnupg_test' '--exclude=gnupg_atacante' '--exclude=.keys.lock' '--exclude=.fprs' '--exclude=.git' baseA/AGENTS.md newT/AGENTS.md
+--- baseA/AGENTS.md	2026-10-15 11:49:46.842294464 +0000
++++ newT/AGENTS.md	2026-10-15 17:19:40.250744459 +0000
+@@ -22,6 +22,7 @@
+ | Git automático | `lib/07-git.bash` | `tests/update.bats`, `tests/store-extras.bats` |
+ | Internacionalização | `lib/09-i18n.bash` | `tests/i18n.bats` |
+ | PIN numérico (`pin`, modos `--password`/`--field`) | `lib/08-pin.bash` | `tests/pin.bats` |
++| Listagem (`tree`, `--flat`) | `lib/15-tree.bash` | `extensions/npass-import` e `extensions/npass-audit` (usam `tree --flat`), `tests/tree.bats` |
+ | Senhas de backup (`backup`, anexos cifrados) | `lib/13-backup.bash` | `lib/03-store.bash` (cascata em `rm`/`mv`), `lib/06-update.bash`, `extensions/npass-audit`, `tests/backup.bats` |
+ | Assinatura de identidades/artefatos | `lib/10-signing.bash` | `tests/signing.bats` |
+ | Sistema de extensões | `lib/11-extensions.bash` | `extensions/`, testes de extensão |
+@@ -57,6 +58,7 @@
+    +--> 11-extensions.bash
+    +--> 12-diceware.bash
+    +--> 13-backup.bash
++   +--> 15-tree.bash
+    +--> 14-entry.bash   (formato md1: usado por 03, 04, 05, 06, 08, 12)
+              |
+              +--> extensions/*
+diff -ruN '--exclude=bin' '--exclude=gnupg_test' '--exclude=gnupg_atacante' '--exclude=.keys.lock' '--exclude=.fprs' '--exclude=.git' baseA/README.md newT/README.md
+--- baseA/README.md	2026-10-15 11:49:46.842581433 +0000
++++ newT/README.md	2026-10-15 17:19:40.251042601 +0000
+@@ -146,12 +146,32 @@
+ npass generate pessoal email/gmail
+ ```
+ 
+-Listar entradas:
++Listar entradas (árvore dos caminhos lógicos; só lê o mapa, não decifra nada):
+ 
+ ```bash
+-npass ls pessoal
++npass tree pessoal               # árvore inteira
++npass tree pessoal banco         # só o que está sob banco/ (prefixo por componente: "ban" não casa "banco")
++npass tree --flat pessoal        # um caminho por linha, sem enfeite: é o que os scripts e as extensões usam
+ ```
+ 
++```text
++pessoal
++├── banco/
++│   ├── itau/
++│   │   ├── cartao
++│   │   └── conta
++│   └── nubank
++└── email/
++    ├── gmail  [backup]
++    │   ├── Backup-gmail.dados.md
++    │   └── Backup-gmail.md
++    └── outlook
++```
++
++Pasta (só aparece como prefixo) termina em `/`; entrada não. Uma entrada pode ser as duas coisas (`gmail` e `gmail/Backup-gmail.md`). `[backup]` marca a entrada que tem o par de anexos de `npass backup`, pelos nomes, sem decifrar; os anexos continuam listados. Sem UTF-8 no locale o desenho cai para ASCII, e a cor (pastas em negrito/azul) só aparece em terminal e sem `NO_COLOR`.
++
++> `npass ls` (e `list`) deixou de existir: rodar o comando antigo mostra o aviso para o `tree`. Quem usava a saída em script troca por `tree --flat`. Diferenças do `--flat` para o `ls`: sem a linha de cabeçalho com o ID e sem indentação de dois espaços; identidade inexistente agora é erro (antes só avisava e saía com 0); `DIR` agora é prefixo de verdade, por componente.
++
+ Editar:
+ 
+ ```bash
+@@ -244,7 +264,7 @@
+ - Já existe backup: pergunta antes de substituir (`-f` não pergunta). Só substitui anexos de verdade.
+ - Os anexos acompanham a entrada: `rm` remove os dois (com aviso antes de perguntar), `mv` os leva para o novo caminho (também entre identidades) e `update` e `audit` os ignoram, para não rotacionar nem auditar um arquivo de backup como se fosse senha de login.
+ - Um arquivo só é tratado como anexo quando o **nome** (`Backup-*.md`, filho direto da entrada) **e** o marcador na primeira linha (`<!-- npass:backup-index v1 -->` ou `...backup-data v1 -->`) batem. Uma entrada sua chamada `Backup-x.md` nunca é arrastada por `rm`/`mv`.
+-- Como as senhas ficam em `show`/`ls` como qualquer outra entrada, quem tem a chave do `.gpg-id` lê tudo: o anexo separa o backup da entrada principal (`show` e `clip all` da entrada não o despejam), não cria um segundo nível de proteção.
++- Como as senhas ficam em `show`/`tree` como qualquer outra entrada, quem tem a chave do `.gpg-id` lê tudo: o anexo separa o backup da entrada principal (`show` e `clip all` da entrada não o despejam), não cria um segundo nível de proteção.
+ 
+ ## OTP
+ 
+Binary files baseA/extensions/__pycache__/npass-importcpython-312.pyc and newT/extensions/__pycache__/npass-importcpython-312.pyc differ
+diff -ruN '--exclude=bin' '--exclude=gnupg_test' '--exclude=gnupg_atacante' '--exclude=.keys.lock' '--exclude=.fprs' '--exclude=.git' baseA/extensions/npass-audit newT/extensions/npass-audit
+--- baseA/extensions/npass-audit	2026-10-15 11:49:46.843964864 +0000
++++ newT/extensions/npass-audit	2026-10-15 17:19:40.315666341 +0000
+@@ -41,13 +41,8 @@
+ 
+ 
+ def list_paths(identity, prefix):
+-    output = run_npass(["ls", identity, prefix] if prefix else ["ls", identity])
+-    paths = []
+-    for line in output.splitlines():
+-        value = line.strip()
+-        if value and not value.endswith(": (vazio)") and value != identity:
+-            paths.append(value)
+-    return sorted(set(paths))
++    output = run_npass(["tree", "--flat", identity, prefix] if prefix else ["tree", "--flat", identity])
++    return sorted({line for line in output.splitlines() if line})
+ 
+ 
+ MD1_MARKER = "<!-- npass:md1 -->"
+diff -ruN '--exclude=bin' '--exclude=gnupg_test' '--exclude=gnupg_atacante' '--exclude=.keys.lock' '--exclude=.fprs' '--exclude=.git' baseA/extensions/npass-import newT/extensions/npass-import
+--- baseA/extensions/npass-import	2026-10-15 11:49:46.844253509 +0000
++++ newT/extensions/npass-import	2026-10-15 17:19:40.316124898 +0000
+@@ -660,10 +660,10 @@
+ 
+ 
+ def existing_paths(binp, ident):
+-    r = subprocess.run([binp, "ls", ident], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
++    r = subprocess.run([binp, "tree", "--flat", ident], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+     if r.returncode != 0:
+         die(t("id_ls", ident, (r.stderr or r.stdout).strip()))
+-    return {ln[2:] for ln in r.stdout.splitlines()[1:] if ln.startswith("  ")}
++    return {ln for ln in r.stdout.splitlines() if ln}
+ 
+ 
+ def write_batch(binp, ident, items, force):
+@@ -843,8 +843,8 @@
+     e regrava o lote com `npass insert --batch -f` (uma assinatura conferida, um commit).
+     Idempotente: o que ja esta em md1 e os anexos de `npass backup` nao sao tocados.
+     Cada conversao passa por verify_conversion; a que nao passar fica como estava."""
+-    # `npass ls` de uma identidade inexistente so avisa (rc 0): sem esta checagem um ID
+-    # digitado errado viraria "nada a converter" em silencio.
++    # `npass tree --flat` ja falha com identidade inexistente; a checagem aqui da a mensagem
++    # propria do import (e vale mesmo contra um core que so avise).
+     if not os.path.isfile(os.path.join(os.environ.get("NPASS_STORE", ""), ident, ".gpg-id")):
+         die(t("id_inexistente", ident))
+     paths = sorted(existing_paths(binp, ident))
+diff -ruN '--exclude=bin' '--exclude=gnupg_test' '--exclude=gnupg_atacante' '--exclude=.keys.lock' '--exclude=.fprs' '--exclude=.git' baseA/lib/00-main.bash newT/lib/00-main.bash
+--- baseA/lib/00-main.bash	2026-10-15 11:49:46.845617398 +0000
++++ newT/lib/00-main.bash	2026-10-15 17:19:40.318455838 +0000
+@@ -13,7 +13,8 @@
+ 	insert | add) cmd_insert "$@" ;;
+ 	rm | remove | delete) cmd_rm "$@" ;;
+ 	mv | rename) cmd_mv "$@" ;;
+-	ls | list) cmd_ls "$@" ;;
++	tree) cmd_tree "$@" ;;
++	ls | list) npass_die "$(npass_t erro_ls_movido)" ;;
+ 	generate | gen) cmd_generate "$@" ;;
+ 	diceware) cmd_diceware "$@" ;;
+ 	memorable) cmd_memorable "$@" ;;
+@@ -63,7 +64,7 @@
+ 			  insert --batch [-f] ID   grava vários (registros CAMINHO\\0CONTEÚDO\\0 no stdin)
+ 			  rm [-f] ID DIR/PASS      remove um segredo
+ 			  mv ID DIR/PASS DEST      renomeia (mesma identidade) ou move (entre identidades)
+-			  ls ID [DIR]              lista os caminhos lógicos de uma identidade
++			  tree [--flat] ID [DIR]   árvore dos caminhos lógicos de uma identidade (--flat: um por linha)
+ 			  generate [-n|-c|-f] [--in-place] ID DIR/PASS [LEN]   gera senha aleatória
+ 			  diceware [-c|-f] [--in-place] [-s SEP] ID DIR/PASS [N]   frase de N palavras (EFF Large); mostra as ALTURAS para anotar
+ 			  memorable [-c|-f] [--in-place] [-s SEP] [-l short|short1|short2] ID DIR/PASS [N]   frase memorável (palavras curtas), sem alturas
+diff -ruN '--exclude=bin' '--exclude=gnupg_test' '--exclude=gnupg_atacante' '--exclude=.keys.lock' '--exclude=.fprs' '--exclude=.git' baseA/lib/03-store.bash newT/lib/03-store.bash
+--- baseA/lib/03-store.bash	2026-10-15 11:49:46.846167027 +0000
++++ newT/lib/03-store.bash	2026-10-15 17:19:40.319083960 +0000
+@@ -278,19 +278,6 @@
+ 	npass_t msg_atualizado "$id" "$logical"
+ }
+ 
+-cmd_ls() {
+-	local id="$1" prefix="$2"
+-	[[ -z "$id" ]] && npass_die "uso: npass ls ID [DIR]"
+-	local dir; dir="$(npass_identity_dir "$id")"
+-	local entries; entries="$(npass_map_list_prefix "$dir" "$prefix")"
+-	if [[ -z "$entries" ]]; then
+-		printf '%s: (vazio)\n' "$id"
+-		return 0
+-	fi
+-	printf '%s\n' "$id"
+-	sed 's/^/  /' <<<"$entries"
+-}
+-
+ cmd_find() {
+ 	local id="$1" pattern="$2"
+ 	[[ -z "$id" || -z "$pattern" ]] && npass_die "uso: npass find ID PADRÃO"
+diff -ruN '--exclude=bin' '--exclude=gnupg_test' '--exclude=gnupg_atacante' '--exclude=.keys.lock' '--exclude=.fprs' '--exclude=.git' baseA/lib/09-i18n.bash newT/lib/09-i18n.bash
+--- baseA/lib/09-i18n.bash	2026-10-15 11:49:46.846385167 +0000
++++ newT/lib/09-i18n.bash	2026-10-15 17:19:40.319582837 +0000
+@@ -43,6 +43,7 @@
+ 	[msg_cancelado]="Cancelado.\n"
+ 	[erro_senhas_diferentes]="as senhas não coincidem"
+ 	[msg_salvo]="%s: %s salvo.\n"
++	[erro_ls_movido]="'ls' virou 'tree': npass tree ID [DIR] (árvore) ou npass tree --flat ID [DIR] (um caminho por linha, para scripts)"
+ 	[erro_formato_antigo]="%s: %s está no formato antigo (texto puro); converta a identidade com: npass import npass-legacy %s"
+ 	[erro_formato_invalido]="%s: %s tem o marcador md1 mas a estrutura é inválida (esperado: ## Senha, depois ## Campos, ## OTP e ## Notas, nessa ordem)"
+ 	[erro_entrada_anexo]="%s: %s é um anexo de backup, não uma entrada; use 'npass show'"
+@@ -191,6 +192,7 @@
+ 	[msg_cancelado]="Cancelled.\n"
+ 	[erro_senhas_diferentes]="passwords do not match"
+ 	[msg_salvo]="%s: %s saved.\n"
++	[erro_ls_movido]="'ls' is now 'tree': npass tree ID [DIR] (tree) or npass tree --flat ID [DIR] (one path per line, for scripts)"
+ 	[erro_formato_antigo]="%s: %s is in the old plain-text format; convert the identity with: npass import npass-legacy %s"
+ 	[erro_formato_invalido]="%s: %s has the md1 marker but its structure is invalid (expected: ## Senha, then ## Campos, ## OTP and ## Notas, in that order)"
+ 	[erro_entrada_anexo]="%s: %s is a backup attachment, not an entry; use 'npass show'"
+diff -ruN '--exclude=bin' '--exclude=gnupg_test' '--exclude=gnupg_atacante' '--exclude=.keys.lock' '--exclude=.fprs' '--exclude=.git' baseA/lib/15-tree.bash newT/lib/15-tree.bash
+--- baseA/lib/15-tree.bash	1970-01-01 00:00:00.000000000 +0000
++++ newT/lib/15-tree.bash	2026-10-15 17:19:40.320580575 +0000
+@@ -0,0 +1,120 @@
++#!/usr/bin/env bash
++# npass tree [--flat] ID [DIR] - arvore dos caminhos logicos de uma identidade.
++# Substitui o antigo `npass ls`.
++#
++#   npass tree pessoal            arvore (├── └──), com [backup] nas entradas que tem
++#   npass tree pessoal email      so o que esta sob email/ (prefixo de verdade, por componente)
++#   npass tree --flat pessoal     UM caminho logico por linha, sem enfeite: e a interface
++#                                 de maquina (npass-import e npass-audit usam esta)
++#
++# So le o mapa: nao decifra nada. O mapa e plano (logico -> blob), entao a
++# arvore sai de quebrar cada caminho em "/": um caminho e "entrada" se esta no
++# mapa e "pasta" se so aparece como prefixo de outros. Uma entrada que tambem
++# tem filhos (email/gmail e email/gmail/Backup-gmail.md) e as duas coisas.
++#
++# Nada e escondido. `[backup]` marca uma entrada que tem o par de anexos de
++# `npass backup` (Backup-X.md e Backup-X.dados.md) sem decifrar: a marca vem
++# so dos nomes, e os anexos continuam listados como filhos.
++
++cmd_tree_usage() {
++	printf '%s\n' "uso: npass tree [--flat] ID [DIR]" \
++		"  arvore dos caminhos logicos de ID (opcionalmente so o que esta sob DIR)" \
++		"  --flat   um caminho logico por linha, sem enfeite (para scripts)"
++}
++
++# npass_tree_paths DIR PREFIXO -> caminhos logicos sob PREFIXO (ou todos), na
++# ordem de arvore: "/" vira \001 so para ordenar, de modo que um pai vem
++# imediatamente antes dos seus filhos e antes de irmaos como "a.b" ou "a-b".
++npass_tree_paths() {
++	local dir="$1" prefix="$2"
++	npass_map_list "$dir" \
++		| LC_ALL=C awk -v p="$prefix" 'p == "" || $0 == p || index($0, p "/") == 1' \
++		| LC_ALL=C sed $'s#/#\001#g' | LC_ALL=C sort | LC_ALL=C sed $'s#\001#/#g'
++}
++
++# npass_tree_render ID PREFIXO < caminhos (ja em ordem de arvore)
++npass_tree_render() {
++	local id="$1" prefix="$2" utf=0 color=0
++	case "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" in
++	*[uU][tT][fF]-8* | *[uU][tT][fF]8*) utf=1 ;;
++	esac
++	[[ -t 1 && -z "${NO_COLOR:-}" ]] && color=1
++	LC_ALL=C awk -v id="$id" -v prefix="$prefix" -v utf="$utf" -v color="$color" -v esc=$'\033' '
++	BEGIN {
++		if (utf) { T = "├── "; L = "└── "; V = "│   " } else { T = "|-- "; L = "`-- "; V = "|   " }
++		S = "    "
++		base = (prefix == "") ? 0 : split(prefix, tmp, "/")
++	}
++	{ paths[NR] = $0; isentry[$0] = 1 }
++	END {
++		# marca [backup]: existe pai/Backup-X.md E pai/Backup-X.dados.md
++		for (i = 1; i <= NR; i++) {
++			p = paths[i]
++			if (p ~ /\/Backup-[^\/]+\.dados\.md$/) {
++				k = split(p, c, "/")
++				parent = ""
++				for (d = 1; d < k; d++) parent = (d == 1) ? c[1] : parent "/" c[d]
++				stem = substr(c[k], 1, length(c[k]) - length(".dados.md"))
++				if ((parent "/" stem ".md") in isentry) hasbk[parent] = 1
++			}
++		}
++		# nos: cada prefixo de cada caminho (abaixo do prefixo pedido) vira um no
++		n = 0
++		for (i = 1; i <= NR; i++) {
++			k = split(paths[i], c, "/")
++			acc = ""
++			for (d = 1; d <= k; d++) {
++				acc = (d == 1) ? c[1] : acc "/" c[d]
++				if (d <= base) continue
++				if (!(acc in seen)) { seen[acc] = 1; n++; name[n] = c[d]; depth[n] = d - base; full[n] = acc }
++			}
++		}
++		root = (prefix == "") ? id : id "/" prefix
++		tag = ((prefix in hasbk) ? "  [backup]" : "")
++		if (color && tag != "") tag = esc "[2m" tag esc "[0m"
++		print root tag
++		for (i = 1; i <= n; i++) {
++			last = 1
++			for (j = i + 1; j <= n; j++) {
++				if (depth[j] <= depth[i]) { last = (depth[j] < depth[i]); break }
++			}
++			lastAt[depth[i]] = last
++			pre = ""
++			for (d = 1; d < depth[i]; d++) pre = pre (lastAt[d] ? S : V)
++			nm = name[i]
++			if (!(full[i] in isentry)) {
++				nm = nm "/"
++				if (color) nm = esc "[1;34m" nm esc "[0m"
++			}
++			if (full[i] in hasbk) nm = nm (color ? esc "[2m  [backup]" esc "[0m" : "  [backup]")
++			print pre (last ? L : T) nm
++		}
++	}'
++}
++
++cmd_tree() {
++	local flat=0
++	while [[ "$1" == -* ]]; do
++		case "$1" in
++		--flat) flat=1; shift ;;
++		-h | --help) cmd_tree_usage; return 0 ;;
++		--) shift; break ;;
++		*) npass_die "$(npass_t erro_opcao_desconhecida "$1")" ;;
++		esac
++	done
++	local id="$1" prefix="${2%/}"
++	[[ -z "$id" ]] && npass_die "uso: npass tree [--flat] ID [DIR]"
++	local dir
++	dir="$(npass_identity_dir "$id")" || exit 1
++	local list
++	list="$(npass_tree_paths "$dir" "$prefix")"
++	if ((flat)); then
++		[[ -n "$list" ]] && printf '%s\n' "$list"
++		return 0
++	fi
++	if [[ -z "$list" ]]; then
++		printf '%s: (vazio)\n' "$id"
++		return 0
++	fi
++	npass_tree_render "$id" "$prefix" <<<"$list"
++}
+diff -ruN '--exclude=bin' '--exclude=gnupg_test' '--exclude=gnupg_atacante' '--exclude=.keys.lock' '--exclude=.fprs' '--exclude=.git' baseA/lib/AGENTS.md newT/lib/AGENTS.md
+--- baseA/lib/AGENTS.md	2026-10-15 11:49:46.846717312 +0000
++++ newT/lib/AGENTS.md	2026-10-15 17:19:40.320134338 +0000
+@@ -21,13 +21,15 @@
+ | `10-signing.bash` | assinatura e verificação |
+ | `11-extensions.bash` | descoberta, instalação e execução de extensões |
+ | `12-diceware.bash` | comandos `diceware` (com alturas) e `memorable` (sem índice); lista de palavras em `$NPASS_STORE/wordlist.txt` |
++| `15-tree.bash` | comando `tree` (substitui o `ls`): árvore dos caminhos lógicos a partir do mapa, `--flat` para máquina, marca `[backup]` por nome |
+ | `14-entry.bash` | formato md1: `npass_entry_load/_render/_new/_with_password/_require`, campos (`_field_get/_set/_has`) e OTP (`_otp_uri/_otp_set`); estado em globais `NPASS_E_*` (chame direto, nunca em `$(...)`) |
+ | `13-backup.bash` | comando `backup` e helpers de anexo (`npass_backup_attachments`, `npass_backup_is_attachment`, `npass_backup_drop`); `rm`/`mv`/`update` o chamam |
+ 
+ ## Como localizar
+ 
+ - Problema de `init`, identidade ou `.gpg-id` -> `02-identity.bash`
+-- Problema de `insert/show/ls/edit/rm/mv` -> `03-store.bash`
++- Problema de `insert/show/edit/rm/mv` -> `03-store.bash`
++- Problema de `tree` (árvore, `--flat`, marca `[backup]`) -> `15-tree.bash`
+ - Problema envolvendo `.map.gpg` ou nomes de blobs -> `03-store.bash`
+ - Problema de clipboard padrão -> `04-clipboard.bash`
+ - Problema de OTP -> `05-otp.bash`
+diff -ruN '--exclude=bin' '--exclude=gnupg_test' '--exclude=gnupg_atacante' '--exclude=.keys.lock' '--exclude=.fprs' '--exclude=.git' baseA/man/npass.1 newT/man/npass.1
+--- baseA/man/npass.1	2026-10-15 11:49:46.847175142 +0000
++++ newT/man/npass.1	2026-10-15 17:19:40.320874640 +0000
+@@ -194,9 +194,29 @@
+ Move to a different identity: decrypts, re\-encrypts to the
+ destination identity's recipients, and removes the source entry.
+ .TP
+-.BI "ls " ID " [" DIR ]
+-List logical paths in an identity, optionally filtered to those under
+-a given prefix.
++.BI "tree [\-\-flat] " ID " [" DIR ]
++Draw the logical paths of an identity as a tree, optionally only those under
++.I DIR
++(a real prefix, by path component: "ban" does not match "banco"). It reads only
++the map and decrypts nothing. A folder (a prefix of other paths) ends in
++.BR / ;
++an entry does not, and a path can be both. An entry that has the pair of
++attachments created by
++.B backup
++is tagged
++.B [backup]
++(by name only; the attachments stay listed). Without UTF-8 in the locale the
++drawing falls back to ASCII; folders are bold only on a terminal and without
++.BR NO_COLOR .
++With
++.B \-\-flat
++it prints one logical path per line, with no header or decoration: the
++interface for scripts and the extensions. An unknown identity is an error.
++The old
++.B ls
++(and
++.BR list )
++no longer exists and says so.
+ .TP
+ .BI "find " ID " " PATTERN
+ List logical paths whose name matches
+@@ -429,7 +449,7 @@
+ .BR get ", " clip ", " otp ", " pin ", " "generate \-\-in\-place" ", " update " or " edit :
+ the command stops and points to
+ .BR "npass import npass\-legacy" .
+-.BR show ", " ls ", " grep ", " mv " and " rm
++.BR show ", " tree ", " grep ", " mv " and " rm
+ still work on it.
+ .SH ENVIRONMENT
+ .TP
+diff -ruN '--exclude=bin' '--exclude=gnupg_test' '--exclude=gnupg_atacante' '--exclude=.keys.lock' '--exclude=.fprs' '--exclude=.git' baseA/tests/AGENTS.md newT/tests/AGENTS.md
+--- baseA/tests/AGENTS.md	2026-10-15 11:49:46.848614152 +0000
++++ newT/tests/AGENTS.md	2026-10-15 17:19:40.328447552 +0000
+@@ -18,6 +18,7 @@
+ | `import-pass-secrets.bats` | importação de `pass-secrets` |
+ | `otp.bats` | OTP |
+ | `pin.bats` | PIN (`--password`, `--field`) |
++| `tree.bats` | `tree`: desenho, `--flat`, prefixo por componente, `[backup]`, erros e o aviso do `ls` antigo |
+ | `entry-md1.bats` | formato md1 (contrato, preservação, recusa do formato antigo em todos os comandos), `get`, OTP e `audit` |
+ | `import-legacy.bats` | `import npass-legacy` (conversão, verificação, idempotência, `--dry-run`) e imports de árvore em md1 |
+ | `clip-ext.bats` | `npass-wclip` e `npass-clip-x11` (chamam `npass get`) |
+diff -ruN '--exclude=bin' '--exclude=gnupg_test' '--exclude=gnupg_atacante' '--exclude=.keys.lock' '--exclude=.fprs' '--exclude=.git' baseA/tests/backup.bats newT/tests/backup.bats
+--- baseA/tests/backup.bats	2026-10-15 11:49:46.910350223 +0000
++++ newT/tests/backup.bats	2026-10-15 17:19:40.423208286 +0000
+@@ -85,7 +85,7 @@
+ 	[ "${lines[0]}" = "<!-- npass:backup-data v1 -->" ]
+ 	[ "$output" = $'<!-- npass:backup-data v1 -->\n# Senhas de backup: gmail\n\n## Backup 1\nc1\n\n## Backup 2\nc2\n\n## Backup 3\nc3' ]
+ 
+-	run "$NPASS" ls HG
++	run "$NPASS" tree --flat HG
+ 	[[ "$output" == *"email/gmail/Backup-gmail.md"* ]]
+ 	[[ "$output" == *"email/gmail/Backup-gmail.dados.md"* ]]
+ }
+@@ -183,7 +183,7 @@
+ 	[ "$status" -eq 0 ]
+ 	[[ "$output" == *"2 anexo(s) de backup removido(s)"* ]]
+ 	[ "$(count_blobs)" -eq 0 ]
+-	run "$NPASS" ls HG
++	run "$NPASS" tree --flat HG
+ 	[[ "$output" != *"Backup-"* ]]
+ }
+ 
+@@ -225,7 +225,7 @@
+ 	bk 2 HG email/gmail >/dev/null
+ 	run "$NPASS" mv HG email/gmail email/google
+ 	[ "$status" -eq 0 ]
+-	run "$NPASS" ls HG
++	run "$NPASS" tree --flat HG
+ 	[[ "$output" == *"email/google/Backup-gmail.md"* ]]
+ 	[[ "$output" == *"email/google/Backup-gmail.dados.md"* ]]
+ 	[[ "$output" != *"email/gmail"* ]]
+@@ -236,11 +236,11 @@
+ @test "mv com destino que ja tem um anexo no caminho: falha e nao altera nada" {
+ 	bk 1 HG email/gmail >/dev/null
+ 	printf 'minha\nminha\n' | "$NPASS" insert HG email/novo/Backup-gmail.md >/dev/null
+-	antes="$("$NPASS" ls HG)"
++	antes="$("$NPASS" tree --flat HG)"
+ 	run "$NPASS" mv HG email/gmail email/novo
+ 	[ "$status" -ne 0 ]
+ 	[[ "$output" == *"destino já tem anexo de backup"* ]]
+-	[ "$("$NPASS" ls HG)" = "$antes" ]
++	[ "$("$NPASS" tree --flat HG)" = "$antes" ]
+ 	[ "$("$NPASS" get HG email/novo/Backup-gmail.md)" = "minha" ]
+ 	[ "$("$NPASS" get HG email/gmail)" = "S3nhaPrincipal!" ]
+ }
+@@ -267,7 +267,7 @@
+ 	"$NPASS" mv HG email/gmail email/google >/dev/null
+ 	run bash -c "printf 'y\nn1\nn1\n' | '$NPASS' backup -n 1 HG email/google"
+ 	[ "$status" -eq 0 ]
+-	run "$NPASS" ls HG
++	run "$NPASS" tree --flat HG
+ 	[[ "$output" == *"email/google/Backup-google.md"* ]]
+ 	[[ "$output" == *"email/google/Backup-google.dados.md"* ]]
+ 	[[ "$output" != *"Backup-gmail"* ]]
+diff -ruN '--exclude=bin' '--exclude=gnupg_test' '--exclude=gnupg_atacante' '--exclude=.keys.lock' '--exclude=.fprs' '--exclude=.git' baseA/tests/batch-ext.bats newT/tests/batch-ext.bats
+--- baseA/tests/batch-ext.bats	2026-10-15 11:49:46.848831987 +0000
++++ newT/tests/batch-ext.bats	2026-10-15 17:19:40.329159439 +0000
+@@ -35,7 +35,7 @@
+ 	run bash -c "printf 'a/antigo\0texto puro\nlogin: x\0b/novo\0%s\0' '$ok' | '$NPASS' insert --batch HG"
+ 	[ "$status" -ne 0 ]
+ 	[[ "$output" == *"a/antigo"* ]]
+-	run "$NPASS" ls HG
++	run "$NPASS" tree --flat HG
+ 	[[ "$output" != *"a/antigo"* ]]
+ 	[[ "$output" == *"b/novo"* ]]
+ }
+@@ -68,7 +68,7 @@
+ @test "insert --batch recusa caminho logico com .. e nao grava nada" {
+ 	run bash -c "printf '../fuga\0%s\0' '$(md1_doc x)' | '$NPASS' insert --batch HG"
+ 	[ "$status" -ne 0 ]
+-	run "$NPASS" ls HG
++	run "$NPASS" tree HG
+ 	[[ "$output" == *"(vazio)"* ]]
+ }
+ 
+@@ -81,10 +81,10 @@
+ # --- regressao: mapa vazio nao vaza a linha magica como entrada -----------------
+ 
+ @test "ls de identidade vazia e depois de um insert nao lista a linha magica do mapa" {
+-	run "$NPASS" ls HG
++	run "$NPASS" tree --flat HG
+ 	[[ "$output" != *"NPASS-MAP"* ]]
+ 	printf 'x\nx\n' | "$NPASS" insert HG um/dois >/dev/null
+-	run "$NPASS" ls HG
++	run "$NPASS" tree --flat HG
+ 	[[ "$output" != *"NPASS-MAP"* ]]
+ 	[[ "$output" == *"um/dois"* ]]
+ }
+@@ -92,7 +92,7 @@
+ @test "mapa ja contaminado pelo bug antigo e curado na leitura e na proxima escrita" {
+ 	printf 'NPASS-MAP-1\nNPASS-MAP-1\t\n' \
+ 		| gpg --batch --yes --trust-model always -r "$FPR" -e -o "$NPASS_STORE/HG/.map.gpg"
+-	run "$NPASS" ls HG
++	run "$NPASS" tree --flat HG
+ 	[[ "$output" != *"NPASS-MAP"* ]]
+ 	printf 'x\nx\n' | "$NPASS" insert HG novo >/dev/null
+ 	run gpg --batch -q -d "$NPASS_STORE/HG/.map.gpg"
+diff -ruN '--exclude=bin' '--exclude=gnupg_test' '--exclude=gnupg_atacante' '--exclude=.keys.lock' '--exclude=.fprs' '--exclude=.git' baseA/tests/diceware.bats newT/tests/diceware.bats
+--- baseA/tests/diceware.bats	2026-10-15 11:49:46.848987434 +0000
++++ newT/tests/diceware.bats	2026-10-15 17:19:40.329461203 +0000
+@@ -75,7 +75,7 @@
+ 	run "$NPASS" diceware HG a/b
+ 	[ "$status" -ne 0 ]
+ 	[[ "$output" == *"encrypts_alternatives/wordlist.txt"* ]]
+-	run "$NPASS" ls HG
++	run "$NPASS" tree HG
+ 	[[ "$output" == *"(vazio)"* ]]
+ }
+ 
+@@ -84,7 +84,7 @@
+ 	run "$NPASS" diceware HG a/b
+ 	[ "$status" -ne 0 ]
+ 	[[ "$output" == *"pequena demais"* ]]
+-	run "$NPASS" ls HG
++	run "$NPASS" tree HG
+ 	[[ "$output" == *"(vazio)"* ]]
+ }
+ 
+diff -ruN '--exclude=bin' '--exclude=gnupg_test' '--exclude=gnupg_atacante' '--exclude=.keys.lock' '--exclude=.fprs' '--exclude=.git' baseA/tests/entry-md1.bats newT/tests/entry-md1.bats
+--- baseA/tests/entry-md1.bats	2026-10-15 11:49:46.910469061 +0000
++++ newT/tests/entry-md1.bats	2026-10-15 17:19:40.423321576 +0000
+@@ -141,7 +141,7 @@
+ 		run bash -c "printf 'b/%s\\0%s\\0' '$i' \"\$1\" | '$NPASS' insert --batch HG" _ "${bad[i]}"
+ 		[ "$status" -ne 0 ]
+ 	done
+-	run "$NPASS" ls HG
++	run "$NPASS" tree HG
+ 	[[ "$output" == *"(vazio)"* ]]
+ }
+ 
+@@ -174,7 +174,7 @@
+ 	npass_test_legacy HG a/velha 'senha-velha'
+ 	run "$NPASS" show HG a/velha
+ 	[ "$output" = "senha-velha" ]
+-	run "$NPASS" ls HG
++	run "$NPASS" tree --flat HG
+ 	[[ "$output" == *"a/velha"* ]]
+ 	"$NPASS" mv HG a/velha a/nova
+ 	run "$NPASS" show HG a/nova
+diff -ruN '--exclude=bin' '--exclude=gnupg_test' '--exclude=gnupg_atacante' '--exclude=.keys.lock' '--exclude=.fprs' '--exclude=.git' baseA/tests/identity.bats newT/tests/identity.bats
+--- baseA/tests/identity.bats	2026-10-15 11:49:46.849373599 +0000
++++ newT/tests/identity.bats	2026-10-15 17:19:40.379829709 +0000
+@@ -85,7 +85,7 @@
+ 	"$NPASS" init work "$FPR"
+ 	printf 'a\na\n' | "$NPASS" insert personal email/gmail
+ 	printf 'b\nb\n' | "$NPASS" insert work aws/root
+-	run "$NPASS" ls personal
++	run "$NPASS" tree --flat personal
+ 	[[ "$output" == *"email/gmail"* ]]
+ 	[[ "$output" != *"aws/root"* ]]
+ }
+@@ -101,7 +101,7 @@
+ @test "ls com prefixo sem match retorna vazio, nao a lista inteira (regressao SC2015)" {
+ 	"$NPASS" init personal "$FPR"
+ 	printf 'a\na\n' | "$NPASS" insert personal email/gmail
+-	run "$NPASS" ls personal naoexiste
++	run "$NPASS" tree --flat personal naoexiste
+ 	[[ "$output" != *"email/gmail"* ]]
+ }
+ 
+diff -ruN '--exclude=bin' '--exclude=gnupg_test' '--exclude=gnupg_atacante' '--exclude=.keys.lock' '--exclude=.fprs' '--exclude=.git' baseA/tests/import-pass-secrets.bats newT/tests/import-pass-secrets.bats
+--- baseA/tests/import-pass-secrets.bats	2026-10-15 11:49:46.849603830 +0000
++++ newT/tests/import-pass-secrets.bats	2026-10-15 17:19:40.379906660 +0000
+@@ -42,7 +42,7 @@
+ 	[ "$status" -eq 0 ]
+ 	run "$NPASS" show personal 99
+ 	[ "$status" -ne 0 ]
+-	run "$NPASS" ls personal
++	run "$NPASS" tree --flat personal
+ 	[[ "$output" == *"IST/Bvop"* ]]
+ 	[[ "$output" != *"Amazon"* ]]
+ }
+diff -ruN '--exclude=bin' '--exclude=gnupg_test' '--exclude=gnupg_atacante' '--exclude=.keys.lock' '--exclude=.fprs' '--exclude=.git' baseA/tests/import-pass.bats newT/tests/import-pass.bats
+--- baseA/tests/import-pass.bats	2026-10-15 11:49:46.849843397 +0000
++++ newT/tests/import-pass.bats	2026-10-15 17:19:40.380003886 +0000
+@@ -132,7 +132,7 @@
+ 
+ @test "-p coloca tudo sob um prefixo" {
+ 	"$NPASS" import pass personal "$OLD_STORE" -p Antigo
+-	run "$NPASS" ls personal
++	run "$NPASS" tree --flat personal
+ 	[[ "$output" == *"Antigo/email/gmail"* ]]
+ 	run "$NPASS" get personal Antigo/email/gmail
+ 	[ "$output" = "senhaGmail1" ]
+@@ -182,7 +182,7 @@
+ 	mkdir -p "$OLD_STORE/.git"
+ 	printf 'x\n' | gpg --batch --yes --trust-model always -r "$FPR" -e -o "$OLD_STORE/.git/dentro.gpg"
+ 	"$NPASS" import pass personal "$OLD_STORE" >/dev/null
+-	run "$NPASS" ls personal
++	run "$NPASS" tree --flat personal
+ 	[[ "$output" != *"atalho"* ]]
+ 	[[ "$output" != *"dentro"* ]]
+ 	[[ "$output" == *"email/gmail"* ]]
+diff -ruN '--exclude=bin' '--exclude=gnupg_test' '--exclude=gnupg_atacante' '--exclude=.keys.lock' '--exclude=.fprs' '--exclude=.git' baseA/tests/import.bats newT/tests/import.bats
+--- baseA/tests/import.bats	2026-10-15 11:49:46.850016339 +0000
++++ newT/tests/import.bats	2026-10-15 17:19:40.380148728 +0000
+@@ -161,7 +161,7 @@
+ 	run "$NPASS" import bitwarden HG "$F.json"
+ 	[ "$status" -ne 0 ]
+ 	[[ "$output" == *"criptografado"* ]]
+-	run "$NPASS" ls HG
++	run "$NPASS" tree HG
+ 	[[ "$output" == *"(vazio)"* ]]
+ }
+ 
+@@ -264,7 +264,7 @@
+ @test "-p coloca tudo sob um prefixo" {
+ 	printf 'Site,pw\n' >"$F.csv"
+ 	"$NPASS" import csv HG "$F.csv" --cols 'title,password' -p Importado/2026
+-	run "$NPASS" ls HG
++	run "$NPASS" tree --flat HG
+ 	[[ "$output" == *"Importado/2026/Site"* ]]
+ }
+ 
+@@ -274,7 +274,7 @@
+ 	[ "$status" -eq 0 ]
+ 	[[ "$output" == *"+ Site"* ]]
+ 	[[ "$output" != *"s3cr3t-unico"* ]]
+-	run "$NPASS" ls HG
++	run "$NPASS" tree HG
+ 	[[ "$output" == *"(vazio)"* ]]
+ }
+ 
+@@ -294,7 +294,7 @@
+ @test "titulo e login repetidos dentro do proprio import ganham sufixo -2" {
+ 	printf 'Dup,alice,pw1\nDup,alice,pw2\n' >"$F.csv"
+ 	"$NPASS" import csv HG "$F.csv" --cols 'title,login,password'
+-	run "$NPASS" ls HG
++	run "$NPASS" tree --flat HG
+ 	[[ "$output" == *"Dup/alice"* ]]
+ 	[[ "$output" == *"Dup/alice-2"* ]]
+ }
+@@ -304,10 +304,10 @@
+ 	printf '"x\ty",,,pw3\n' >>"$F.csv"
+ 	run "$NPASS" import csv HG "$F.csv" --cols 'group,title,login,password'
+ 	[ "$status" -eq 0 ]
+-	run "$NPASS" ls HG
+-	[[ "$output" == *"  etc/root"* ]]
+-	[[ "$output" == *"  a-b"* ]]
+-	[[ "$output" == *"  x y"* ]]
++	run "$NPASS" tree --flat HG
++	[[ $'\n'"$output"$'\n' == *$'\netc/root\n'* ]]   # linha inteira, sem indentacao (--flat)
++	[[ $'\n'"$output"$'\n' == *$'\na-b\n'* ]]   # linha inteira, sem indentacao (--flat)
++	[[ $'\n'"$output"$'\n' == *$'\nx y/sem-titulo\n'* ]]   # linha inteira, sem indentacao (--flat)
+ 	[[ "$output" != *".."* ]]
+ }
+ 
+@@ -324,7 +324,7 @@
+ 	printf 'Vazia,\nBoa,ok\n' >"$F.csv"
+ 	run "$NPASS" import csv HG "$F.csv" --cols 'title,password'
+ 	[[ "$output" == *"1 ignorada"* ]]
+-	run "$NPASS" ls HG
++	run "$NPASS" tree --flat HG
+ 	[[ "$output" != *"Vazia"* ]]
+ }
+ 
+@@ -369,7 +369,7 @@
+ 	[[ "$output" == *"--encoding"* ]]
+ 	run "$NPASS" import csv HG "$F.csv" --cols 'title,password' --encoding latin-1
+ 	[ "$status" -eq 0 ]
+-	run "$NPASS" ls HG
++	run "$NPASS" tree --flat HG
+ 	[[ "$output" == *"Café"* ]]
+ }
+ 
+diff -ruN '--exclude=bin' '--exclude=gnupg_test' '--exclude=gnupg_atacante' '--exclude=.keys.lock' '--exclude=.fprs' '--exclude=.git' baseA/tests/pin.bats newT/tests/pin.bats
+--- baseA/tests/pin.bats	2026-10-15 11:49:46.850895312 +0000
++++ newT/tests/pin.bats	2026-10-15 17:19:40.381111244 +0000
+@@ -49,7 +49,7 @@
+ 	[ "$status" -ne 0 ]
+ 	[[ "$output" == *"--password"* ]]
+ 	[[ "$output" == *"--field"* ]]
+-	run "$NPASS" ls HG
++	run "$NPASS" tree HG
+ 	[[ "$output" == *"(vazio)"* ]]
+ }
+ 
+@@ -59,7 +59,7 @@
+ 	[[ "$output" == *"exclusivos"* ]]
+ 	run "$NPASS" pin --field --password HG banco/app
+ 	[ "$status" -ne 0 ]
+-	run "$NPASS" ls HG
++	run "$NPASS" tree HG
+ 	[[ "$output" == *"(vazio)"* ]]
+ }
+ 
+@@ -147,7 +147,7 @@
+ 	run "$NPASS" pin --field HG typo/banco
+ 	[ "$status" -ne 0 ]
+ 	[[ "$output" == *"não existe"* ]]
+-	run "$NPASS" ls HG
++	run "$NPASS" tree HG
+ 	[[ "$output" == *"(vazio)"* ]]
+ }
+ 
+diff -ruN '--exclude=bin' '--exclude=gnupg_test' '--exclude=gnupg_atacante' '--exclude=.keys.lock' '--exclude=.fprs' '--exclude=.git' baseA/tests/tree.bats newT/tests/tree.bats
+--- baseA/tests/tree.bats	1970-01-01 00:00:00.000000000 +0000
++++ newT/tests/tree.bats	2026-10-15 17:19:40.423567348 +0000
+@@ -0,0 +1,187 @@
++#!/usr/bin/env bats
++# npass tree: arvore dos caminhos logicos (substitui o ls). So le o mapa.
++# --flat e a interface de maquina usada por npass-import e npass-audit.
++
++setup() {
++	export GNUPGHOME="$BATS_TEST_DIRNAME/gnupg_test"
++	load helper
++	npass_test_keys || return 1
++	export NPASS_STORE="$BATS_TEST_TMPDIR/store"
++	export NPASS="$BATS_TEST_DIRNAME/../bin/npass"
++	export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
++	"$NPASS" init HG "$FPR" >/dev/null
++}
++
++# mk CAMINHO...: cria entradas
++mk() {
++	local p
++	for p in "$@"; do printf 'x\nx\n' | "$NPASS" insert HG "$p" >/dev/null; done
++}
++
++# --- arvore ---------------------------------------------------------------------------
++
++@test "arvore em UTF-8: ramos, pastas com / e entradas sem" {
++	mk email/gmail email/outlook banco/itau/conta banco/itau/cartao banco/nubank solo
++	LANG=C.UTF-8 LC_ALL=C.UTF-8 run "$NPASS" tree HG
++	[ "$status" -eq 0 ]
++	[ "$output" = "$(cat <<'EOF'
++HG
++├── banco/
++│   ├── itau/
++│   │   ├── cartao
++│   │   └── conta
++│   └── nubank
++├── email/
++│   ├── gmail
++│   └── outlook
++└── solo
++EOF
++)" ]
++}
++
++@test "sem UTF-8 cai para ASCII" {
++	mk a/b a/c
++	LC_ALL=C LANG=C run "$NPASS" tree HG
++	[ "$output" = $'HG\n`-- a/\n    |-- b\n    `-- c' ]
++}
++
++@test "so as pastas ganham / no fim; nome com espaco e preservado" {
++	mk "a b/c d" solo
++	LC_ALL=C.UTF-8 run "$NPASS" tree HG
++	[[ "$output" == *"a b/"* ]]
++	[[ "$output" == *"c d"* ]]
++	[[ "$output" != *"solo/"* ]]
++}
++
++@test "entrada que tambem e pasta aparece sem / e com os filhos" {
++	mk email/gmail email/gmail/extra
++	LC_ALL=C.UTF-8 run "$NPASS" tree HG
++	[[ "$output" == *$'├── gmail\n'* || "$output" == *$'└── gmail\n'* ]]
++	[[ "$output" == *"extra"* ]]
++	[[ "$output" != *"gmail/"* ]]
++}
++
++@test "ordem de arvore: o pai vem logo antes dos filhos, mesmo com irmao parecido (email.velho)" {
++	mk email/gmail email.velho email/outlook
++	run "$NPASS" tree --flat HG
++	[ "$output" = $'email/gmail\nemail/outlook\nemail.velho' ]
++}
++
++# --- DIR: prefixo de verdade --------------------------------------------------------------------
++
++@test "tree ID DIR mostra so o que esta sob DIR; DIR e a raiz do desenho" {
++	mk banco/itau/conta banco/nubank email/gmail
++	LC_ALL=C.UTF-8 run "$NPASS" tree HG banco
++	[ "$output" = $'HG/banco\n├── itau/\n│   └── conta\n└── nubank' ]
++}
++
++@test "DIR com barra final funciona; prefixo e por componente (ban nao casa banco)" {
++	mk banco/a bancos/b
++	run "$NPASS" tree --flat HG banco/
++	[ "$output" = "banco/a" ]
++	run "$NPASS" tree --flat HG ban
++	[ -z "$output" ]
++}
++
++@test "DIR que e uma entrada com filhos: a raiz e a entrada" {
++	mk email/gmail email/gmail/x
++	LC_ALL=C.UTF-8 run "$NPASS" tree HG email/gmail
++	[ "$output" = $'HG/email/gmail\n└── x' ]
++}
++
++# --- [backup] -----------------------------------------------------------------------------------
++
++@test "[backup] marca a entrada que tem o par de anexos, sem esconder os anexos" {
++	mk email/gmail email/outlook
++	printf 'b\nb\n' | "$NPASS" backup -n 1 HG email/gmail >/dev/null
++	LC_ALL=C.UTF-8 run "$NPASS" tree HG
++	[[ "$output" == *"gmail  [backup]"* ]]
++	[[ "$output" != *"outlook  [backup]"* ]]
++	[[ "$output" == *"Backup-gmail.dados.md"* ]]
++	[[ "$output" == *"Backup-gmail.md"* ]]
++}
++
++@test "so o ponteiro sem o arquivo de dados (ou nome parecido) nao marca [backup]" {
++	mk email/gmail email/gmail/Backup-x.md
++	run "$NPASS" tree HG
++	[[ "$output" != *"[backup]"* ]]
++	# dados sem o ponteiro do mesmo nome (stems diferentes) tambem nao marca
++	mk email/outlook email/outlook/Backup-a.dados.md email/outlook/Backup-b.md
++	run "$NPASS" tree HG
++	[[ "$output" != *"[backup]"* ]]
++}
++
++@test "[backup] tambem aparece na raiz quando DIR e a entrada" {
++	mk email/gmail
++	printf 'b\nb\n' | "$NPASS" backup -n 1 HG email/gmail >/dev/null
++	run "$NPASS" tree HG email/gmail
++	[ "${lines[0]}" = "HG/email/gmail  [backup]" ]
++}
++
++# --- cor -----------------------------------------------------------------------------------------
++
++@test "fora de terminal nao ha codigo de escape (cor so com TTY)" {
++	mk a/b
++	run "$NPASS" tree HG
++	[[ "$output" != *$'\033'* ]]
++}
++
++# --- --flat: a interface de maquina ----------------------------------------------------------------
++
++@test "--flat: um caminho por linha, sem cabecalho, sem indentacao, sem enfeite" {
++	mk email/gmail banco/nubank solo
++	run "$NPASS" tree --flat HG
++	[ "$status" -eq 0 ]
++	[ "$output" = $'banco/nubank\nemail/gmail\nsolo' ]
++}
++
++@test "--flat de identidade vazia: saida vazia e status 0; tree mostra (vazio)" {
++	run "$NPASS" tree --flat HG
++	[ "$status" -eq 0 ]
++	[ -z "$output" ]
++	run "$NPASS" tree HG
++	[ "$output" = "HG: (vazio)" ]
++}
++
++@test "--flat com DIR e a mesma filtragem da arvore" {
++	mk banco/a banco/b email/c
++	run "$NPASS" tree --flat HG banco
++	[ "$output" = $'banco/a\nbanco/b' ]
++}
++
++# --- erros e o antigo ls ---------------------------------------------------------------------------
++
++@test "identidade inexistente: erro e status != 0 (nao mais um '(vazio)' silencioso)" {
++	run "$NPASS" tree NAOEXISTE
++	[ "$status" -ne 0 ]
++	[[ "$output" == *"identidade não encontrada"* ]]
++	run "$NPASS" tree --flat NAOEXISTE
++	[ "$status" -ne 0 ]
++}
++
++@test "sem ID mostra uso; opcao desconhecida e recusada; --help funciona" {
++	run "$NPASS" tree
++	[ "$status" -ne 0 ]
++	[[ "$output" == *"uso: npass tree"* ]]
++	run "$NPASS" tree --nada HG
++	[ "$status" -ne 0 ]
++	run "$NPASS" tree --help
++	[ "$status" -eq 0 ]
++	[[ "$output" == *"--flat"* ]]
++}
++
++@test "o comando antigo ls (e list) falha e aponta para o tree" {
++	run "$NPASS" ls HG
++	[ "$status" -ne 0 ]
++	[[ "$output" == *"npass tree"* ]]
++	run "$NPASS" list HG
++	[ "$status" -ne 0 ]
++	NPASS_LANG=en run "$NPASS" ls HG
++	[[ "$output" == *"is now 'tree'"* ]]
++}
++
++@test "help lista o tree e nao lista mais o ls" {
++	run "$NPASS" help
++	[[ "$output" == *"tree [--flat] ID [DIR]"* ]]
++	[[ "$output" != *"ls ID [DIR]"* ]]
++}

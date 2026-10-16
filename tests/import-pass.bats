@@ -132,7 +132,7 @@ setup() {
 
 @test "-p coloca tudo sob um prefixo" {
 	"$NPASS" import pass personal "$OLD_STORE" -p Antigo
-	run "$NPASS" ls personal
+	run "$NPASS" tree --flat personal
 	[[ "$output" == *"Antigo/email/gmail"* ]]
 	run "$NPASS" get personal Antigo/email/gmail
 	[ "$output" = "senhaGmail1" ]
@@ -182,7 +182,7 @@ setup() {
 	mkdir -p "$OLD_STORE/.git"
 	printf 'x\n' | gpg --batch --yes --trust-model always -r "$FPR" -e -o "$OLD_STORE/.git/dentro.gpg"
 	"$NPASS" import pass personal "$OLD_STORE" >/dev/null
-	run "$NPASS" ls personal
+	run "$NPASS" tree --flat personal
 	[[ "$output" != *"atalho"* ]]
 	[[ "$output" != *"dentro"* ]]
 	[[ "$output" == *"email/gmail"* ]]

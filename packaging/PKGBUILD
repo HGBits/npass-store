@@ -24,7 +24,9 @@ pkgdesc="Wayland-native password store com resolução de identidade (fork reesc
 arch=('any')
 url="https://github.com/HGBits/npass-store.git"
 license=('gplv3')
-depends=('bash' 'gnupg')
+# glow: o renderizador do 'npass show' em terminal (markdown, links). Sem ele o show ainda
+# funciona (avisa e imprime o texto cru), mas a proposta do md1 depende dele, entao e dependencia.
+depends=('bash' 'gnupg' 'glow')
 optdepends=(
 	'git: para "npass git" e commits automáticos por identidade'
 	'python: para a extensão opcional npass-import (instale com ./install.sh --extensions-only)'

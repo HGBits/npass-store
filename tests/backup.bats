@@ -85,7 +85,7 @@ count_blobs() { find "$NPASS_STORE/HG/blobs" -name '*.gpg' | wc -l; }
 	[ "${lines[0]}" = "<!-- npass:backup-data v1 -->" ]
 	[ "$output" = $'<!-- npass:backup-data v1 -->\n# Senhas de backup: gmail\n\n## Backup 1\nc1\n\n## Backup 2\nc2\n\n## Backup 3\nc3' ]
 
-	run "$NPASS" ls HG
+	run "$NPASS" tree --flat HG
 	[[ "$output" == *"email/gmail/Backup-gmail.md"* ]]
 	[[ "$output" == *"email/gmail/Backup-gmail.dados.md"* ]]
 }
@@ -183,7 +183,7 @@ count_blobs() { find "$NPASS_STORE/HG/blobs" -name '*.gpg' | wc -l; }
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"2 anexo(s) de backup removido(s)"* ]]
 	[ "$(count_blobs)" -eq 0 ]
-	run "$NPASS" ls HG
+	run "$NPASS" tree --flat HG
 	[[ "$output" != *"Backup-"* ]]
 }
 
@@ -225,7 +225,7 @@ count_blobs() { find "$NPASS_STORE/HG/blobs" -name '*.gpg' | wc -l; }
 	bk 2 HG email/gmail >/dev/null
 	run "$NPASS" mv HG email/gmail email/google
 	[ "$status" -eq 0 ]
-	run "$NPASS" ls HG
+	run "$NPASS" tree --flat HG
 	[[ "$output" == *"email/google/Backup-gmail.md"* ]]
 	[[ "$output" == *"email/google/Backup-gmail.dados.md"* ]]
 	[[ "$output" != *"email/gmail"* ]]
@@ -236,11 +236,11 @@ count_blobs() { find "$NPASS_STORE/HG/blobs" -name '*.gpg' | wc -l; }
 @test "mv com destino que ja tem um anexo no caminho: falha e nao altera nada" {
 	bk 1 HG email/gmail >/dev/null
 	printf 'minha\nminha\n' | "$NPASS" insert HG email/novo/Backup-gmail.md >/dev/null
-	antes="$("$NPASS" ls HG)"
+	antes="$("$NPASS" tree --flat HG)"
 	run "$NPASS" mv HG email/gmail email/novo
 	[ "$status" -ne 0 ]
 	[[ "$output" == *"destino já tem anexo de backup"* ]]
-	[ "$("$NPASS" ls HG)" = "$antes" ]
+	[ "$("$NPASS" tree --flat HG)" = "$antes" ]
 	[ "$("$NPASS" get HG email/novo/Backup-gmail.md)" = "minha" ]
 	[ "$("$NPASS" get HG email/gmail)" = "S3nhaPrincipal!" ]
 }
@@ -267,7 +267,7 @@ count_blobs() { find "$NPASS_STORE/HG/blobs" -name '*.gpg' | wc -l; }
 	"$NPASS" mv HG email/gmail email/google >/dev/null
 	run bash -c "printf 'y\nn1\nn1\n' | '$NPASS' backup -n 1 HG email/google"
 	[ "$status" -eq 0 ]
-	run "$NPASS" ls HG
+	run "$NPASS" tree --flat HG
 	[[ "$output" == *"email/google/Backup-google.md"* ]]
 	[[ "$output" == *"email/google/Backup-google.dados.md"* ]]
 	[[ "$output" != *"Backup-gmail"* ]]

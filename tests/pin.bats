@@ -49,7 +49,7 @@ mkentry() {
 	[ "$status" -ne 0 ]
 	[[ "$output" == *"--password"* ]]
 	[[ "$output" == *"--field"* ]]
-	run "$NPASS" ls HG
+	run "$NPASS" tree HG
 	[[ "$output" == *"(vazio)"* ]]
 }
 
@@ -59,7 +59,7 @@ mkentry() {
 	[[ "$output" == *"exclusivos"* ]]
 	run "$NPASS" pin --field --password HG banco/app
 	[ "$status" -ne 0 ]
-	run "$NPASS" ls HG
+	run "$NPASS" tree HG
 	[[ "$output" == *"(vazio)"* ]]
 }
 
@@ -147,7 +147,7 @@ mkentry() {
 	run "$NPASS" pin --field HG typo/banco
 	[ "$status" -ne 0 ]
 	[[ "$output" == *"não existe"* ]]
-	run "$NPASS" ls HG
+	run "$NPASS" tree HG
 	[[ "$output" == *"(vazio)"* ]]
 }
 

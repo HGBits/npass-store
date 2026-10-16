@@ -106,3 +106,52 @@ setup() {
 	run env -u PREFIX DESTDIR="$destdir" "$PROJECT_DIR/install.sh" --bindir=/usr/sbin --uninstall
 	[ ! -e "$destdir/usr/sbin/npass" ]
 }
+
+# --- handler do esquema npass:// (links do show renderizado -> npass open) -------------------------
+
+@test "instala o .desktop do handler npass:// com o caminho ABSOLUTO do binario no Exec" {
+	run env PREFIX="$PREFIX" "$PROJECT_DIR/install.sh"
+	[ "$status" -eq 0 ]
+	local f="$PREFIX/share/applications/npass-open.desktop"
+	[ -f "$f" ]
+	grep -qx "Exec=$PREFIX/bin/npass open %u" "$f"
+	grep -qx 'MimeType=x-scheme-handler/npass;' "$f"
+	grep -qx 'NoDisplay=true' "$f"
+	grep -qx 'Terminal=false' "$f"
+	[[ "$output" == *"instalado: $f"* ]]
+	run stat -c '%a' "$f"
+	[ "$output" = "644" ]
+}
+
+@test "o Exec do .desktop acompanha --bindir e nao deixa o marcador @NPASS@" {
+	env PREFIX="$PREFIX" BINDIR="$PREFIX/sbin" "$PROJECT_DIR/install.sh" >/dev/null
+	local f="$PREFIX/share/applications/npass-open.desktop"
+	grep -qx "Exec=$PREFIX/sbin/npass open %u" "$f"
+	! grep -q '@NPASS@' "$f"
+}
+
+@test "com DESTDIR (empacotamento) o Exec NAO leva o DESTDIR, e o arquivo cai dentro dele" {
+	local stage="$BATS_TEST_TMPDIR/stage"
+	run env PREFIX=/usr DESTDIR="$stage" "$PROJECT_DIR/install.sh" --no-extensions
+	[ "$status" -eq 0 ]
+	local f="$stage/usr/share/applications/npass-open.desktop"
+	[ -f "$f" ]
+	grep -qx 'Exec=/usr/bin/npass open %u' "$f"
+}
+
+@test "--uninstall remove o .desktop tambem" {
+	env PREFIX="$PREFIX" "$PROJECT_DIR/install.sh" >/dev/null
+	[ -f "$PREFIX/share/applications/npass-open.desktop" ]
+	run env PREFIX="$PREFIX" "$PROJECT_DIR/install.sh" --uninstall
+	[ "$status" -eq 0 ]
+	[ ! -e "$PREFIX/share/applications/npass-open.desktop" ]
+}
+
+@test "o modelo packaging/npass-open.desktop.in tem as chaves exigidas pelo spec e um unico %u" {
+	local f="$PROJECT_DIR/packaging/npass-open.desktop.in"
+	[ "$(sed -n 1p "$f")" = "[Desktop Entry]" ]
+	grep -qx 'Type=Application' "$f"
+	grep -q '^Name=' "$f"
+	[ "$(grep -o '%u' "$f" | wc -l)" -eq 1 ]
+	[ "$(grep -o '@NPASS@' "$f" | wc -l)" -eq 1 ]
+}

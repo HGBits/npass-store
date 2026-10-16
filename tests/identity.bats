@@ -85,7 +85,7 @@ setup() {
 	"$NPASS" init work "$FPR"
 	printf 'a\na\n' | "$NPASS" insert personal email/gmail
 	printf 'b\nb\n' | "$NPASS" insert work aws/root
-	run "$NPASS" ls personal
+	run "$NPASS" tree --flat personal
 	[[ "$output" == *"email/gmail"* ]]
 	[[ "$output" != *"aws/root"* ]]
 }
@@ -101,7 +101,7 @@ setup() {
 @test "ls com prefixo sem match retorna vazio, nao a lista inteira (regressao SC2015)" {
 	"$NPASS" init personal "$FPR"
 	printf 'a\na\n' | "$NPASS" insert personal email/gmail
-	run "$NPASS" ls personal naoexiste
+	run "$NPASS" tree --flat personal naoexiste
 	[[ "$output" != *"email/gmail"* ]]
 }
 

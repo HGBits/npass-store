@@ -1,0 +1,760 @@
+diff -ruN '--exclude=bin' '--exclude=gnupg_test' '--exclude=gnupg_atacante' '--exclude=.keys.lock' '--exclude=.fprs' '--exclude=.git' baseV/AGENTS.md newO/AGENTS.md
+--- baseV/AGENTS.md	2026-10-15 22:24:56.825591650 +0000
++++ newO/AGENTS.md	2026-10-16 08:28:17.659963276 +0000
+@@ -22,6 +22,7 @@
+ | Git automático | `lib/07-git.bash` | `tests/update.bats`, `tests/store-extras.bats` |
+ | Internacionalização | `lib/09-i18n.bash` | `tests/i18n.bats` |
+ | PIN numérico (`pin`, modos `--password`/`--field`) | `lib/08-pin.bash` | `tests/pin.bats` |
++| Links `npass://` e `npass open` | `lib/17-open.bash`, `packaging/npass-open.desktop.in` | `install.sh` (instala o .desktop), `tests/open.bats`, `tests/install.bats` |
+ | `show` renderizado com glow | `lib/16-view.bash` | `lib/03-store.bash` (`cmd_show` cru interno), `tests/view.bats` |
+ | Listagem (`tree`, `--flat`) | `lib/15-tree.bash` | `extensions/npass-import` e `extensions/npass-audit` (usam `tree --flat`), `tests/tree.bats` |
+ | Senhas de backup (`backup`, anexos cifrados) | `lib/13-backup.bash` | `lib/03-store.bash` (cascata em `rm`/`mv`), `lib/06-update.bash`, `extensions/npass-audit`, `tests/backup.bats` |
+@@ -59,6 +60,7 @@
+    +--> 11-extensions.bash
+    +--> 12-diceware.bash
+    +--> 13-backup.bash
++   +--> 17-open.bash
+    +--> 16-view.bash
+    +--> 15-tree.bash
+    +--> 14-entry.bash   (formato md1: usado por 03, 04, 05, 06, 08, 12)
+diff -ruN '--exclude=bin' '--exclude=gnupg_test' '--exclude=gnupg_atacante' '--exclude=.keys.lock' '--exclude=.fprs' '--exclude=.git' baseV/README.md newO/README.md
+--- baseV/README.md	2026-10-15 22:24:56.825631092 +0000
++++ newO/README.md	2026-10-16 08:28:17.660454028 +0000
+@@ -332,6 +332,20 @@
+ 
+ A lista fica em `~/.npass/wordlist.txt` (ou `NPASS_WORDLIST`). Na primeira vez o npass a copia da que acompanha a instalação (`PREFIX/share/npass/encrypts_alternatives/`, ou `encrypts_alternatives/` num clone do repositório; `NPASS_WORDLIST_SRC` força a origem). É só dado, nunca executado, e o npass recusa uma lista com menos de 1296 palavras utilizáveis (sinal de arquivo truncado ou adulterado). Formato: seções `[large]`, `[short1]`, `[short2]`, linhas `ALTURA<TAB>palavra`. Listas da EFF, licença CC BY 3.0 US.
+ 
++## Links `npass://` e `npass open`
++
++O `show` renderizado desenha links `npass://ID/DIR/PASS` (hoje, entre uma entrada e os seus backups). O `glow` os emite como **hiperlink OSC 8**; em um terminal que suporte OSC 8 (por exemplo foot e kitty; confira o seu) o clique entrega a URL ao desktop, e a URL também aparece escrita ao lado do texto, então em terminal sem OSC 8 você a copia e roda `npass open`.
++
++```bash
++npass open npass://pessoal/email/gmail            # mostra a entrada (pede confirmação)
++npass open --here npass://pessoal/email/gmail     # sempre neste terminal
++```
++
++- **O handler:** `install.sh` instala `share/applications/npass-open.desktop` (`MimeType=x-scheme-handler/npass`, com o caminho **absoluto** do binário no `Exec`) e roda `update-desktop-database`. Num pacote (PKGBUILD) o hook do pacman faz o registro. Com `--prefix=$HOME/.local` o arquivo vai para `~/.local/share/applications`. Verifique com `xdg-mime query default x-scheme-handler/npass`.
++- **Sem terminal (chamado pelo desktop):** o `open` abre uma janela de terminal que roda `npass open --here --pause URL`. Quem escolhe o terminal é `NPASS_TERMINAL` (comando e argumentos, por exemplo `foot` ou `alacritty -e`), depois `$TERMINAL` (com `-e`), depois o primeiro que existir de foot, kitty, alacritty, wezterm, xterm. Sem nenhum, o erro explica como definir; o npass não chuta um.
++- **`--pause`:** espera Enter (ou `NPASS_OPEN_TIMEOUT` segundos, padrão 60) e **limpa a tela e o scrollback**, para o segredo não ficar na janela.
++- **Segurança:** qualquer coisa que consiga entregar uma URL `npass://` ao desktop (uma página web, uma nota importada, um link num e-mail) aciona este comando, então ele só **mostra** (nunca copia, grava nem altera nada), **pergunta `[y/N]` mostrando ID e caminho antes de decifrar qualquer coisa** (`NPASS_OPEN_CONFIRM=0` desliga, por sua conta e risco) e o parser é estrito: só o esquema `npass://`, ID simples (`A-Za-z0-9._-`), caminho sem `..`, sem controle e com `%`-escapes válidos (`%00` é recusado). Espaço, `#`, `?`, `%` e UTF-8 no nome da entrada viajam como `%XX`.
++
+ ## Git
+ 
+ Todo store nasce como repositório Git: o primeiro `npass init` cria o
+diff -ruN '--exclude=bin' '--exclude=gnupg_test' '--exclude=gnupg_atacante' '--exclude=.keys.lock' '--exclude=.fprs' '--exclude=.git' baseV/install.sh newO/install.sh
+--- baseV/install.sh	2026-10-15 22:24:56.825900744 +0000
++++ newO/install.sh	2026-10-16 08:28:17.662124837 +0000
+@@ -79,6 +79,12 @@
+ # into the user's tree ($NPASS_STORE/wordlist.txt), which is where it is read from.
+ words_dir="$DESTDIR$PREFIX/share/npass/encrypts_alternatives"
+ words_target="$words_dir/wordlist.txt"
++# Handler do esquema npass:// (links do `npass show` renderizado -> `npass open`).
++# O Exec leva o caminho ABSOLUTO do binario instalado: a sessao grafica nem sempre
++# tem ~/.local/bin no PATH.
++desktop_dir="$DESTDIR$PREFIX/share/applications"
++desktop_target="$desktop_dir/npass-open.desktop"
++npass_final="${BINDIR:-$PREFIX/bin}/npass"
+ 
+ if [[ -n "$DESTDIR" && "$ext_mode" == yes ]]; then
+ 	echo "install.sh: extensões moram no diretório do usuário e são assinadas por ele; não combinam com DESTDIR (empacotamento)." >&2
+@@ -257,7 +263,7 @@
+ 
+ if [[ $uninstall -eq 1 ]]; then
+ 	removed=0
+-	for f in "$bin_target" "$man_target" "$words_target"; do
++	for f in "$bin_target" "$man_target" "$words_target" "$desktop_target"; do
+ 		if [[ -e "$f" ]]; then
+ 			rm -f -- "$f"
+ 			echo "removido: $f"
+@@ -291,13 +297,20 @@
+ echo "Reconstruindo bin/npass a partir de lib/*.bash..."
+ bash build.sh
+ 
+-mkdir -p "$bindir" "$mandir" "$words_dir"
++mkdir -p "$bindir" "$mandir" "$words_dir" "$desktop_dir"
+ install -m 755 bin/npass "$bin_target"
+ install -m 644 man/npass.1 "$man_target"
+ install -m 644 encrypts_alternatives/wordlist.txt "$words_target"
++sed "s#@NPASS@#$npass_final#" packaging/npass-open.desktop.in >"$desktop_target"
++chmod 644 "$desktop_target"
+ echo "instalado: $bin_target"
+ echo "instalado: $man_target"
+ echo "instalado: $words_target"
++echo "instalado: $desktop_target"
++# Registra o handler npass:// (so fora de empacotamento; o pacote faz isso no hook).
++if [[ -z "$DESTDIR" ]] && command -v update-desktop-database >/dev/null 2>&1; then
++	update-desktop-database "$desktop_dir" 2>/dev/null || true
++fi
+ 
+ # Soft dependency check - informational only. Packaging (the AUR
+ # PKGBUILD's depends=()) is what actually enforces this; a manual
+diff -ruN '--exclude=bin' '--exclude=gnupg_test' '--exclude=gnupg_atacante' '--exclude=.keys.lock' '--exclude=.fprs' '--exclude=.git' baseV/lib/00-main.bash newO/lib/00-main.bash
+--- baseV/lib/00-main.bash	2026-10-15 22:24:56.825935174 +0000
++++ newO/lib/00-main.bash	2026-10-16 08:28:17.662232916 +0000
+@@ -14,6 +14,7 @@
+ 	rm | remove | delete) cmd_rm "$@" ;;
+ 	mv | rename) cmd_mv "$@" ;;
+ 	tree) cmd_tree "$@" ;;
++	open) cmd_open "$@" ;;
+ 	ls | list) npass_die "$(npass_t erro_ls_movido)" ;;
+ 	generate | gen) cmd_generate "$@" ;;
+ 	diceware) cmd_diceware "$@" ;;
+@@ -64,6 +65,7 @@
+ 			  insert --batch [-f] ID   grava vários (registros CAMINHO\\0CONTEÚDO\\0 no stdin)
+ 			  rm [-f] ID DIR/PASS      remove um segredo
+ 			  mv ID DIR/PASS DEST      renomeia (mesma identidade) ou move (entre identidades)
++			  open [--here] npass://ID/DIR/PASS   segue um link npass:// (só mostra; pede confirmação)
+ 			  tree [--flat] ID [DIR]   árvore dos caminhos lógicos de uma identidade (--flat: um por linha)
+ 			  generate [-n|-c|-f] [--in-place] ID DIR/PASS [LEN]   gera senha aleatória
+ 			  diceware [-c|-f] [--in-place] [-s SEP] ID DIR/PASS [N]   frase de N palavras (EFF Large); mostra as ALTURAS para anotar
+diff -ruN '--exclude=bin' '--exclude=gnupg_test' '--exclude=gnupg_atacante' '--exclude=.keys.lock' '--exclude=.fprs' '--exclude=.git' baseV/lib/09-i18n.bash newO/lib/09-i18n.bash
+--- baseV/lib/09-i18n.bash	2026-10-15 22:24:56.826058795 +0000
++++ newO/lib/09-i18n.bash	2026-10-16 08:28:17.662345508 +0000
+@@ -43,6 +43,10 @@
+ 	[msg_cancelado]="Cancelado.\n"
+ 	[erro_senhas_diferentes]="as senhas não coincidem"
+ 	[msg_salvo]="%s: %s salvo.\n"
++	[erro_open_url]="URL inválida: esperado npass://ID/DIR/PASS (ID simples, caminho sem .. nem controle, %-escapes válidos)"
++	[erro_open_sem_terminal]="não achei um terminal para abrir a entrada: defina NPASS_TERMINAL (ex.: NPASS_TERMINAL='foot') ou TERMINAL"
++	[prompt_open_confirma]="Abrir %s: %s ? [y/N] "
++	[prompt_open_pausa]="[Enter fecha e limpa a tela] "
+ 	[warn_glow_ausente]="glow não encontrado: mostrando o texto cru (instale o glow para ver o markdown renderizado; NPASS_SHOW_RENDER=never ou --raw silenciam este aviso)"
+ 	[warn_glow_falhou]="o glow falhou (código %s): mostrando o texto cru"
+ 	[erro_ls_movido]="'ls' virou 'tree': npass tree ID [DIR] (árvore) ou npass tree --flat ID [DIR] (um caminho por linha, para scripts)"
+@@ -194,6 +198,10 @@
+ 	[msg_cancelado]="Cancelled.\n"
+ 	[erro_senhas_diferentes]="passwords do not match"
+ 	[msg_salvo]="%s: %s saved.\n"
++	[erro_open_url]="invalid URL: expected npass://ID/DIR/PASS (plain ID, path without .. or control characters, valid %-escapes)"
++	[erro_open_sem_terminal]="no terminal found to open the entry: set NPASS_TERMINAL (e.g. NPASS_TERMINAL='foot') or TERMINAL"
++	[prompt_open_confirma]="Open %s: %s ? [y/N] "
++	[prompt_open_pausa]="[Enter closes and clears the screen] "
+ 	[warn_glow_ausente]="glow not found: showing the raw text (install glow to see rendered markdown; NPASS_SHOW_RENDER=never or --raw silence this warning)"
+ 	[warn_glow_falhou]="glow failed (code %s): showing the raw text"
+ 	[erro_ls_movido]="'ls' is now 'tree': npass tree ID [DIR] (tree) or npass tree --flat ID [DIR] (one path per line, for scripts)"
+diff -ruN '--exclude=bin' '--exclude=gnupg_test' '--exclude=gnupg_atacante' '--exclude=.keys.lock' '--exclude=.fprs' '--exclude=.git' baseV/lib/17-open.bash newO/lib/17-open.bash
+--- baseV/lib/17-open.bash	1970-01-01 00:00:00.000000000 +0000
++++ newO/lib/17-open.bash	2026-10-16 08:28:17.662595044 +0000
+@@ -0,0 +1,147 @@
++#!/usr/bin/env bash
++# npass open npass://ID/caminho/logico - segue um link npass://.
++#
++# O `show` renderizado (16-view) desenha links npass:// para navegar entre uma
++# entrada e os seus backups. O glow os emite como hiperlink OSC 8; clicar num
++# terminal que suporte OSC 8 entrega a URL ao handler do desktop
++# (x-scheme-handler/npass, packaging/npass-open.desktop), que roda este comando.
++#
++#   npass open URL           em terminal: mostra a entrada aqui
++#                            fora de terminal (chamado pelo desktop): abre uma
++#                            janela de terminal que roda `npass open --here --pause URL`
++#   npass open --here URL    sempre aqui
++#   --pause                  espera Enter (ou NPASS_OPEN_TIMEOUT s, padrao 60) e
++#                            limpa a tela, para o segredo nao ficar no scrollback
++#
++# SEGURANCA. Quem aciona este comando e, na pratica, qualquer coisa que consiga
++# entregar uma URL npass:// ao desktop: uma pagina web, uma nota importada, um
++# link num e-mail. Por isso:
++#   - so MOSTRA: nunca copia, grava, apaga nem muda nada;
++#   - pede confirmacao (y/N) mostrando ID e caminho ANTES de decifrar qualquer
++#     coisa, a menos que NPASS_OPEN_CONFIRM=0 (so p/ quem entende o risco);
++#   - o parser e estrito: so o esquema npass://, ID simples, caminho que passa
++#     por npass_check_sneaky_path, e recusa %-escape invalido, NUL e controle.
++
++# npass_url_encode TEXTO -> TEXTO como caminho de URL: so A-Za-z0-9 . _ ~ - /
++# ficam como estao; o resto (inclusive bytes de UTF-8, espaco, # ? % \) vira %XX.
++npass_url_encode() {
++	local LC_ALL=C s="$1" out="" c h i
++	for ((i = 0; i < ${#s}; i++)); do
++		c="${s:i:1}"
++		case "$c" in
++		[A-Za-z0-9._~/-]) out+="$c" ;;
++		*)
++			printf -v h '%%%02X' "'$c"
++			out+="$h"
++			;;
++		esac
++	done
++	printf '%s' "$out"
++}
++
++# npass_url_decode TEXTO -> bytes originais em stdout. 1 se o %-escape for invalido
++# (% sem dois digitos hex) ou se decodificar para NUL.
++npass_url_decode() {
++	local LC_ALL=C s="$1"
++	local bad='%($|[^0-9A-Fa-f]|[0-9A-Fa-f]($|[^0-9A-Fa-f]))'
++	[[ "$s" =~ $bad ]] && return 1
++	[[ "$s" == *%00* ]] && return 1
++	s="${s//\\/\\\\}"
++	printf '%b' "${s//%/\\x}"
++}
++
++# npass_open_parse URL -> NPASS_OPEN_ID e NPASS_OPEN_LOGICAL, ou 1.
++npass_open_parse() {
++	local url="$1" rest id path
++	[[ "$url" == npass://* ]] || return 1
++	rest="${url#npass://}"
++	rest="${rest%%[?#]*}"
++	[[ "$rest" == */* ]] || return 1
++	id="${rest%%/*}"
++	path="${rest#*/}"
++	[[ "$id" =~ ^[A-Za-z0-9._-]+$ ]] || return 1
++	[[ -n "$path" && "$path" != */ ]] || return 1
++	path="$(npass_url_decode "$path")" || return 1
++	[[ -n "$path" && "$path" != *[[:cntrl:]]* ]] || return 1
++	(npass_check_sneaky_path "$path") >/dev/null 2>&1 || return 1
++	NPASS_OPEN_ID="$id"
++	NPASS_OPEN_LOGICAL="$path"
++}
++
++# npass_open_terminal -> NPASS_OPEN_TERM (array): o prefixo que roda um comando
++# numa janela de terminal. NPASS_TERMINAL manda (dividido em palavras), depois
++# $TERMINAL (com -e), depois o primeiro que existir de foot, kitty, alacritty,
++# wezterm, xterm.
++npass_open_terminal() {
++	NPASS_OPEN_TERM=()
++	if [[ -n "${NPASS_TERMINAL:-}" ]]; then
++		read -r -a NPASS_OPEN_TERM <<<"$NPASS_TERMINAL"
++		return 0
++	fi
++	if [[ -n "${TERMINAL:-}" ]] && command -v "$TERMINAL" >/dev/null 2>&1; then
++		NPASS_OPEN_TERM=("$TERMINAL" -e)
++		return 0
++	fi
++	local cand
++	for cand in foot kitty "alacritty -e" "wezterm start --" "xterm -e"; do
++		if command -v "${cand%% *}" >/dev/null 2>&1; then
++			read -r -a NPASS_OPEN_TERM <<<"$cand"
++			return 0
++		fi
++	done
++	return 1
++}
++
++cmd_open_usage() {
++	printf '%s\n' "uso: npass open [--here] [--pause] npass://ID/DIR/PASS" \
++		"  mostra uma entrada (so mostra) a partir de um link npass://" \
++		"  --here    mostra neste terminal, mesmo sem tty" \
++		"  --pause   espera Enter e limpa a tela ao final" \
++		"  NPASS_OPEN_CONFIRM=0 pula a confirmacao; NPASS_TERMINAL escolhe o terminal"
++}
++
++cmd_open() {
++	local here=0 pause=0
++	while [[ "$1" == -* ]]; do
++		case "$1" in
++		--here) here=1; shift ;;
++		--pause) pause=1; shift ;;
++		-h | --help) cmd_open_usage; return 0 ;;
++		--) shift; break ;;
++		*) npass_die "$(npass_t erro_opcao_desconhecida "$1")" ;;
++		esac
++	done
++	local url="$1"
++	[[ -n "$url" ]] || npass_die "uso: npass open [--here] [--pause] npass://ID/DIR/PASS"
++	npass_open_parse "$url" || npass_die "$(npass_t erro_open_url)"
++
++	# Chamado pelo desktop (sem terminal): abre uma janela de terminal que roda
++	# este mesmo comando; a confirmacao e a exibicao acontecem la.
++	if ((!here)) && [[ ! -t 1 ]]; then
++		npass_open_terminal || npass_die "$(npass_t erro_open_sem_terminal)"
++		local self
++		self="$(readlink -f -- "$0" 2>/dev/null || printf '%s' "$0")"
++		if command -v setsid >/dev/null 2>&1; then
++			setsid -f "${NPASS_OPEN_TERM[@]}" "$self" open --here --pause "$url" >/dev/null 2>&1 </dev/null
++		else
++			"${NPASS_OPEN_TERM[@]}" "$self" open --here --pause "$url" >/dev/null 2>&1 </dev/null &
++		fi
++		return 0
++	fi
++
++	if [[ "${NPASS_OPEN_CONFIRM:-1}" != 0 ]]; then
++		local reply=""
++		read -r -p "$(npass_t prompt_open_confirma "$NPASS_OPEN_ID" "$NPASS_OPEN_LOGICAL")" reply || true
++		[[ "$reply" == [yY] ]] || { npass_t msg_cancelado; return 1; }
++	fi
++
++	local rc=0
++	cmd_view "$NPASS_OPEN_ID" "$NPASS_OPEN_LOGICAL" || rc=$?
++	if ((pause)); then
++		local _
++		read -r -s -t "${NPASS_OPEN_TIMEOUT:-60}" -p "$(npass_t prompt_open_pausa)" _ || true
++		echo
++		[[ -t 1 ]] && printf '\033[2J\033[3J\033[H'
++	fi
++	return "$rc"
++}
+diff -ruN '--exclude=bin' '--exclude=gnupg_test' '--exclude=gnupg_atacante' '--exclude=.keys.lock' '--exclude=.fprs' '--exclude=.git' baseV/lib/AGENTS.md newO/lib/AGENTS.md
+--- baseV/lib/AGENTS.md	2026-10-15 22:24:56.826162171 +0000
++++ newO/lib/AGENTS.md	2026-10-16 08:28:17.662434947 +0000
+@@ -21,6 +21,7 @@
+ | `10-signing.bash` | assinatura e verificação |
+ | `11-extensions.bash` | descoberta, instalação e execução de extensões |
+ | `12-diceware.bash` | comandos `diceware` (com alturas) e `memorable` (sem índice); lista de palavras em `$NPASS_STORE/wordlist.txt` |
++| `17-open.bash` | `npass open npass://ID/caminho` (handler do esquema), `npass_url_encode/_decode`, parser estrito, confirmação antes de decifrar, abre terminal (`NPASS_TERMINAL`) quando chamado sem tty |
+ | `16-view.bash` | comando `show` (`cmd_view`): renderiza com glow em terminal, cru em pipe; monta o documento de exibição (senha/OTP/valores em código, nomes escapados); `cmd_show` (03) segue sendo o decifrador cru interno |
+ | `15-tree.bash` | comando `tree` (substitui o `ls`): árvore dos caminhos lógicos a partir do mapa, `--flat` para máquina, marca `[backup]` por nome |
+ | `14-entry.bash` | formato md1: `npass_entry_load/_render/_new/_with_password/_require`, campos (`_field_get/_set/_has`) e OTP (`_otp_uri/_otp_set`); estado em globais `NPASS_E_*` (chame direto, nunca em `$(...)`) |
+@@ -30,6 +31,7 @@
+ 
+ - Problema de `init`, identidade ou `.gpg-id` -> `02-identity.bash`
+ - Problema de `insert/show/edit/rm/mv` -> `03-store.bash`
++- Problema de `open`, links `npass://`, handler do desktop, codificação de URL -> `17-open.bash`
+ - Problema de `show` renderizado, glow, documento de exibição -> `16-view.bash`
+ - Problema de `tree` (árvore, `--flat`, marca `[backup]`) -> `15-tree.bash`
+ - Problema envolvendo `.map.gpg` ou nomes de blobs -> `03-store.bash`
+diff -ruN '--exclude=bin' '--exclude=gnupg_test' '--exclude=gnupg_atacante' '--exclude=.keys.lock' '--exclude=.fprs' '--exclude=.git' baseV/man/npass.1 newO/man/npass.1
+--- baseV/man/npass.1	2026-10-15 22:24:56.826270578 +0000
++++ newO/man/npass.1	2026-10-16 08:28:17.662812774 +0000
+@@ -213,6 +213,37 @@
+ Move to a different identity: decrypts, re\-encrypts to the
+ destination identity's recipients, and removes the source entry.
+ .TP
++.BI "open [\-\-here] [\-\-pause] " npass://ID/DIR/PASS
++Follow an
++.B npass://
++link (the targets of the links that a rendered
++.B show
++draws; see
++.BR glow (1)
++and OSC 8 hyperlinks). It only shows the entry, never copies, writes or changes
++anything, and asks
++.B [y/N]
++showing the identity and path BEFORE decrypting anything, unless
++.B NPASS_OPEN_CONFIRM=0.
++The URL is parsed strictly: scheme
++.BR npass:// ,
++a plain ID
++.RB ( A\-Za\-z0\-9._\- ),
++a path that passes the same check as every logical path, valid
++.BR %XX
++escapes (NUL and control characters are refused); query and fragment are ignored.
++Called without a terminal (by the desktop handler) it opens a terminal window that runs
++.BR "npass open \-\-here \-\-pause" ;
++the terminal is
++.BR NPASS_TERMINAL ,
++else
++.B $TERMINAL
++(with \-e), else the first of foot, kitty, alacritty, wezterm, xterm.
++.B \-\-pause
++waits for Enter (or
++.B NPASS_OPEN_TIMEOUT
++seconds, default 60) and clears the screen and scrollback.
++.TP
+ .BI "tree [\-\-flat] " ID " [" DIR ]
+ Draw the logical paths of an identity as a tree, optionally only those under
+ .I DIR
+@@ -523,6 +554,23 @@
+ .BR \-\-raw " and " \-\-render
+ win over it.
+ .TP
++.B NPASS_OPEN_CONFIRM
++.B 0
++makes
++.B open
++skip its confirmation prompt. Default: ask.
++.TP
++.B NPASS_OPEN_TIMEOUT
++Seconds
++.B open \-\-pause
++waits before closing. Default: 60.
++.TP
++.B NPASS_TERMINAL
++Command and arguments used by
++.B open
++to start a terminal window (e.g.
++.IR "foot" " or " "alacritty \-e" ).
++.TP
+ .B NPASS_GLOW
+ Path of the glow binary used by
+ .BR show .
+@@ -591,6 +639,14 @@
+ to work.
+ .SH FILES
+ .TP
++.I share/applications/npass\-open.desktop
++Installed by install.sh: registers
++.B npass open
++as the handler of the
++.B x\-scheme\-handler/npass
++MIME type, with the absolute path of the binary in
++.BR Exec .
++.TP
+ .I $NPASS_STORE/wordlist.txt
+ The EFF wordlists used by
+ .B diceware
+diff -ruN '--exclude=bin' '--exclude=gnupg_test' '--exclude=gnupg_atacante' '--exclude=.keys.lock' '--exclude=.fprs' '--exclude=.git' baseV/packaging/AGENTS.md newO/packaging/AGENTS.md
+--- baseV/packaging/AGENTS.md	2026-10-15 22:24:56.826318611 +0000
++++ newO/packaging/AGENTS.md	2026-10-16 08:28:17.663025864 +0000
+@@ -7,6 +7,7 @@
+ ## Arquivo
+ 
+ - `PKGBUILD`
++- `npass-open.desktop.in` (modelo do handler `x-scheme-handler/npass`; o `install.sh` troca `@NPASS@` pelo caminho absoluto do binário)
+ 
+ ## Quando consultar
+ 
+diff -ruN '--exclude=bin' '--exclude=gnupg_test' '--exclude=gnupg_atacante' '--exclude=.keys.lock' '--exclude=.fprs' '--exclude=.git' baseV/packaging/npass-open.desktop.in newO/packaging/npass-open.desktop.in
+--- baseV/packaging/npass-open.desktop.in	1970-01-01 00:00:00.000000000 +0000
++++ newO/packaging/npass-open.desktop.in	2026-10-16 08:28:17.663148242 +0000
+@@ -0,0 +1,9 @@
++[Desktop Entry]
++Type=Application
++Name=npass
++Comment=Abre links npass:// (mostra uma entrada do npass numa janela de terminal)
++Exec=@NPASS@ open %u
++Terminal=false
++NoDisplay=true
++MimeType=x-scheme-handler/npass;
++Categories=Utility;Security;
+diff -ruN '--exclude=bin' '--exclude=gnupg_test' '--exclude=gnupg_atacante' '--exclude=.keys.lock' '--exclude=.fprs' '--exclude=.git' baseV/tests/AGENTS.md newO/tests/AGENTS.md
+--- baseV/tests/AGENTS.md	2026-10-15 22:24:56.826598187 +0000
++++ newO/tests/AGENTS.md	2026-10-16 08:28:17.664984543 +0000
+@@ -18,6 +18,7 @@
+ | `import-pass-secrets.bats` | importação de `pass-secrets` |
+ | `otp.bats` | OTP |
+ | `pin.bats` | PIN (`--password`, `--field`) |
++| `open.bats` | `open`: codificação de URL, parser estrito, confirmação antes de decifrar, só mostra, lançamento de terminal (sempre falso), `--pause` |
+ | `view.bats` | `show` renderizado: quando renderiza (TTY real via pty), o que o glow recebe, glow ausente/falhando, anexos |
+ | `tree.bats` | `tree`: desenho, `--flat`, prefixo por componente, `[backup]`, erros e o aviso do `ls` antigo |
+ | `entry-md1.bats` | formato md1 (contrato, preservação, recusa do formato antigo em todos os comandos), `get`, OTP e `audit` |
+diff -ruN '--exclude=bin' '--exclude=gnupg_test' '--exclude=gnupg_atacante' '--exclude=.keys.lock' '--exclude=.fprs' '--exclude=.git' baseV/tests/install.bats newO/tests/install.bats
+--- baseV/tests/install.bats	2026-10-15 22:24:56.826741470 +0000
++++ newO/tests/install.bats	2026-10-16 08:28:17.666369162 +0000
+@@ -106,3 +106,52 @@
+ 	run env -u PREFIX DESTDIR="$destdir" "$PROJECT_DIR/install.sh" --bindir=/usr/sbin --uninstall
+ 	[ ! -e "$destdir/usr/sbin/npass" ]
+ }
++
++# --- handler do esquema npass:// (links do show renderizado -> npass open) -------------------------
++
++@test "instala o .desktop do handler npass:// com o caminho ABSOLUTO do binario no Exec" {
++	run env PREFIX="$PREFIX" "$PROJECT_DIR/install.sh"
++	[ "$status" -eq 0 ]
++	local f="$PREFIX/share/applications/npass-open.desktop"
++	[ -f "$f" ]
++	grep -qx "Exec=$PREFIX/bin/npass open %u" "$f"
++	grep -qx 'MimeType=x-scheme-handler/npass;' "$f"
++	grep -qx 'NoDisplay=true' "$f"
++	grep -qx 'Terminal=false' "$f"
++	[[ "$output" == *"instalado: $f"* ]]
++	run stat -c '%a' "$f"
++	[ "$output" = "644" ]
++}
++
++@test "o Exec do .desktop acompanha --bindir e nao deixa o marcador @NPASS@" {
++	env PREFIX="$PREFIX" BINDIR="$PREFIX/sbin" "$PROJECT_DIR/install.sh" >/dev/null
++	local f="$PREFIX/share/applications/npass-open.desktop"
++	grep -qx "Exec=$PREFIX/sbin/npass open %u" "$f"
++	! grep -q '@NPASS@' "$f"
++}
++
++@test "com DESTDIR (empacotamento) o Exec NAO leva o DESTDIR, e o arquivo cai dentro dele" {
++	local stage="$BATS_TEST_TMPDIR/stage"
++	run env PREFIX=/usr DESTDIR="$stage" "$PROJECT_DIR/install.sh" --no-extensions
++	[ "$status" -eq 0 ]
++	local f="$stage/usr/share/applications/npass-open.desktop"
++	[ -f "$f" ]
++	grep -qx 'Exec=/usr/bin/npass open %u' "$f"
++}
++
++@test "--uninstall remove o .desktop tambem" {
++	env PREFIX="$PREFIX" "$PROJECT_DIR/install.sh" >/dev/null
++	[ -f "$PREFIX/share/applications/npass-open.desktop" ]
++	run env PREFIX="$PREFIX" "$PROJECT_DIR/install.sh" --uninstall
++	[ "$status" -eq 0 ]
++	[ ! -e "$PREFIX/share/applications/npass-open.desktop" ]
++}
++
++@test "o modelo packaging/npass-open.desktop.in tem as chaves exigidas pelo spec e um unico %u" {
++	local f="$PROJECT_DIR/packaging/npass-open.desktop.in"
++	[ "$(sed -n 1p "$f")" = "[Desktop Entry]" ]
++	grep -qx 'Type=Application' "$f"
++	grep -q '^Name=' "$f"
++	[ "$(grep -o '%u' "$f" | wc -l)" -eq 1 ]
++	[ "$(grep -o '@NPASS@' "$f" | wc -l)" -eq 1 ]
++}
+diff -ruN '--exclude=bin' '--exclude=gnupg_test' '--exclude=gnupg_atacante' '--exclude=.keys.lock' '--exclude=.fprs' '--exclude=.git' baseV/tests/open.bats newO/tests/open.bats
+--- baseV/tests/open.bats	1970-01-01 00:00:00.000000000 +0000
++++ newO/tests/open.bats	2026-10-16 08:28:17.669218468 +0000
+@@ -0,0 +1,281 @@
++#!/usr/bin/env bats
++# npass open npass://ID/caminho (lib/17-open.bash): o alvo dos links do show renderizado.
++# O que importa: so MOSTRA, confirma ANTES de decifrar, parser estrito, e abre um
++# terminal so por NPASS_TERMINAL (nenhum teste aciona a autodeteccao: rodar a suite
++# nao pode abrir janela de verdade na maquina de quem testa).
++
++setup() {
++	export GNUPGHOME="$BATS_TEST_DIRNAME/gnupg_test"
++	load helper
++	npass_test_keys || return 1
++	command -v python3 >/dev/null || skip "python3 nao instalado"
++	export NPASS_STORE="$BATS_TEST_TMPDIR/store"
++	export NPASS="$BATS_TEST_DIRNAME/../bin/npass"
++	export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
++	unset NPASS_OPEN_CONFIRM NPASS_OPEN_TIMEOUT TERMINAL
++	export NPASS_TERMINAL="$BATS_TEST_TMPDIR/nunca-existe-terminal"   # rede de seguranca
++	export MOCKBIN="$BATS_TEST_TMPDIR/mockbin" CLIPFILE="$BATS_TEST_TMPDIR/clip.out"
++	mkdir -p "$MOCKBIN"
++	printf '#!/bin/bash\ncat > "%s"\n' "$CLIPFILE" >"$MOCKBIN/wl-copy"
++	chmod +x "$MOCKBIN"/*
++	export PATH="$MOCKBIN:$PATH" WAYLAND_DISPLAY=wayland-test
++	"$NPASS" init HG "$FPR" >/dev/null
++}
++
++put() { printf '%s\0%s\0' "$1" "$2" | "$NPASS" insert --batch -f HG >/dev/null; }
++
++# fn CHAMADA...: roda uma funcao interna do npass (codificacao de URL, deteccao de terminal)
++fn() {
++	NPASS_SRC="$NPASS" "$BASH" -c 'source <(sed "\$d" "$NPASS_SRC"); "$@"' _ "$@"
++}
++
++# --- codificacao de URL ----------------------------------------------------------------------------
++
++@test "encode: so A-Za-z0-9 . _ ~ - / ficam; espaco, #, ?, %, \\, aspas e UTF-8 viram %XX" {
++	run fn npass_url_encode 'a b/ção#1?x%y\z"w'"'"
++	[ "$status" -eq 0 ]
++	[ "$output" = 'a%20b/%C3%A7%C3%A3o%231%3Fx%25y%5Cz%22w%27' ]
++	[[ "$output" =~ ^[A-Za-z0-9._~/%-]+$ ]]
++}
++
++@test "decode(encode(x)) == x para nomes dificeis" {
++	local n
++	for n in 'a b/c' 'ção/日本語' 'x#y?z%w' 'a\b' '100%/ok' "aspas'duplas\"" 'a+b' '~til/_u.-'; do
++		local e; e="$(fn npass_url_encode "$n")"
++		run fn npass_url_decode "$e"
++		[ "$status" -eq 0 ]
++		[ "$output" = "$n" ]
++	done
++}
++
++@test "decode recusa %-escape incompleto, nao hexadecimal e NUL" {
++	local bad
++	for bad in 'a%' 'a%4' 'a%zz' 'a%4z' 'a%00b' 'a%0'; do
++		run fn npass_url_decode "$bad"
++		[ "$status" -ne 0 ]
++	done
++}
++
++# --- parser ------------------------------------------------------------------------------------------
++
++@test "URLs invalidas sao recusadas com a mensagem de URL, sem decifrar nada" {
++	local u
++	for u in 'http://HG/a' 'npass:/HG/a' 'npass://HG' 'npass://HG/' 'npass://H G/a' 'npass://HG/a/' \
++		'npass://HG/../etc' 'npass://HG/a/../b' 'npass://HG/%2e%2e/b' 'npass://HG/a/%2E%2E/b' 'npass://HG/a%00b' 'npass://HG/a%zz' \
++		'npass://HG/a%0Ab' 'npass://HG/a%09b' 'npass:///a' 'npass://HG//a' 'HG/a' ''; do
++		NPASS_OPEN_CONFIRM=0 NPASS_GPG=/bin/false run "$NPASS" open --here "$u"
++		[ "$status" -ne 0 ]
++		[[ "$output" == *"URL inválida"* || "$output" == *"uso: npass open"* ]]
++	done
++}
++
++@test "query e fragmento sao ignorados; ID com ponto, traco e underscore e aceito" {
++	"$NPASS" init a.b-c_1 "$FPR" >/dev/null
++	printf 'x\nx\n' | "$NPASS" insert a.b-c_1 a/b >/dev/null
++	NPASS_OPEN_CONFIRM=0 run "$NPASS" open --here 'npass://a.b-c_1/a/b?x=1#frag'
++	[ "$status" -eq 0 ]
++	[[ "$output" == *"## Senha"* ]]
++}
++
++# --- mostrar, e so mostrar ----------------------------------------------------------------------------
++
++@test "open --here mostra a entrada (nome com espaco, acento, # e ?) como o show" {
++	local name='a b/ção#1?x%y'
++	put "$name" "$(md1_doc segredo 'login: eu')"
++	local url; url="npass://HG/$(fn npass_url_encode "$name")"
++	NPASS_OPEN_CONFIRM=0 run "$NPASS" open --here "$url"
++	[ "$status" -eq 0 ]
++	[ "$output" = "$(md1_doc segredo 'login: eu')" ]
++}
++
++@test "open so mostra: nao copia, nao grava, nao muda o repositorio" {
++	put a/x "$(md1_doc segredo)"
++	local antes; antes="$(git -C "$NPASS_STORE" rev-parse HEAD)"
++	NPASS_OPEN_CONFIRM=0 "$NPASS" open --here 'npass://HG/a/x' >/dev/null
++	[ ! -e "$CLIPFILE" ]
++	[ "$(git -C "$NPASS_STORE" rev-parse HEAD)" = "$antes" ]
++	[ -z "$(git -C "$NPASS_STORE" status --porcelain)" ]
++}
++
++@test "entrada ou identidade inexistente: erro, status != 0" {
++	NPASS_OPEN_CONFIRM=0 run "$NPASS" open --here 'npass://HG/nao/existe'
++	[ "$status" -ne 0 ]
++	NPASS_OPEN_CONFIRM=0 run "$NPASS" open --here 'npass://NAOEXISTE/a'
++	[ "$status" -ne 0 ]
++}
++
++@test "renderiza em terminal real (pty) pelo glow, como o show" {
++	put a/x "$(md1_doc segredo)"
++	printf '#!/bin/bash\ncat >/dev/null\nprintf "<<GLOW>>\\n"\n' >"$BATS_TEST_TMPDIR/glow"
++	chmod +x "$BATS_TEST_TMPDIR/glow"
++	NPASS_GLOW="$BATS_TEST_TMPDIR/glow" NPASS_OPEN_CONFIRM=0 run python3 - "$NPASS" <<'PY'
++import os, pty, subprocess, sys
++m, s = pty.openpty()
++p = subprocess.Popen([sys.argv[1], "open", "npass://HG/a/x"], stdout=s, stdin=subprocess.DEVNULL, close_fds=True)
++os.close(s)
++out = b""
++while True:
++    try:
++        d = os.read(m, 4096)
++    except OSError:
++        break
++    if not d:
++        break
++    out += d
++p.wait()
++sys.stdout.write(out.decode(errors="replace"))
++PY
++	[[ "$output" == *"<<GLOW>>"* ]]
++}
++
++# --- confirmacao ---------------------------------------------------------------------------------------------
++
++@test "confirmacao: y mostra; n, vazio e EOF cancelam (status 1)" {
++	put a/x "$(md1_doc segredo)"
++	run bash -c "printf 'y\n' | '$NPASS' open --here npass://HG/a/x"
++	[ "$status" -eq 0 ]
++	[[ "$output" == *"## Senha"* ]]
++	for ans in 'n\n' '\n' ''; do
++		run bash -c "printf '$ans' | '$NPASS' open --here npass://HG/a/x"
++		[ "$status" -eq 1 ]
++		[[ "$output" == *"Cancelado"* ]]
++		[[ "$output" != *"segredo"* ]]
++	done
++}
++
++@test "a confirmacao vem ANTES de qualquer decifragem (gpg quebrado nao importa se disser n)" {
++	put a/x "$(md1_doc segredo)"
++	NPASS_GPG=/bin/false run bash -c "printf 'n\n' | '$NPASS' open --here npass://HG/a/x"
++	[ "$status" -eq 1 ]
++	[[ "$output" == *"Cancelado"* ]]
++}
++
++@test "NPASS_OPEN_CONFIRM=0 pula a confirmacao" {
++	put a/x "$(md1_doc segredo)"
++	NPASS_OPEN_CONFIRM=0 run "$NPASS" open --here npass://HG/a/x </dev/null
++	[ "$status" -eq 0 ]
++}
++
++# --- sem terminal: abre uma janela ---------------------------------------------------------------------------
++
++@test "sem tty (chamado pelo desktop): lanca NPASS_TERMINAL rodando 'open --here --pause URL'" {
++	printf '#!/bin/bash\nprintf "%%s\\n" "$@" > "%s"\n' "$BATS_TEST_TMPDIR/term.args" >"$BATS_TEST_TMPDIR/faketerm"
++	chmod +x "$BATS_TEST_TMPDIR/faketerm"
++	NPASS_TERMINAL="$BATS_TEST_TMPDIR/faketerm --flag" run "$NPASS" open 'npass://HG/a/x'
++	[ "$status" -eq 0 ]
++	local i
++	for i in 1 2 3 4 5 6 7 8 9 10; do [ -s "$BATS_TEST_TMPDIR/term.args" ] && break; sleep 0.2; done
++	run cat "$BATS_TEST_TMPDIR/term.args"
++	[ "${lines[0]}" = "--flag" ]
++	[[ "${lines[1]}" == */npass ]]
++	[ "${lines[2]}" = "open" ]
++	[ "${lines[3]}" = "--here" ]
++	[ "${lines[4]}" = "--pause" ]
++	[ "${lines[5]}" = "npass://HG/a/x" ]
++}
++
++@test "o launcher nao decifra nem mostra nada: so abre a janela (a confirmacao e la)" {
++	printf '#!/bin/bash\ntrue\n' >"$BATS_TEST_TMPDIR/faketerm"
++	chmod +x "$BATS_TEST_TMPDIR/faketerm"
++	NPASS_GPG=/bin/false NPASS_TERMINAL="$BATS_TEST_TMPDIR/faketerm" run "$NPASS" open 'npass://HG/a/x'
++	[ "$status" -eq 0 ]
++	[ -z "$output" ]
++}
++
++@test "URL invalida nunca lanca terminal" {
++	printf '#!/bin/bash\ntouch "%s"\n' "$BATS_TEST_TMPDIR/lancou" >"$BATS_TEST_TMPDIR/faketerm"
++	chmod +x "$BATS_TEST_TMPDIR/faketerm"
++	NPASS_TERMINAL="$BATS_TEST_TMPDIR/faketerm" run "$NPASS" open 'npass://HG/a/../x'
++	[ "$status" -ne 0 ]
++	sleep 0.5
++	[ ! -e "$BATS_TEST_TMPDIR/lancou" ]
++}
++
++# --- escolha do terminal (so a funcao: nada e executado) -------------------------------------------------------
++
++# detect [ENV=VAL...]: roda npass_open_terminal com PATH so do dir fakepath e imprime o prefixo
++# escolhido (ou rc=N). O codigo das funcoes e extraido ANTES, com o PATH normal.
++detect() {
++	sed '$d' "$NPASS" >"$BATS_TEST_TMPDIR/npass.src"
++	env -i PATH="$BATS_TEST_TMPDIR/fakepath" "$@" "$BASH" -c 'source "$1"; if npass_open_terminal; then printf "%s|" "${NPASS_OPEN_TERM[@]}"; else printf "rc=1"; fi' _ "$BATS_TEST_TMPDIR/npass.src"
++}
++
++@test "deteccao de terminal: NPASS_TERMINAL manda, depois TERMINAL (-e), depois foot/kitty/alacritty/wezterm/xterm" {
++	local d="$BATS_TEST_TMPDIR/fakepath"; mkdir -p "$d"
++	run detect "NPASS_TERMINAL=meu term --x"
++	[ "$output" = "meu|term|--x|" ]
++	touch "$d/xterm" "$d/kitty"; chmod +x "$d/xterm" "$d/kitty"
++	run detect
++	[ "$output" = "kitty|" ]
++	rm "$d/kitty"
++	run detect
++	[ "$output" = "xterm|-e|" ]
++	touch "$d/foot" "$d/alacritty"; chmod +x "$d/foot" "$d/alacritty"
++	run detect
++	[ "$output" = "foot|" ]
++	rm "$d/foot"
++	run detect
++	[ "$output" = "alacritty|-e|" ]
++	touch "$d/meuterm"; chmod +x "$d/meuterm"
++	run detect TERMINAL=meuterm
++	[ "$output" = "meuterm|-e|" ]
++	run detect TERMINAL=naoexiste
++	[ "$output" = "alacritty|-e|" ]
++}
++
++@test "nenhum terminal disponivel: a funcao falha (e o open mostra o erro claro, sem chutar um)" {
++	mkdir -p "$BATS_TEST_TMPDIR/fakepath"
++	run detect
++	[ "$output" = "rc=1" ]
++	# e pelo comando: sem NPASS_TERMINAL e com PATH sem terminais
++	sed '$d' "$NPASS" >"$BATS_TEST_TMPDIR/npass.src"
++	run env -i PATH="$BATS_TEST_TMPDIR/fakepath" "$BASH" -c 'source "$1"; cmd_open npass://HG/a/x' _ "$BATS_TEST_TMPDIR/npass.src"
++	[ "$status" -ne 0 ]
++	[[ "$output" == *"não achei um terminal"* ]]
++}
++
++# --- --pause -------------------------------------------------------------------------------------------------------
++
++@test "--pause em terminal real: espera, e limpa tela e scrollback no fim" {
++	put a/x "$(md1_doc segredo)"
++	NPASS_OPEN_CONFIRM=0 run python3 - "$NPASS" <<'PY'
++import os, pty, subprocess, sys
++m, s = pty.openpty()
++p = subprocess.Popen([sys.argv[1], "open", "--here", "--pause", "npass://HG/a/x"], stdout=s, stdin=subprocess.DEVNULL, close_fds=True)
++os.close(s)
++out = b""
++while True:
++    try:
++        d = os.read(m, 4096)
++    except OSError:
++        break
++    if not d:
++        break
++    out += d
++p.wait()
++sys.stdout.write(out.decode(errors="replace").replace("\x1b", "<ESC>"))
++PY
++	[[ "$output" == *"<ESC>[2J<ESC>[3J<ESC>[H"* ]]
++}
++
++@test "--pause fora de terminal nao emite escape de limpeza" {
++	put a/x "$(md1_doc segredo)"
++	NPASS_OPEN_CONFIRM=0 run bash -c "printf '\n' | '$NPASS' open --here --pause npass://HG/a/x"
++	[ "$status" -eq 0 ]
++	[[ "$output" != *$'\033'* ]]
++}
++
++# --- uso e help ------------------------------------------------------------------------------------------------------
++
++@test "uso: sem URL, --help e opcao desconhecida; help lista o open" {
++	run "$NPASS" open
++	[ "$status" -ne 0 ]
++	[[ "$output" == *"uso: npass open"* ]]
++	run "$NPASS" open --help
++	[ "$status" -eq 0 ]
++	[[ "$output" == *"--here"* ]]
++	run "$NPASS" open --nada npass://HG/a
++	[ "$status" -ne 0 ]
++	run "$NPASS" help
++	[[ "$output" == *"open [--here] npass://ID/DIR/PASS"* ]]
++}

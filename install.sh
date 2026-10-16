@@ -79,6 +79,12 @@ man_target="$mandir/npass.1"
 # into the user's tree ($NPASS_STORE/wordlist.txt), which is where it is read from.
 words_dir="$DESTDIR$PREFIX/share/npass/encrypts_alternatives"
 words_target="$words_dir/wordlist.txt"
+# Handler do esquema npass:// (links do `npass show` renderizado -> `npass open`).
+# O Exec leva o caminho ABSOLUTO do binario instalado: a sessao grafica nem sempre
+# tem ~/.local/bin no PATH.
+desktop_dir="$DESTDIR$PREFIX/share/applications"
+desktop_target="$desktop_dir/npass-open.desktop"
+npass_final="${BINDIR:-$PREFIX/bin}/npass"
 
 if [[ -n "$DESTDIR" && "$ext_mode" == yes ]]; then
 	echo "install.sh: extensões moram no diretório do usuário e são assinadas por ele; não combinam com DESTDIR (empacotamento)." >&2
@@ -257,7 +263,7 @@ fi
 
 if [[ $uninstall -eq 1 ]]; then
 	removed=0
-	for f in "$bin_target" "$man_target" "$words_target"; do
+	for f in "$bin_target" "$man_target" "$words_target" "$desktop_target"; do
 		if [[ -e "$f" ]]; then
 			rm -f -- "$f"
 			echo "removido: $f"
@@ -291,13 +297,20 @@ fi
 echo "Reconstruindo bin/npass a partir de lib/*.bash..."
 bash build.sh
 
-mkdir -p "$bindir" "$mandir" "$words_dir"
+mkdir -p "$bindir" "$mandir" "$words_dir" "$desktop_dir"
 install -m 755 bin/npass "$bin_target"
 install -m 644 man/npass.1 "$man_target"
 install -m 644 encrypts_alternatives/wordlist.txt "$words_target"
+sed "s#@NPASS@#$npass_final#" packaging/npass-open.desktop.in >"$desktop_target"
+chmod 644 "$desktop_target"
 echo "instalado: $bin_target"
 echo "instalado: $man_target"
 echo "instalado: $words_target"
+echo "instalado: $desktop_target"
+# Registra o handler npass:// (so fora de empacotamento; o pacote faz isso no hook).
+if [[ -z "$DESTDIR" ]] && command -v update-desktop-database >/dev/null 2>&1; then
+	update-desktop-database "$desktop_dir" 2>/dev/null || true
+fi
 
 # Soft dependency check - informational only. Packaging (the AUR
 # PKGBUILD's depends=()) is what actually enforces this; a manual
@@ -313,6 +326,8 @@ command -v oathtool >/dev/null 2>&1 || command -v otptool >/dev/null 2>&1 \
 	|| echo "aviso: nem oathtool nem otptool encontrados - 'npass otp' não vai funcionar até um dos dois ser instalado." >&2
 command -v qrencode >/dev/null 2>&1 \
 	|| echo "aviso: qrencode não encontrado - 'npass otp uri -q' (QR no terminal) não vai funcionar." >&2
+command -v glow >/dev/null 2>&1 \
+	|| echo "aviso: glow não encontrado - 'npass show' em terminal vai imprimir o texto cru em vez do markdown renderizado." >&2
 
 case ":$PATH:" in
 *":$bindir:"*) ;;

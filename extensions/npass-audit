@@ -41,13 +41,8 @@ def run_npass(args):
 
 
 def list_paths(identity, prefix):
-    output = run_npass(["ls", identity, prefix] if prefix else ["ls", identity])
-    paths = []
-    for line in output.splitlines():
-        value = line.strip()
-        if value and not value.endswith(": (vazio)") and value != identity:
-            paths.append(value)
-    return sorted(set(paths))
+    output = run_npass(["tree", "--flat", identity, prefix] if prefix else ["tree", "--flat", identity])
+    return sorted({line for line in output.splitlines() if line})
 
 
 MD1_MARKER = "<!-- npass:md1 -->"

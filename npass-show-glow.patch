@@ -1,0 +1,659 @@
+diff -ruN '--exclude=bin' '--exclude=gnupg_test' '--exclude=gnupg_atacante' '--exclude=.keys.lock' '--exclude=.fprs' '--exclude=.git' baseT/AGENTS.md newV/AGENTS.md
+--- baseT/AGENTS.md	2026-10-15 22:14:23.839601986 +0000
++++ newV/AGENTS.md	2026-10-15 22:23:05.544436167 +0000
+@@ -22,6 +22,7 @@
+ | Git automático | `lib/07-git.bash` | `tests/update.bats`, `tests/store-extras.bats` |
+ | Internacionalização | `lib/09-i18n.bash` | `tests/i18n.bats` |
+ | PIN numérico (`pin`, modos `--password`/`--field`) | `lib/08-pin.bash` | `tests/pin.bats` |
++| `show` renderizado com glow | `lib/16-view.bash` | `lib/03-store.bash` (`cmd_show` cru interno), `tests/view.bats` |
+ | Listagem (`tree`, `--flat`) | `lib/15-tree.bash` | `extensions/npass-import` e `extensions/npass-audit` (usam `tree --flat`), `tests/tree.bats` |
+ | Senhas de backup (`backup`, anexos cifrados) | `lib/13-backup.bash` | `lib/03-store.bash` (cascata em `rm`/`mv`), `lib/06-update.bash`, `extensions/npass-audit`, `tests/backup.bats` |
+ | Assinatura de identidades/artefatos | `lib/10-signing.bash` | `tests/signing.bats` |
+@@ -58,6 +59,7 @@
+    +--> 11-extensions.bash
+    +--> 12-diceware.bash
+    +--> 13-backup.bash
++   +--> 16-view.bash
+    +--> 15-tree.bash
+    +--> 14-entry.bash   (formato md1: usado por 03, 04, 05, 06, 08, 12)
+              |
+diff -ruN '--exclude=bin' '--exclude=gnupg_test' '--exclude=gnupg_atacante' '--exclude=.keys.lock' '--exclude=.fprs' '--exclude=.git' baseT/README.md newV/README.md
+--- baseT/README.md	2026-10-15 22:14:23.839828547 +0000
++++ newV/README.md	2026-10-15 22:23:05.544695328 +0000
+@@ -63,6 +63,7 @@
+ * `shred`
+ * `git` (opcional)
+ * `wl-copy` / `wl-paste` para clipboard
++* `glow` para `npass show` renderizado no terminal (sem ele, o `show` avisa e imprime o texto cru)
+ * `oathtool` ou `otptool` para OTP
+ * `qrencode` para QR Code
+ 
+@@ -110,12 +111,23 @@
+ npass insert pessoal email/gmail
+ ```
+ 
+-Mostrar:
++Mostrar (em terminal sai **renderizado pelo `glow`**; em pipe, script ou extensão sai o documento md1 cru):
+ 
+ ```bash
+-npass show pessoal email/gmail
++npass show pessoal email/gmail            # terminal: renderizado; pipe: cru
++npass show --raw pessoal email/gmail      # sempre cru
++npass show --render pessoal email/gmail | less -R   # renderizado mesmo em pipe
+ ```
+ 
++O `glow` é **dependência do `show` em terminal**: sem ele o npass avisa e imprime o texto cru (nunca deixa de mostrar). O que o `glow` recebe não é o documento md1, e sim um documento só de **exibição**, porque markdown renderizado deforma texto (`a*b*c_d_` viraria itálico, `<`, `&` e `\` somem, uma senha começando com `#` viraria título) e você copiaria da tela uma senha diferente da guardada:
++
++- a **senha**, o **OTP** e os **valores dos campos** vão em bloco ou span de código, sempre com cerca mais longa que qualquer sequência de crases do próprio texto; os nomes de campo são escapados;
++- valores `http(s)://` viram link clicável (autolink, URL mostrada uma vez); com um valor de aparência suspeita (`<`, `>`, `(`, `)`, crase, barra invertida, espaço) vira só código;
++- as **notas** são markdown de verdade: negrito, listas e links funcionam;
++- o texto vai ao `glow` por **stdin**, nunca por argumento, e nada é gravado em disco.
++
++Variáveis: `NPASS_SHOW_RENDER=auto|always|never` (padrão `auto`: renderiza só em terminal; a flag `--raw`/`--render` vence a variável), `NPASS_GLOW` (caminho do binário), `NPASS_GLOW_STYLE` (`-s` do glow: `dark`, `light`, `notty`...) e `NPASS_GLOW_WIDTH` (`-w`). O npass não passa `-p`; se o seu `glow.yml` tiver `pager: true`, o pager abre por escolha sua. **Para copiar a senha use `npass clip`**: o `glow` desenha margem e preenchimento ao redor do texto, e selecionar da tela leva isso junto. Entrada no formato antigo ou com estrutura inválida sai crua, sem renderizar.
++
+ Copiar para o clipboard (só a senha, por padrão):
+ 
+ ```bash
+diff -ruN '--exclude=bin' '--exclude=gnupg_test' '--exclude=gnupg_atacante' '--exclude=.keys.lock' '--exclude=.fprs' '--exclude=.git' baseT/install.sh newV/install.sh
+--- baseT/install.sh	2026-10-15 22:14:23.908473653 +0000
++++ newV/install.sh	2026-10-15 22:23:05.546200754 +0000
+@@ -313,6 +313,8 @@
+ 	|| echo "aviso: nem oathtool nem otptool encontrados - 'npass otp' não vai funcionar até um dos dois ser instalado." >&2
+ command -v qrencode >/dev/null 2>&1 \
+ 	|| echo "aviso: qrencode não encontrado - 'npass otp uri -q' (QR no terminal) não vai funcionar." >&2
++command -v glow >/dev/null 2>&1 \
++	|| echo "aviso: glow não encontrado - 'npass show' em terminal vai imprimir o texto cru em vez do markdown renderizado." >&2
+ 
+ case ":$PATH:" in
+ *":$bindir:"*) ;;
+diff -ruN '--exclude=bin' '--exclude=gnupg_test' '--exclude=gnupg_atacante' '--exclude=.keys.lock' '--exclude=.fprs' '--exclude=.git' baseT/lib/00-main.bash newV/lib/00-main.bash
+--- baseT/lib/00-main.bash	2026-10-15 22:14:23.908558061 +0000
++++ newV/lib/00-main.bash	2026-10-15 22:23:05.546412030 +0000
+@@ -9,7 +9,7 @@
+ 	case "$cmd" in
+ 	init) npass_identity_init "$@" ;;
+ 	identities | ids) cmd_identities "$@" ;;
+-	show) cmd_show "$@" ;;
++	show) cmd_view "$@" ;;
+ 	insert | add) cmd_insert "$@" ;;
+ 	rm | remove | delete) cmd_rm "$@" ;;
+ 	mv | rename) cmd_mv "$@" ;;
+@@ -55,7 +55,7 @@
+ 			  sign ID [KEYID]          assina (ou reassina) o .gpg-id de uma identidade
+ 			  extension sign CAMINHO [KEYID]   assina um executável de extensão
+ 			  extension list           lista extensões e se cada uma passaria nas checagens
+-			  show ID DIR/PASS         mostra um segredo
++			  show [--raw|--render] ID DIR/PASS   mostra um segredo (em terminal: markdown renderizado pelo glow; em pipe: cru)
+ 			  clip [CAMPO] ID DIR/PASS copia a senha (padrão), 'all' ou um campo '- chave: valor'
+ 			  get [CAMPO] ID DIR/PASS  imprime (em vez de copiar) o mesmo valor que o clip copiaria
+ 			  pin (--password|--field) [-c|-f] [--in-place] ID DIR/PASS [N]   gera um PIN numérico: como a senha ou como o campo 'pin:'
+diff -ruN '--exclude=bin' '--exclude=gnupg_test' '--exclude=gnupg_atacante' '--exclude=.keys.lock' '--exclude=.fprs' '--exclude=.git' baseT/lib/09-i18n.bash newV/lib/09-i18n.bash
+--- baseT/lib/09-i18n.bash	2026-10-15 22:14:23.909182227 +0000
++++ newV/lib/09-i18n.bash	2026-10-15 22:23:05.547290895 +0000
+@@ -43,6 +43,8 @@
+ 	[msg_cancelado]="Cancelado.\n"
+ 	[erro_senhas_diferentes]="as senhas não coincidem"
+ 	[msg_salvo]="%s: %s salvo.\n"
++	[warn_glow_ausente]="glow não encontrado: mostrando o texto cru (instale o glow para ver o markdown renderizado; NPASS_SHOW_RENDER=never ou --raw silenciam este aviso)"
++	[warn_glow_falhou]="o glow falhou (código %s): mostrando o texto cru"
+ 	[erro_ls_movido]="'ls' virou 'tree': npass tree ID [DIR] (árvore) ou npass tree --flat ID [DIR] (um caminho por linha, para scripts)"
+ 	[erro_formato_antigo]="%s: %s está no formato antigo (texto puro); converta a identidade com: npass import npass-legacy %s"
+ 	[erro_formato_invalido]="%s: %s tem o marcador md1 mas a estrutura é inválida (esperado: ## Senha, depois ## Campos, ## OTP e ## Notas, nessa ordem)"
+@@ -192,6 +194,8 @@
+ 	[msg_cancelado]="Cancelled.\n"
+ 	[erro_senhas_diferentes]="passwords do not match"
+ 	[msg_salvo]="%s: %s saved.\n"
++	[warn_glow_ausente]="glow not found: showing the raw text (install glow to see rendered markdown; NPASS_SHOW_RENDER=never or --raw silence this warning)"
++	[warn_glow_falhou]="glow failed (code %s): showing the raw text"
+ 	[erro_ls_movido]="'ls' is now 'tree': npass tree ID [DIR] (tree) or npass tree --flat ID [DIR] (one path per line, for scripts)"
+ 	[erro_formato_antigo]="%s: %s is in the old plain-text format; convert the identity with: npass import npass-legacy %s"
+ 	[erro_formato_invalido]="%s: %s has the md1 marker but its structure is invalid (expected: ## Senha, then ## Campos, ## OTP and ## Notas, in that order)"
+diff -ruN '--exclude=bin' '--exclude=gnupg_test' '--exclude=gnupg_atacante' '--exclude=.keys.lock' '--exclude=.fprs' '--exclude=.git' baseT/lib/16-view.bash newV/lib/16-view.bash
+--- baseT/lib/16-view.bash	1970-01-01 00:00:00.000000000 +0000
++++ newV/lib/16-view.bash	2026-10-15 22:23:05.548261732 +0000
+@@ -0,0 +1,183 @@
++#!/usr/bin/env bash
++# npass show - ver uma entrada, renderizada com glow quando e para humanos.
++#
++#   npass show ID DIR/PASS           em terminal: markdown renderizado pelo glow;
++#                                    em pipe/script/extensao: o documento CRU (md1)
++#   npass show --raw ID DIR/PASS     sempre cru
++#   npass show --render ID DIR/PASS  sempre renderizado (mesmo em pipe: p/ `less -R`)
++#   NPASS_SHOW_RENDER=auto|always|never   padrao de quem nao quer passar a flag
++#
++# O que o glow recebe NAO e o documento md1, e sim um documento so de EXIBICAO.
++# Markdown renderizado deforma texto: `a*b*c_d_` viraria italico, `<`, `&` e `\`
++# somem, uma senha que comeca com `#` viraria titulo. Voce copiaria da tela uma
++# senha diferente da guardada. Entao senha, valores de campo e OTP vao em bloco
++# ou span de codigo (a cerca e sempre mais longa que qualquer sequencia de crases
++# do proprio texto, e os nomes sao escapados). So as notas sao markdown de verdade.
++#
++# O texto vai ao glow por stdin, nunca por argumento (nada de senha em
++# /proc/*/cmdline) e nada e gravado em disco. Para COPIAR use `npass clip`: o
++# glow desenha margem e preenchimento ao redor do texto, e selecionar da tela
++# leva isso junto.
++#
++# cmd_show (03-store) continua sendo o decifrador cru que os outros comandos
++# usam por dentro; so o COMANDO `npass show` passa por aqui.
++
++# npass_md_escape TEXTO -> texto com escape de markdown (barra invertida antes
++# da pontuacao que o markdown interpreta).
++npass_md_escape() {
++	printf '%s' "$1" | LC_ALL=C sed -E 's/([][\\`*_{}()<>#+!|~&])/\\\1/g'
++}
++
++# npass_md_ticks TEXTO -> uma sequencia de crases maior que qualquer uma no texto
++# (minimo 1 para span, 3 para bloco: o chamador passa o minimo em $2).
++npass_md_ticks() {
++	local rest="$1" min="$2" max=0 re='(`+)' fence
++	while [[ "$rest" =~ $re ]]; do
++		((${#BASH_REMATCH[1]} > max)) && max=${#BASH_REMATCH[1]}
++		rest="${rest#*"${BASH_REMATCH[0]}"}"
++	done
++	((max + 1 < min)) && max=$((min - 1))
++	printf -v fence '%*s' "$((max + 1))" ''
++	printf '%s' "${fence// /\`}"
++}
++
++# npass_md_fence TEXTO -> bloco de codigo cercado, o texto exatamente como esta.
++npass_md_fence() {
++	local fence
++	fence="$(npass_md_ticks "$1" 3)"
++	printf '%s\n%s\n%s\n' "$fence" "$1" "$fence"
++}
++
++# npass_md_code TEXTO -> span de codigo. Os espacos de cada lado sao removidos pelo
++# markdown (uma vez, nos dois lados), entao o texto sai exato mesmo comecando ou
++# terminando com crase ou espaco.
++npass_md_code() {
++	local t
++	t="$(npass_md_ticks "$1" 1)"
++	printf '%s %s %s' "$t" "$1" "$t"
++}
++
++# npass_display_value VALOR -> um valor de campo: autolink se for URL web, senao codigo.
++# A regex exclui espaco, < > ( ) crase e barra invertida, entao o autolink nunca fecha antes da hora.
++npass_display_value() {
++	local v="$1" re='^https?://[^[:space:]<>()`\\]+$'
++	if [[ -z "$v" ]]; then
++		printf '*(vazio)*'
++	elif [[ "$v" =~ $re ]]; then
++		printf '<%s>' "$v"   # autolink: o glow mostra a URL uma vez so (link com texto repetia)
++	else
++		npass_md_code "$v"
++	fi
++}
++
++# npass_display_entry LOGICAL -> documento de exibicao da entrada md1 ja carregada
++# em NPASS_E_* (npass_entry_load/_require).
++npass_display_entry() {
++	local logical="$1" l re='^-[[:space:]]+([^:]+):[[:space:]]*(.*)$' k
++	printf '# %s\n\n## Senha\n\n' "$(npass_md_escape "$logical")"
++	if [[ -n "$NPASS_E_PW" ]]; then
++		npass_md_fence "$NPASS_E_PW"
++	else
++		printf '*(vazia)*\n'
++	fi
++	if ((${#NPASS_E_FIELDS[@]})); then
++		printf '\n## Campos\n\n'
++		for l in "${NPASS_E_FIELDS[@]}"; do
++			if [[ "$l" =~ $re ]]; then
++				k="${BASH_REMATCH[1]}"
++				k="${k#"${k%%[![:space:]]*}"}"
++				k="${k%"${k##*[![:space:]]}"}"
++				printf -- '- **%s**: %s\n' "$(npass_md_escape "$k")" "$(npass_display_value "${BASH_REMATCH[2]}")"
++			else
++				printf -- '- %s\n' "$(npass_md_escape "$l")"
++			fi
++		done
++	fi
++	if ((${#NPASS_E_OTP[@]})); then
++		printf '\n## OTP\n\n'
++		npass_md_fence "$(printf '%s\n' "${NPASS_E_OTP[@]}")"
++	fi
++	if [[ -n "$NPASS_E_NOTES" ]]; then
++		printf '\n## Notas\n\n%s\n' "$NPASS_E_NOTES"
++	fi
++}
++
++# npass_display_backup LOGICAL CONTEUDO -> exibicao de um anexo de `npass backup`.
++npass_display_backup() {
++	local logical="$1" content="$2" line expect=0 re='^-[[:space:]]+([^:]+):[[:space:]]*(.*)$'
++	printf '# %s\n\n' "$(npass_md_escape "$logical")"
++	if [[ "${content%%$'\n'*}" == '<!-- npass:backup-data v1 -->' ]]; then
++		while IFS= read -r line; do
++			if ((expect)); then
++				npass_md_fence "$line"
++				expect=0
++			elif [[ "$line" =~ ^'## Backup '([0-9]+)$ ]]; then
++				printf '\n## Backup %s\n\n' "${BASH_REMATCH[1]}"
++				expect=1
++			fi
++		done <<<"$content"
++	else
++		while IFS= read -r line; do
++			if [[ "$line" =~ $re ]]; then
++				printf -- '- **%s**: %s\n' "$(npass_md_escape "${BASH_REMATCH[1]}")" "$(npass_display_value "${BASH_REMATCH[2]}")"
++			fi
++		done <<<"$content"
++	fi
++}
++
++# npass_glow_render < documento -> renderizado. 127 se nao ha glow.
++npass_glow_render() {
++	local bin="${NPASS_GLOW:-glow}"
++	command -v "$bin" >/dev/null 2>&1 || return 127
++	# sem -p o glow nao abre pager (testado no v3.0.0; `--pager=false` ao contrario ATIVA
++	# o pager nessa versao). Se o glow.yml de quem usa tiver `pager: true`, a escolha e dele.
++	local -a args=()
++	[[ -n "${NPASS_GLOW_STYLE:-}" ]] && args+=(-s "$NPASS_GLOW_STYLE")
++	[[ -n "${NPASS_GLOW_WIDTH:-}" ]] && args+=(-w "$NPASS_GLOW_WIDTH")
++	"$bin" "${args[@]}" -
++}
++
++cmd_view() {
++	local mode="${NPASS_SHOW_RENDER:-auto}"
++	while [[ "$1" == -* ]]; do
++		case "$1" in
++		-r | --raw) mode=never; shift ;;
++		--render) mode=always; shift ;;
++		--) shift; break ;;
++		*) npass_die "$(npass_t erro_opcao_desconhecida "$1")" ;;
++		esac
++	done
++	local id="$1" logical="$2"
++	[[ -z "$id" || -z "$logical" ]] && npass_die "uso: npass show [--raw|--render] ID DIR/PASS"
++	case "$mode" in
++	always) ;;
++	never) cmd_show "$id" "$logical"; return ;;
++	*) [[ -t 1 ]] || { cmd_show "$id" "$logical"; return; } ;;
++	esac
++
++	local content
++	content="$(cmd_show "$id" "$logical")" || exit 1
++	local doc
++	if npass_entry_load "$content"; then
++		doc="$(npass_display_entry "$logical")"
++	elif npass_backup_is_marker "$content"; then
++		doc="$(npass_display_backup "$logical" "$content")"
++	else
++		# formato antigo ou estrutura invalida: nao ha o que renderizar com seguranca
++		printf '%s\n' "$content"
++		return 0
++	fi
++	local rendered rc
++	rendered="$(printf '%s\n' "$doc" | npass_glow_render)"
++	rc=$?
++	if ((rc != 0)); then
++		if ((rc == 127)); then
++			npass_warn "$(npass_t warn_glow_ausente)"
++		else
++			npass_warn "$(npass_t warn_glow_falhou "$rc")"
++		fi
++		printf '%s\n' "$content"
++		return 0
++	fi
++	printf '%s\n' "$rendered"
++}
+diff -ruN '--exclude=bin' '--exclude=gnupg_test' '--exclude=gnupg_atacante' '--exclude=.keys.lock' '--exclude=.fprs' '--exclude=.git' baseT/lib/AGENTS.md newV/lib/AGENTS.md
+--- baseT/lib/AGENTS.md	2026-10-15 22:14:23.909444669 +0000
++++ newV/lib/AGENTS.md	2026-10-15 22:23:05.547726129 +0000
+@@ -21,6 +21,7 @@
+ | `10-signing.bash` | assinatura e verificação |
+ | `11-extensions.bash` | descoberta, instalação e execução de extensões |
+ | `12-diceware.bash` | comandos `diceware` (com alturas) e `memorable` (sem índice); lista de palavras em `$NPASS_STORE/wordlist.txt` |
++| `16-view.bash` | comando `show` (`cmd_view`): renderiza com glow em terminal, cru em pipe; monta o documento de exibição (senha/OTP/valores em código, nomes escapados); `cmd_show` (03) segue sendo o decifrador cru interno |
+ | `15-tree.bash` | comando `tree` (substitui o `ls`): árvore dos caminhos lógicos a partir do mapa, `--flat` para máquina, marca `[backup]` por nome |
+ | `14-entry.bash` | formato md1: `npass_entry_load/_render/_new/_with_password/_require`, campos (`_field_get/_set/_has`) e OTP (`_otp_uri/_otp_set`); estado em globais `NPASS_E_*` (chame direto, nunca em `$(...)`) |
+ | `13-backup.bash` | comando `backup` e helpers de anexo (`npass_backup_attachments`, `npass_backup_is_attachment`, `npass_backup_drop`); `rm`/`mv`/`update` o chamam |
+@@ -29,6 +30,7 @@
+ 
+ - Problema de `init`, identidade ou `.gpg-id` -> `02-identity.bash`
+ - Problema de `insert/show/edit/rm/mv` -> `03-store.bash`
++- Problema de `show` renderizado, glow, documento de exibição -> `16-view.bash`
+ - Problema de `tree` (árvore, `--flat`, marca `[backup]`) -> `15-tree.bash`
+ - Problema envolvendo `.map.gpg` ou nomes de blobs -> `03-store.bash`
+ - Problema de clipboard padrão -> `04-clipboard.bash`
+diff -ruN '--exclude=bin' '--exclude=gnupg_test' '--exclude=gnupg_atacante' '--exclude=.keys.lock' '--exclude=.fprs' '--exclude=.git' baseT/man/npass.1 newV/man/npass.1
+--- baseT/man/npass.1	2026-10-15 22:14:23.909934353 +0000
++++ newV/man/npass.1	2026-10-15 22:23:05.548587019 +0000
+@@ -81,8 +81,27 @@
+ e.g. after rotating its recipients, or to opt an identity created
+ before this feature existed into verification.
+ .TP
+-.BI "show " ID " " DIR/PASS
+-Decrypt and print a secret.
++.BI "show [\-\-raw|\-\-render] " ID " " DIR/PASS
++Decrypt and show a secret. On a terminal the entry is rendered with
++.BR glow (1);
++when stdout is a pipe, a script or an extension it prints the raw md1 document.
++.B \-\-raw
++always prints it raw,
++.B \-\-render
++always renders (e.g. into
++.BR "less \-R" ).
++What glow receives is not the md1 document but a display\-only one: the password,
++the OTP and the field values go in code blocks or code spans, always fenced by more
++backticks than the longest run in the text itself, and field names are escaped, so
++markdown never alters what is shown (\fBa*b*c_d_\fR would otherwise render in italics).
++Only the notes are real markdown, and
++.B http(s)://
++values become links. The text goes to glow on stdin, never as an argument, and
++nothing is written to disk. If glow is missing or fails, a warning is printed and
++the raw text is shown. An entry in the old format or with an invalid structure is
++always shown raw. To copy a password use
++.BR clip :
++glow draws margins and padding around the text.
+ .TP
+ .BI "identities"
+ List the identities and how many secrets each holds
+@@ -498,6 +517,27 @@
+ (the tool's default/core language). Command usage text and this man
+ page are not affected by this variable.
+ .TP
++.B NPASS_SHOW_RENDER
++.BR auto " (default: render only on a terminal), " always " or " never .
++The flags
++.BR \-\-raw " and " \-\-render
++win over it.
++.TP
++.B NPASS_GLOW
++Path of the glow binary used by
++.BR show .
++Default:
++.BR glow .
++.TP
++.B NPASS_GLOW_STYLE
++Passed to glow as
++.BR \-s ;
++unset leaves glow's own default.
++.TP
++.B NPASS_GLOW_WIDTH
++Passed to glow as
++.BR \-w .
++.TP
+ .B NPASS_CLIP_TIME
+ Seconds before a clipboard copy is cleared. Default: 45.
+ .TP
+diff -ruN '--exclude=bin' '--exclude=gnupg_test' '--exclude=gnupg_atacante' '--exclude=.keys.lock' '--exclude=.fprs' '--exclude=.git' baseT/packaging/PKGBUILD newV/packaging/PKGBUILD
+--- baseT/packaging/PKGBUILD	2026-10-15 22:14:23.910186599 +0000
++++ newV/packaging/PKGBUILD	2026-10-15 22:23:05.549024918 +0000
+@@ -24,7 +24,9 @@
+ arch=('any')
+ url="https://github.com/HGBits/npass-store.git"
+ license=('gplv3')
+-depends=('bash' 'gnupg')
++# glow: o renderizador do 'npass show' em terminal (markdown, links). Sem ele o show ainda
++# funciona (avisa e imprime o texto cru), mas a proposta do md1 depende dele, entao e dependencia.
++depends=('bash' 'gnupg' 'glow')
+ optdepends=(
+ 	'git: para "npass git" e commits automáticos por identidade'
+ 	'python: para a extensão opcional npass-import (instale com ./install.sh --extensions-only)'
+diff -ruN '--exclude=bin' '--exclude=gnupg_test' '--exclude=gnupg_atacante' '--exclude=.keys.lock' '--exclude=.fprs' '--exclude=.git' baseT/tests/AGENTS.md newV/tests/AGENTS.md
+--- baseT/tests/AGENTS.md	2026-10-15 22:14:23.911160381 +0000
++++ newV/tests/AGENTS.md	2026-10-15 22:23:05.551832839 +0000
+@@ -18,6 +18,7 @@
+ | `import-pass-secrets.bats` | importação de `pass-secrets` |
+ | `otp.bats` | OTP |
+ | `pin.bats` | PIN (`--password`, `--field`) |
++| `view.bats` | `show` renderizado: quando renderiza (TTY real via pty), o que o glow recebe, glow ausente/falhando, anexos |
+ | `tree.bats` | `tree`: desenho, `--flat`, prefixo por componente, `[backup]`, erros e o aviso do `ls` antigo |
+ | `entry-md1.bats` | formato md1 (contrato, preservação, recusa do formato antigo em todos os comandos), `get`, OTP e `audit` |
+ | `import-legacy.bats` | `import npass-legacy` (conversão, verificação, idempotência, `--dry-run`) e imports de árvore em md1 |
+diff -ruN '--exclude=bin' '--exclude=gnupg_test' '--exclude=gnupg_atacante' '--exclude=.keys.lock' '--exclude=.fprs' '--exclude=.git' baseT/tests/view.bats newV/tests/view.bats
+--- baseT/tests/view.bats	1970-01-01 00:00:00.000000000 +0000
++++ newV/tests/view.bats	2026-10-15 22:23:05.558312056 +0000
+@@ -0,0 +1,253 @@
++#!/usr/bin/env bats
++# npass show renderizado com glow (lib/16-view.bash). O glow aqui e falso: grava
++# argumentos e stdin e devolve o stdin com uma marca. O que se testa e (1) QUANDO
++# renderiza, (2) O QUE o glow recebe (documento de exibicao: senha em codigo, nada
++# interpretado, nada em argv) e (3) o que acontece quando o glow falta ou falha.
++
++setup() {
++	export GNUPGHOME="$BATS_TEST_DIRNAME/gnupg_test"
++	load helper
++	npass_test_keys || return 1
++	command -v python3 >/dev/null || skip "python3 nao instalado"
++	export NPASS_STORE="$BATS_TEST_TMPDIR/store"
++	export NPASS="$BATS_TEST_DIRNAME/../bin/npass"
++	export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
++	export GLOWLOG="$BATS_TEST_TMPDIR/glowlog"
++	cat >"$BATS_TEST_TMPDIR/glow" <<'EOF'
++#!/bin/bash
++printf '%s\n' "$*" >"$GLOWLOG.args"
++cat >"$GLOWLOG.in"
++printf '<<GLOW>>\n'
++cat "$GLOWLOG.in"
++EOF
++	chmod +x "$BATS_TEST_TMPDIR/glow"
++	export NPASS_GLOW="$BATS_TEST_TMPDIR/glow"
++	unset NPASS_SHOW_RENDER NPASS_GLOW_STYLE NPASS_GLOW_WIDTH
++	"$NPASS" init HG "$FPR" >/dev/null
++}
++
++put() { printf '%s\0%s\0' "$1" "$2" | "$NPASS" insert --batch -f HG >/dev/null; }
++
++# run_tty CMD...: roda com stdout num pseudo-terminal (para -t 1 ser verdade)
++run_tty() {
++	python3 - "$@" <<'PY'
++import os, pty, subprocess, sys
++m, s = pty.openpty()
++p = subprocess.Popen(sys.argv[1:], stdout=s, stdin=subprocess.DEVNULL, close_fds=True)
++os.close(s)
++out = b""
++while True:
++    try:
++        d = os.read(m, 4096)
++    except OSError:
++        break
++    if not d:
++        break
++    out += d
++p.wait()
++sys.stdout.write(out.decode(errors="replace").replace("\r\n", "\n"))
++sys.exit(p.returncode)
++PY
++}
++
++# --- quando renderiza -----------------------------------------------------------------------------
++
++@test "fora de terminal (pipe, script, extensao): documento CRU, o glow nem e chamado" {
++	put a/x "$(md1_doc segredo 'login: eu')"
++	run "$NPASS" show HG a/x
++	[ "$status" -eq 0 ]
++	[ "$output" = "$(md1_doc segredo 'login: eu')" ]
++	[ ! -e "$GLOWLOG.in" ]
++}
++
++@test "em terminal (TTY): renderiza pelo glow" {
++	put a/x "$(md1_doc segredo 'login: eu')"
++	run run_tty "$NPASS" show HG a/x
++	[ "$status" -eq 0 ]
++	[[ "$output" == *"<<GLOW>>"* ]]
++	[ -e "$GLOWLOG.in" ]
++}
++
++@test "em terminal, --raw e NPASS_SHOW_RENDER=never imprimem o cru" {
++	put a/x "$(md1_doc segredo)"
++	run run_tty "$NPASS" show --raw HG a/x
++	[ "$output" = "$(md1_doc segredo)" ]
++	NPASS_SHOW_RENDER=never run run_tty "$NPASS" show HG a/x
++	[ "$output" = "$(md1_doc segredo)" ]
++	[ ! -e "$GLOWLOG.in" ]
++}
++
++@test "--render e NPASS_SHOW_RENDER=always renderizam mesmo em pipe; a flag vence o ambiente" {
++	put a/x "$(md1_doc segredo)"
++	run "$NPASS" show --render HG a/x
++	[[ "$output" == "<<GLOW>>"* ]]
++	NPASS_SHOW_RENDER=always run "$NPASS" show HG a/x
++	[[ "$output" == "<<GLOW>>"* ]]
++	NPASS_SHOW_RENDER=never run "$NPASS" show --render HG a/x
++	[[ "$output" == "<<GLOW>>"* ]]
++	NPASS_SHOW_RENDER=always run "$NPASS" show --raw HG a/x
++	[ "$output" = "$(md1_doc segredo)" ]
++}
++
++# --- o que o glow recebe ----------------------------------------------------------------------------
++
++@test "documento de exibicao: titulo, secoes, senha em bloco de codigo" {
++	put a/x "$(md1_doc segredo 'login: eu@x.com')"$'\n\n## Notas\numa nota'
++	"$NPASS" show --render HG a/x >/dev/null
++	run cat "$GLOWLOG.in"
++	[ "$output" = $'# a/x\n\n## Senha\n\n```\nsegredo\n```\n\n## Campos\n\n- **login**: ` eu@x.com `\n\n## Notas\n\numa nota' ]
++}
++
++@test "senha com markdown (a*b*c_d_<e>&\\f, ## x, # y) entra LITERAL num bloco, sem escape" {
++	local pw='a*b*c_d_<e>&\f ## x'
++	put a/x "$(md1_doc "$pw")"
++	"$NPASS" show --render HG a/x >/dev/null
++	run cat "$GLOWLOG.in"
++	[[ "$output" == *$'```\n'"$pw"$'\n```'* ]]
++	put a/y "$(md1_doc '# titulo falso')"
++	"$NPASS" show --render HG a/y >/dev/null
++	run cat "$GLOWLOG.in"
++	[[ "$output" == *$'```\n# titulo falso\n```'* ]]
++}
++
++@test "senha com crases: a cerca e sempre mais longa que a maior sequencia de crases" {
++	put a/x "$(md1_doc 'a```b')"
++	"$NPASS" show --render HG a/x >/dev/null
++	run cat "$GLOWLOG.in"
++	[[ "$output" == *$'````\na```b\n````'* ]]
++	put a/y "$(md1_doc '`')"
++	"$NPASS" show --render HG a/y >/dev/null
++	run cat "$GLOWLOG.in"
++	[[ "$output" == *$'```\n`\n```'* ]]
++}
++
++@test "senha vazia mostra (vazia); a entrada so de OTP mostra o OTP em bloco" {
++	put a/x "$(md1_doc '')"$'\n\n## OTP\notpauth://totp/x?secret=ABC&issuer=Y'
++	"$NPASS" show --render HG a/x >/dev/null
++	run cat "$GLOWLOG.in"
++	[[ "$output" == *$'## Senha\n\n*(vazia)*'* ]]
++	[[ "$output" == *$'## OTP\n\n```\notpauth://totp/x?secret=ABC&issuer=Y\n```'* ]]
++}
++
++@test "campos: valor em span de codigo, nome escapado, URL vira autolink, vazio vira (vazio)" {
++	put a/x "$(md1_doc pw 'lo*gin_x: a*b' 'url: https://x.com/a_b' 'nada:' 'cr: x`y')"
++	"$NPASS" show --render HG a/x >/dev/null
++	run cat "$GLOWLOG.in"
++	[[ "$output" == *'- **lo\*gin\_x**: ` a*b `'* ]]
++	[[ "$output" == *'- **url**: <https://x.com/a_b>'* ]]
++	[[ "$output" == *'- **nada**: *(vazio)*'* ]]
++	[[ "$output" == *'- **cr**: `` x`y ``'* ]]
++}
++
++@test "valor com cara de URL mas com caractere perigoso nao vira autolink" {
++	put a/x "$(md1_doc pw 'url: https://x.com/<b>' 'u2: https://x.com/a)b')"
++	"$NPASS" show --render HG a/x >/dev/null
++	run cat "$GLOWLOG.in"
++	[[ "$output" != *"<https://"* ]]
++	[[ "$output" == *'` https://x.com/<b> `'* ]]
++}
++
++@test "as notas sao markdown de verdade: passam como estao" {
++	put a/x "$(md1_doc pw)"$'\n\n## Notas\numa **nota** com [link](https://z.org)\n- item\n\n## Senha'
++	"$NPASS" show --render HG a/x >/dev/null
++	run cat "$GLOWLOG.in"
++	[[ "$output" == *$'## Notas\n\numa **nota** com [link](https://z.org)\n- item\n\n## Senha' ]]
++}
++
++@test "o glow recebe a senha so por stdin: nada em argv; sem arquivo temporario com ela" {
++	put a/x "$(md1_doc 'SenhaUnicaXYZ123')"
++	"$NPASS" show --render HG a/x >/dev/null
++	run cat "$GLOWLOG.args"
++	[ "$output" = "-" ]
++	[[ "$output" != *"SenhaUnicaXYZ123"* ]]
++	run grep -rl "SenhaUnicaXYZ123" "$NPASS_STORE" "${TMPDIR:-/tmp}/npass"* 2>/dev/null
++	[[ "$output" != *"SenhaUnicaXYZ123"* ]]
++}
++
++@test "NPASS_GLOW_STYLE e NPASS_GLOW_WIDTH viram -s e -w; sem eles so '-'" {
++	put a/x "$(md1_doc pw)"
++	NPASS_GLOW_STYLE=dark NPASS_GLOW_WIDTH=70 "$NPASS" show --render HG a/x >/dev/null
++	run cat "$GLOWLOG.args"
++	[ "$output" = "-s dark -w 70 -" ]
++}
++
++# --- anexos de backup ---------------------------------------------------------------------------------
++
++@test "anexos de backup: dados com cada senha em bloco; ponteiro como lista" {
++	printf 'x\nx\n' | "$NPASS" insert HG a/x >/dev/null
++	printf 'b*1_\nb*1_\nb2\nb2\n' | "$NPASS" backup -n 2 HG a/x >/dev/null
++	"$NPASS" show --render HG a/x/Backup-x.dados.md >/dev/null
++	run cat "$GLOWLOG.in"
++	[ "$output" = $'# a/x/Backup-x.dados.md\n\n\n## Backup 1\n\n```\nb*1_\n```\n\n## Backup 2\n\n```\nb2\n```' ]
++	"$NPASS" show --render HG a/x/Backup-x.md >/dev/null
++	run cat "$GLOWLOG.in"
++	[[ "$output" == *'- **arquivo**: ` Backup-x.dados.md `'* ]]
++	[[ "$output" == *'- **quantidade**: ` 2 `'* ]]
++}
++
++# --- quando o glow falta ou falha -----------------------------------------------------------------------
++
++@test "sem glow: avisa e imprime o documento cru (status 0)" {
++	put a/x "$(md1_doc segredo)"
++	NPASS_GLOW="$BATS_TEST_TMPDIR/nao-existe" run "$NPASS" show --render HG a/x
++	[ "$status" -eq 0 ]
++	[[ "$output" == *"glow não encontrado"* ]]
++	[[ "$output" == *"$(md1_doc segredo)"* ]]
++	NPASS_GLOW="$BATS_TEST_TMPDIR/nao-existe" NPASS_LANG=en run "$NPASS" show --render HG a/x
++	[[ "$output" == *"glow not found"* ]]
++}
++
++@test "glow que falha: avisa com o codigo e imprime o cru" {
++	put a/x "$(md1_doc segredo)"
++	printf '#!/bin/bash\ncat >/dev/null\nexit 3\n' >"$BATS_TEST_TMPDIR/ruim"
++	chmod +x "$BATS_TEST_TMPDIR/ruim"
++	NPASS_GLOW="$BATS_TEST_TMPDIR/ruim" run "$NPASS" show --render HG a/x
++	[ "$status" -eq 0 ]
++	[[ "$output" == *"o glow falhou (código 3)"* ]]
++	[[ "$output" == *"$(md1_doc segredo)"* ]]
++	[[ "$output" != *"<<GLOW>>"* ]]
++}
++
++# --- o que nao se renderiza ---------------------------------------------------------------------------------
++
++@test "formato antigo ou estrutura invalida: cru, sem chamar o glow" {
++	npass_test_legacy HG a/velha $'senha-velha\nlogin: x'
++	run "$NPASS" show --render HG a/velha
++	[ "$output" = $'senha-velha\nlogin: x' ]
++	npass_test_legacy HG a/ruim $'<!-- npass:md1 -->\n## Senha\npw\nlixo'
++	run "$NPASS" show --render HG a/ruim
++	[ "$output" = $'<!-- npass:md1 -->\n## Senha\npw\nlixo' ]
++	[ ! -e "$GLOWLOG.in" ]
++}
++
++# --- erros e uso -------------------------------------------------------------------------------------------
++
++@test "entrada inexistente e identidade inexistente: erro nos dois modos" {
++	run "$NPASS" show HG nao/existe
++	[ "$status" -ne 0 ]
++	run "$NPASS" show --render HG nao/existe
++	[ "$status" -ne 0 ]
++	run "$NPASS" show --render NAOEXISTE a/x
++	[ "$status" -ne 0 ]
++}
++
++@test "sem argumentos mostra uso; opcao desconhecida e recusada" {
++	run "$NPASS" show
++	[ "$status" -ne 0 ]
++	[[ "$output" == *"uso: npass show"* ]]
++	run "$NPASS" show --nada HG a/x
++	[ "$status" -ne 0 ]
++}
++
++@test "o show cru e byte a byte o decifrado: get, clip, otp e extensoes nao mudam" {
++	put a/x "$(md1_doc segredo 'login: eu')"
++	run "$NPASS" get HG a/x
++	[ "$output" = "segredo" ]
++	run "$NPASS" show HG a/x
++	[ "$output" = "$(md1_doc segredo 'login: eu')" ]
++}
++
++@test "help documenta --raw/--render" {
++	run "$NPASS" help
++	[[ "$output" == *"show [--raw|--render] ID DIR/PASS"* ]]
++}

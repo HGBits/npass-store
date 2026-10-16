@@ -81,8 +81,36 @@ for exactly what this does and does not protect against.
 e.g. after rotating its recipients, or to opt an identity created
 before this feature existed into verification.
 .TP
-.BI "show " ID " " DIR/PASS
-Decrypt and print a secret.
+.BI "show [\-\-raw|\-\-render] " ID " " DIR/PASS
+Decrypt and show a secret. On a terminal the entry is rendered with
+.BR glow (1);
+when stdout is a pipe, a script or an extension it prints the raw md1 document.
+.B \-\-raw
+always prints it raw,
+.B \-\-render
+always renders (e.g. into
+.BR "less \-R" ).
+What glow receives is not the md1 document but a display\-only one: the password,
+the OTP and the field values go in code blocks or code spans, always fenced by more
+backticks than the longest run in the text itself, and field names are escaped, so
+markdown never alters what is shown (\fBa*b*c_d_\fR would otherwise render in italics).
+A rendered entry that has a complete pair of backup attachments shows
+.BR "Backup: [name](npass://ID/path)" ,
+and the attachments show
+.BR "Entrada: [name](npass://ID/path)" :
+the links are computed from the map at display time (names only, nothing decrypted)
+and never stored, so
+.BR "show \-\-raw" ", " get ", " clip
+and the extensions do not see them. Following one runs
+.BR open .
+Only the notes are real markdown, and
+.B http(s)://
+values become links. The text goes to glow on stdin, never as an argument, and
+nothing is written to disk. If glow is missing or fails, a warning is printed and
+the raw text is shown. An entry in the old format or with an invalid structure is
+always shown raw. To copy a password use
+.BR clip :
+glow draws margins and padding around the text.
 .TP
 .BI "identities"
 List the identities and how many secrets each holds
@@ -194,9 +222,60 @@ is untouched.
 Move to a different identity: decrypts, re\-encrypts to the
 destination identity's recipients, and removes the source entry.
 .TP
-.BI "ls " ID " [" DIR ]
-List logical paths in an identity, optionally filtered to those under
-a given prefix.
+.BI "open [\-\-here] [\-\-pause] " npass://ID/DIR/PASS
+Follow an
+.B npass://
+link (the targets of the links that a rendered
+.B show
+draws; see
+.BR glow (1)
+and OSC 8 hyperlinks). It only shows the entry, never copies, writes or changes
+anything, and asks
+.B [y/N]
+showing the identity and path BEFORE decrypting anything, unless
+.B NPASS_OPEN_CONFIRM=0.
+The URL is parsed strictly: scheme
+.BR npass:// ,
+a plain ID
+.RB ( A\-Za\-z0\-9._\- ),
+a path that passes the same check as every logical path, valid
+.BR %XX
+escapes (NUL and control characters are refused); query and fragment are ignored.
+Called without a terminal (by the desktop handler) it opens a terminal window that runs
+.BR "npass open \-\-here \-\-pause" ;
+the terminal is
+.BR NPASS_TERMINAL ,
+else
+.B $TERMINAL
+(with \-e), else the first of foot, kitty, alacritty, wezterm, xterm.
+.B \-\-pause
+waits for Enter (or
+.B NPASS_OPEN_TIMEOUT
+seconds, default 60) and clears the screen and scrollback.
+.TP
+.BI "tree [\-\-flat] " ID " [" DIR ]
+Draw the logical paths of an identity as a tree, optionally only those under
+.I DIR
+(a real prefix, by path component: "ban" does not match "banco"). It reads only
+the map and decrypts nothing. A folder (a prefix of other paths) ends in
+.BR / ;
+an entry does not, and a path can be both. An entry that has the pair of
+attachments created by
+.B backup
+is tagged
+.B [backup]
+(by name only; the attachments stay listed). Without UTF-8 in the locale the
+drawing falls back to ASCII; folders are bold only on a terminal and without
+.BR NO_COLOR .
+With
+.B \-\-flat
+it prints one logical path per line, with no header or decoration: the
+interface for scripts and the extensions. An unknown identity is an error.
+The old
+.B ls
+(and
+.BR list )
+no longer exists and says so.
 .TP
 .BI "find " ID " " PATTERN
 List logical paths whose name matches
@@ -429,7 +508,7 @@ expects the complete document. An entry still in the old format is not read by
 .BR get ", " clip ", " otp ", " pin ", " "generate \-\-in\-place" ", " update " or " edit :
 the command stops and points to
 .BR "npass import npass\-legacy" .
-.BR show ", " ls ", " grep ", " mv " and " rm
+.BR show ", " tree ", " grep ", " mv " and " rm
 still work on it.
 .SH ENVIRONMENT
 .TP
@@ -477,6 +556,44 @@ success confirmations, prompts). A value starting with
 selects English; anything else, including unset, selects Portuguese
 (the tool's default/core language). Command usage text and this man
 page are not affected by this variable.
+.TP
+.B NPASS_SHOW_RENDER
+.BR auto " (default: render only on a terminal), " always " or " never .
+The flags
+.BR \-\-raw " and " \-\-render
+win over it.
+.TP
+.B NPASS_OPEN_CONFIRM
+.B 0
+makes
+.B open
+skip its confirmation prompt. Default: ask.
+.TP
+.B NPASS_OPEN_TIMEOUT
+Seconds
+.B open \-\-pause
+waits before closing. Default: 60.
+.TP
+.B NPASS_TERMINAL
+Command and arguments used by
+.B open
+to start a terminal window (e.g.
+.IR "foot" " or " "alacritty \-e" ).
+.TP
+.B NPASS_GLOW
+Path of the glow binary used by
+.BR show .
+Default:
+.BR glow .
+.TP
+.B NPASS_GLOW_STYLE
+Passed to glow as
+.BR \-s ;
+unset leaves glow's own default.
+.TP
+.B NPASS_GLOW_WIDTH
+Passed to glow as
+.BR \-w .
 .TP
 .B NPASS_CLIP_TIME
 Seconds before a clipboard copy is cleared. Default: 45.
@@ -530,6 +647,14 @@ and
 .B otp clip
 to work.
 .SH FILES
+.TP
+.I share/applications/npass\-open.desktop
+Installed by install.sh: registers
+.B npass open
+as the handler of the
+.B x\-scheme\-handler/npass
+MIME type, with the absolute path of the binary in
+.BR Exec .
 .TP
 .I $NPASS_STORE/wordlist.txt
 The EFF wordlists used by

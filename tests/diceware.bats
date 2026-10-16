@@ -75,7 +75,7 @@ in_section() { awk -F'\t' -v w="$1" -v sec="[$2]" '/^\[/{s=$0} s==sec && $2==w {
 	run "$NPASS" diceware HG a/b
 	[ "$status" -ne 0 ]
 	[[ "$output" == *"encrypts_alternatives/wordlist.txt"* ]]
-	run "$NPASS" ls HG
+	run "$NPASS" tree HG
 	[[ "$output" == *"(vazio)"* ]]
 }
 
@@ -84,7 +84,7 @@ in_section() { awk -F'\t' -v w="$1" -v sec="[$2]" '/^\[/{s=$0} s==sec && $2==w {
 	run "$NPASS" diceware HG a/b
 	[ "$status" -ne 0 ]
 	[[ "$output" == *"pequena demais"* ]]
-	run "$NPASS" ls HG
+	run "$NPASS" tree HG
 	[[ "$output" == *"(vazio)"* ]]
 }
 

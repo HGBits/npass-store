@@ -18,6 +18,10 @@ Testes Bats do projeto. Use-os como índice de comportamento esperado antes de a
 | `import-pass-secrets.bats` | importação de `pass-secrets` |
 | `otp.bats` | OTP |
 | `pin.bats` | PIN (`--password`, `--field`) |
+| `nav.bats` | navegação de backup no `show` renderizado: `Backup:`/`Entrada:`, par completo, renomeação, nomes difíceis, round-trip com `open` |
+| `open.bats` | `open`: codificação de URL, parser estrito, confirmação antes de decifrar, só mostra, lançamento de terminal (sempre falso), `--pause` |
+| `view.bats` | `show` renderizado: quando renderiza (TTY real via pty), o que o glow recebe, glow ausente/falhando, anexos |
+| `tree.bats` | `tree`: desenho, `--flat`, prefixo por componente, `[backup]`, erros e o aviso do `ls` antigo |
 | `entry-md1.bats` | formato md1 (contrato, preservação, recusa do formato antigo em todos os comandos), `get`, OTP e `audit` |
 | `import-legacy.bats` | `import npass-legacy` (conversão, verificação, idempotência, `--dry-run`) e imports de árvore em md1 |
 | `clip-ext.bats` | `npass-wclip` e `npass-clip-x11` (chamam `npass get`) |

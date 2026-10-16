@@ -660,10 +660,10 @@ def read_source(path, o):
 
 
 def existing_paths(binp, ident):
-    r = subprocess.run([binp, "ls", ident], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    r = subprocess.run([binp, "tree", "--flat", ident], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     if r.returncode != 0:
         die(t("id_ls", ident, (r.stderr or r.stdout).strip()))
-    return {ln[2:] for ln in r.stdout.splitlines()[1:] if ln.startswith("  ")}
+    return {ln for ln in r.stdout.splitlines() if ln}
 
 
 def write_batch(binp, ident, items, force):
@@ -843,8 +843,8 @@ def migrate_legacy_store(o, binp, ident):
     e regrava o lote com `npass insert --batch -f` (uma assinatura conferida, um commit).
     Idempotente: o que ja esta em md1 e os anexos de `npass backup` nao sao tocados.
     Cada conversao passa por verify_conversion; a que nao passar fica como estava."""
-    # `npass ls` de uma identidade inexistente so avisa (rc 0): sem esta checagem um ID
-    # digitado errado viraria "nada a converter" em silencio.
+    # `npass tree --flat` ja falha com identidade inexistente; a checagem aqui da a mensagem
+    # propria do import (e vale mesmo contra um core que so avise).
     if not os.path.isfile(os.path.join(os.environ.get("NPASS_STORE", ""), ident, ".gpg-id")):
         die(t("id_inexistente", ident))
     paths = sorted(existing_paths(binp, ident))

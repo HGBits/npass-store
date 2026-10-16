@@ -141,7 +141,7 @@ put() { printf '%s\0%s\0' "$1" "$2" | "$NPASS" insert --batch -f HG >/dev/null; 
 		run bash -c "printf 'b/%s\\0%s\\0' '$i' \"\$1\" | '$NPASS' insert --batch HG" _ "${bad[i]}"
 		[ "$status" -ne 0 ]
 	done
-	run "$NPASS" ls HG
+	run "$NPASS" tree HG
 	[[ "$output" == *"(vazio)"* ]]
 }
 
@@ -174,7 +174,7 @@ put() { printf '%s\0%s\0' "$1" "$2" | "$NPASS" insert --batch -f HG >/dev/null; 
 	npass_test_legacy HG a/velha 'senha-velha'
 	run "$NPASS" show HG a/velha
 	[ "$output" = "senha-velha" ]
-	run "$NPASS" ls HG
+	run "$NPASS" tree --flat HG
 	[[ "$output" == *"a/velha"* ]]
 	"$NPASS" mv HG a/velha a/nova
 	run "$NPASS" show HG a/nova

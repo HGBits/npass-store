@@ -9,11 +9,13 @@ npass_main() {
 	case "$cmd" in
 	init) npass_identity_init "$@" ;;
 	identities | ids) cmd_identities "$@" ;;
-	show) cmd_show "$@" ;;
+	show) cmd_view "$@" ;;
 	insert | add) cmd_insert "$@" ;;
 	rm | remove | delete) cmd_rm "$@" ;;
 	mv | rename) cmd_mv "$@" ;;
-	ls | list) cmd_ls "$@" ;;
+	tree) cmd_tree "$@" ;;
+	open) cmd_open "$@" ;;
+	ls | list) npass_die "$(npass_t erro_ls_movido)" ;;
 	generate | gen) cmd_generate "$@" ;;
 	diceware) cmd_diceware "$@" ;;
 	memorable) cmd_memorable "$@" ;;
@@ -54,7 +56,7 @@ npass_main() {
 			  sign ID [KEYID]          assina (ou reassina) o .gpg-id de uma identidade
 			  extension sign CAMINHO [KEYID]   assina um executável de extensão
 			  extension list           lista extensões e se cada uma passaria nas checagens
-			  show ID DIR/PASS         mostra um segredo
+			  show [--raw|--render] ID DIR/PASS   mostra um segredo (em terminal: markdown renderizado pelo glow; em pipe: cru)
 			  clip [CAMPO] ID DIR/PASS copia a senha (padrão), 'all' ou um campo '- chave: valor'
 			  get [CAMPO] ID DIR/PASS  imprime (em vez de copiar) o mesmo valor que o clip copiaria
 			  pin (--password|--field) [-c|-f] [--in-place] ID DIR/PASS [N]   gera um PIN numérico: como a senha ou como o campo 'pin:'
@@ -63,7 +65,8 @@ npass_main() {
 			  insert --batch [-f] ID   grava vários (registros CAMINHO\\0CONTEÚDO\\0 no stdin)
 			  rm [-f] ID DIR/PASS      remove um segredo
 			  mv ID DIR/PASS DEST      renomeia (mesma identidade) ou move (entre identidades)
-			  ls ID [DIR]              lista os caminhos lógicos de uma identidade
+			  open [--here] npass://ID/DIR/PASS   segue um link npass:// (só mostra; pede confirmação)
+			  tree [--flat] ID [DIR]   árvore dos caminhos lógicos de uma identidade (--flat: um por linha)
 			  generate [-n|-c|-f] [--in-place] ID DIR/PASS [LEN]   gera senha aleatória
 			  diceware [-c|-f] [--in-place] [-s SEP] ID DIR/PASS [N]   frase de N palavras (EFF Large); mostra as ALTURAS para anotar
 			  memorable [-c|-f] [--in-place] [-s SEP] [-l short|short1|short2] ID DIR/PASS [N]   frase memorável (palavras curtas), sem alturas

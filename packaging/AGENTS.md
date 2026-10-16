@@ -7,6 +7,7 @@ Arquivos de empacotamento do projeto.
 ## Arquivo
 
 - `PKGBUILD`
+- `npass-open.desktop.in` (modelo do handler `x-scheme-handler/npass`; o `install.sh` troca `@NPASS@` pelo caminho absoluto do binário)
 
 ## Quando consultar
 

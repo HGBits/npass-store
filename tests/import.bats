@@ -161,7 +161,7 @@ JSON
 	run "$NPASS" import bitwarden HG "$F.json"
 	[ "$status" -ne 0 ]
 	[[ "$output" == *"criptografado"* ]]
-	run "$NPASS" ls HG
+	run "$NPASS" tree HG
 	[[ "$output" == *"(vazio)"* ]]
 }
 
@@ -264,7 +264,7 @@ JSON
 @test "-p coloca tudo sob um prefixo" {
 	printf 'Site,pw\n' >"$F.csv"
 	"$NPASS" import csv HG "$F.csv" --cols 'title,password' -p Importado/2026
-	run "$NPASS" ls HG
+	run "$NPASS" tree --flat HG
 	[[ "$output" == *"Importado/2026/Site"* ]]
 }
 
@@ -274,7 +274,7 @@ JSON
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"+ Site"* ]]
 	[[ "$output" != *"s3cr3t-unico"* ]]
-	run "$NPASS" ls HG
+	run "$NPASS" tree HG
 	[[ "$output" == *"(vazio)"* ]]
 }
 
@@ -294,7 +294,7 @@ JSON
 @test "titulo e login repetidos dentro do proprio import ganham sufixo -2" {
 	printf 'Dup,alice,pw1\nDup,alice,pw2\n' >"$F.csv"
 	"$NPASS" import csv HG "$F.csv" --cols 'title,login,password'
-	run "$NPASS" ls HG
+	run "$NPASS" tree --flat HG
 	[[ "$output" == *"Dup/alice"* ]]
 	[[ "$output" == *"Dup/alice-2"* ]]
 }
@@ -304,10 +304,10 @@ JSON
 	printf '"x\ty",,,pw3\n' >>"$F.csv"
 	run "$NPASS" import csv HG "$F.csv" --cols 'group,title,login,password'
 	[ "$status" -eq 0 ]
-	run "$NPASS" ls HG
-	[[ "$output" == *"  etc/root"* ]]
-	[[ "$output" == *"  a-b"* ]]
-	[[ "$output" == *"  x y"* ]]
+	run "$NPASS" tree --flat HG
+	[[ $'\n'"$output"$'\n' == *$'\netc/root\n'* ]]   # linha inteira, sem indentacao (--flat)
+	[[ $'\n'"$output"$'\n' == *$'\na-b\n'* ]]   # linha inteira, sem indentacao (--flat)
+	[[ $'\n'"$output"$'\n' == *$'\nx y/sem-titulo\n'* ]]   # linha inteira, sem indentacao (--flat)
 	[[ "$output" != *".."* ]]
 }
 
@@ -324,7 +324,7 @@ JSON
 	printf 'Vazia,\nBoa,ok\n' >"$F.csv"
 	run "$NPASS" import csv HG "$F.csv" --cols 'title,password'
 	[[ "$output" == *"1 ignorada"* ]]
-	run "$NPASS" ls HG
+	run "$NPASS" tree --flat HG
 	[[ "$output" != *"Vazia"* ]]
 }
 
@@ -369,7 +369,7 @@ JSON
 	[[ "$output" == *"--encoding"* ]]
 	run "$NPASS" import csv HG "$F.csv" --cols 'title,password' --encoding latin-1
 	[ "$status" -eq 0 ]
-	run "$NPASS" ls HG
+	run "$NPASS" tree --flat HG
 	[[ "$output" == *"Café"* ]]
 }
 

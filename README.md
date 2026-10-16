@@ -63,6 +63,7 @@ Isso permite alterar o nome lógico sem modificar o ciphertext do segredo.
 * `shred`
 * `git` (opcional)
 * `wl-copy` / `wl-paste` para clipboard
+* `glow` para `npass show` renderizado no terminal (sem ele, o `show` avisa e imprime o texto cru)
 * `oathtool` ou `otptool` para OTP
 * `qrencode` para QR Code
 
@@ -110,11 +111,22 @@ Inserir uma senha:
 npass insert pessoal email/gmail
 ```
 
-Mostrar:
+Mostrar (em terminal sai **renderizado pelo `glow`**; em pipe, script ou extensão sai o documento md1 cru):
 
 ```bash
-npass show pessoal email/gmail
+npass show pessoal email/gmail            # terminal: renderizado; pipe: cru
+npass show --raw pessoal email/gmail      # sempre cru
+npass show --render pessoal email/gmail | less -R   # renderizado mesmo em pipe
 ```
+
+O `glow` é **dependência do `show` em terminal**: sem ele o npass avisa e imprime o texto cru (nunca deixa de mostrar). O que o `glow` recebe não é o documento md1, e sim um documento só de **exibição**, porque markdown renderizado deforma texto (`a*b*c_d_` viraria itálico, `<`, `&` e `\` somem, uma senha começando com `#` viraria título) e você copiaria da tela uma senha diferente da guardada:
+
+- a **senha**, o **OTP** e os **valores dos campos** vão em bloco ou span de código, sempre com cerca mais longa que qualquer sequência de crases do próprio texto; os nomes de campo são escapados;
+- valores `http(s)://` viram link clicável (autolink, URL mostrada uma vez); com um valor de aparência suspeita (`<`, `>`, `(`, `)`, crase, barra invertida, espaço) vira só código;
+- as **notas** são markdown de verdade: negrito, listas e links funcionam;
+- o texto vai ao `glow` por **stdin**, nunca por argumento, e nada é gravado em disco.
+
+Variáveis: `NPASS_SHOW_RENDER=auto|always|never` (padrão `auto`: renderiza só em terminal; a flag `--raw`/`--render` vence a variável), `NPASS_GLOW` (caminho do binário), `NPASS_GLOW_STYLE` (`-s` do glow: `dark`, `light`, `notty`...) e `NPASS_GLOW_WIDTH` (`-w`). O npass não passa `-p`; se o seu `glow.yml` tiver `pager: true`, o pager abre por escolha sua. **Para copiar a senha use `npass clip`**: o `glow` desenha margem e preenchimento ao redor do texto, e selecionar da tela leva isso junto. Entrada no formato antigo ou com estrutura inválida sai crua, sem renderizar.
 
 Copiar para o clipboard (só a senha, por padrão):
 
@@ -146,11 +158,31 @@ Gerar uma senha:
 npass generate pessoal email/gmail
 ```
 
-Listar entradas:
+Listar entradas (árvore dos caminhos lógicos; só lê o mapa, não decifra nada):
 
 ```bash
-npass ls pessoal
+npass tree pessoal               # árvore inteira
+npass tree pessoal banco         # só o que está sob banco/ (prefixo por componente: "ban" não casa "banco")
+npass tree --flat pessoal        # um caminho por linha, sem enfeite: é o que os scripts e as extensões usam
 ```
+
+```text
+pessoal
+├── banco/
+│   ├── itau/
+│   │   ├── cartao
+│   │   └── conta
+│   └── nubank
+└── email/
+    ├── gmail  [backup]
+    │   ├── Backup-gmail.dados.md
+    │   └── Backup-gmail.md
+    └── outlook
+```
+
+Pasta (só aparece como prefixo) termina em `/`; entrada não. Uma entrada pode ser as duas coisas (`gmail` e `gmail/Backup-gmail.md`). `[backup]` marca a entrada que tem o par de anexos de `npass backup`, pelos nomes, sem decifrar; os anexos continuam listados. Sem UTF-8 no locale o desenho cai para ASCII, e a cor (pastas em negrito/azul) só aparece em terminal e sem `NO_COLOR`.
+
+> `npass ls` (e `list`) deixou de existir: rodar o comando antigo mostra o aviso para o `tree`. Quem usava a saída em script troca por `tree --flat`. Diferenças do `--flat` para o `ls`: sem a linha de cabeçalho com o ID e sem indentação de dois espaços; identidade inexistente agora é erro (antes só avisava e saía com 0); `DIR` agora é prefixo de verdade, por componente.
 
 Editar:
 
@@ -242,9 +274,10 @@ npass show pessoal email/gmail/Backup-gmail.dados.md
 - `-n N`: de 1 a 50. Senha vazia, repetida ou com confirmação diferente interrompe o comando antes de gravar qualquer coisa.
 - **A entrada precisa existir**, como em `pin --field`: um erro de digitação no caminho não cria um anexo órfão.
 - Já existe backup: pergunta antes de substituir (`-f` não pergunta). Só substitui anexos de verdade.
+- **Navegação contextual (só na exibição renderizada):** `npass show` de uma entrada com backup ganha, logo abaixo do título, `Backup: [Asyx](npass://pessoal/QWAP/Asyx/Backup-Asyx.dados.md)`; o arquivo de dados e o ponteiro ganham `Entrada: [Asyx](npass://pessoal/QWAP/Asyx)` de volta, e o campo `arquivo` do ponteiro liga ao arquivo de dados. Os links são **calculados na hora, nunca gravados**: `show --raw`, `get`, `clip` e as extensões não os veem, e um `mv`, `rm` ou renomeação nunca deixa um link velho. Só conta um par completo de anexos (`Backup-X.md` **e** `Backup-X.dados.md`, filhos diretos da entrada), decidido pelos nomes, sem decifrar; o texto do link é o nome do anexo (depois de renomear a entrada continua `Backup-gmail`). Clicar chama `npass open` (veja "Links `npass://`"), que pergunta antes de mostrar as senhas de backup.
 - Os anexos acompanham a entrada: `rm` remove os dois (com aviso antes de perguntar), `mv` os leva para o novo caminho (também entre identidades) e `update` e `audit` os ignoram, para não rotacionar nem auditar um arquivo de backup como se fosse senha de login.
 - Um arquivo só é tratado como anexo quando o **nome** (`Backup-*.md`, filho direto da entrada) **e** o marcador na primeira linha (`<!-- npass:backup-index v1 -->` ou `...backup-data v1 -->`) batem. Uma entrada sua chamada `Backup-x.md` nunca é arrastada por `rm`/`mv`.
-- Como as senhas ficam em `show`/`ls` como qualquer outra entrada, quem tem a chave do `.gpg-id` lê tudo: o anexo separa o backup da entrada principal (`show` e `clip all` da entrada não o despejam), não cria um segundo nível de proteção.
+- Como as senhas ficam em `show`/`tree` como qualquer outra entrada, quem tem a chave do `.gpg-id` lê tudo: o anexo separa o backup da entrada principal (`show` e `clip all` da entrada não o despejam), não cria um segundo nível de proteção.
 
 ## OTP
 
@@ -299,6 +332,20 @@ Se você perder o gerenciador, a senha se refaz: ache cada altura na lista (a su
 Opções dos dois: `-s/--sep SEP` (0 a 3 caracteres, padrão `-`), `-c`, `-f`, `--in-place` (troca só a senha e preserva campos, OTP e notas) e o número de palavras (4 a 20, padrão 6). O separador pode ser predefinido com `export NPASS_DICEWARE_SEP='.'` (vazio = sem separador); `--sep` vence. A entropia sai calculada sobre a lista realmente usada.
 
 A lista fica em `~/.npass/wordlist.txt` (ou `NPASS_WORDLIST`). Na primeira vez o npass a copia da que acompanha a instalação (`PREFIX/share/npass/encrypts_alternatives/`, ou `encrypts_alternatives/` num clone do repositório; `NPASS_WORDLIST_SRC` força a origem). É só dado, nunca executado, e o npass recusa uma lista com menos de 1296 palavras utilizáveis (sinal de arquivo truncado ou adulterado). Formato: seções `[large]`, `[short1]`, `[short2]`, linhas `ALTURA<TAB>palavra`. Listas da EFF, licença CC BY 3.0 US.
+
+## Links `npass://` e `npass open`
+
+O `show` renderizado desenha links `npass://ID/DIR/PASS` (hoje, entre uma entrada e os seus backups). O `glow` os emite como **hiperlink OSC 8**; em um terminal que suporte OSC 8 (por exemplo foot e kitty; confira o seu) o clique entrega a URL ao desktop, e a URL também aparece escrita ao lado do texto, então em terminal sem OSC 8 você a copia e roda `npass open`.
+
+```bash
+npass open npass://pessoal/email/gmail            # mostra a entrada (pede confirmação)
+npass open --here npass://pessoal/email/gmail     # sempre neste terminal
+```
+
+- **O handler:** `install.sh` instala `share/applications/npass-open.desktop` (`MimeType=x-scheme-handler/npass`, com o caminho **absoluto** do binário no `Exec`) e roda `update-desktop-database`. Num pacote (PKGBUILD) o hook do pacman faz o registro. Com `--prefix=$HOME/.local` o arquivo vai para `~/.local/share/applications`. Verifique com `xdg-mime query default x-scheme-handler/npass`.
+- **Sem terminal (chamado pelo desktop):** o `open` abre uma janela de terminal que roda `npass open --here --pause URL`. Quem escolhe o terminal é `NPASS_TERMINAL` (comando e argumentos, por exemplo `foot` ou `alacritty -e`), depois `$TERMINAL` (com `-e`), depois o primeiro que existir de foot, kitty, alacritty, wezterm, xterm. Sem nenhum, o erro explica como definir; o npass não chuta um.
+- **`--pause`:** espera Enter (ou `NPASS_OPEN_TIMEOUT` segundos, padrão 60) e **limpa a tela e o scrollback**, para o segredo não ficar na janela.
+- **Segurança:** qualquer coisa que consiga entregar uma URL `npass://` ao desktop (uma página web, uma nota importada, um link num e-mail) aciona este comando, então ele só **mostra** (nunca copia, grava nem altera nada), **pergunta `[y/N]` mostrando ID e caminho antes de decifrar qualquer coisa** (`NPASS_OPEN_CONFIRM=0` desliga, por sua conta e risco) e o parser é estrito: só o esquema `npass://`, ID simples (`A-Za-z0-9._-`), caminho sem `..`, sem controle e com `%`-escapes válidos (`%00` é recusado). Espaço, `#`, `?`, `%` e UTF-8 no nome da entrada viajam como `%XX`.
 
 ## Git
 

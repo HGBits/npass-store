@@ -42,7 +42,7 @@ setup() {
 	[ "$status" -eq 0 ]
 	run "$NPASS" show personal 99
 	[ "$status" -ne 0 ]
-	run "$NPASS" ls personal
+	run "$NPASS" tree --flat personal
 	[[ "$output" == *"IST/Bvop"* ]]
 	[[ "$output" != *"Amazon"* ]]
 }
