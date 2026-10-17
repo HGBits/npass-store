@@ -287,7 +287,7 @@ mkentry() {
 }
 
 @test "help lista o comando pin" {
-	run "$NPASS" help
+	run "$NPASS" help gerar pin
 	[[ "$output" == *"pin (--password|--field)"* ]]
 }
 

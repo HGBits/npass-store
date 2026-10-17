@@ -22,6 +22,7 @@ Este arquivo é o índice operacional do projeto. Use-o para localizar rapidamen
 | Git automático | `lib/07-git.bash` | `tests/update.bats`, `tests/store-extras.bats` |
 | Internacionalização | `lib/09-i18n.bash` | `tests/i18n.bats` |
 | PIN numérico (`pin`, modos `--password`/`--field`) | `lib/08-pin.bash` | `tests/pin.bats` |
+| Ajuda (`help`, categorias, seções) | `lib/18-help.bash` | `tests/help.bats` (falha se um comando de `lib/00-main.bash` ou uma extensão ficar sem ajuda) |
 | Links `npass://` e `npass open` | `lib/17-open.bash`, `packaging/npass-open.desktop.in` | `install.sh` (instala o .desktop), `tests/open.bats`, `tests/install.bats` |
 | `show` renderizado com glow e navegação de backup | `lib/16-view.bash` | `lib/03-store.bash` (`cmd_show` cru interno), `lib/17-open.bash`, `tests/view.bats`, `tests/nav.bats` |
 | Listagem (`tree`, `--flat`) | `lib/15-tree.bash` | `extensions/npass-import` e `extensions/npass-audit` (usam `tree --flat`), `tests/tree.bats` |
@@ -60,6 +61,7 @@ lib/00-main.bash
    +--> 11-extensions.bash
    +--> 12-diceware.bash
    +--> 13-backup.bash
+   +--> 18-help.bash
    +--> 17-open.bash
    +--> 16-view.bash
    +--> 15-tree.bash
@@ -83,8 +85,9 @@ build.sh ---> gera bin/npass a partir de lib/
 7. Não assumir que uma função em outro módulo pode ser alterada sem verificar seu contrato.
 8. **O conteúdo de uma entrada é md1 e só `lib/14-entry.bash` o interpreta.** Nenhum outro módulo (nem extensão em shell) pode ler "a 1ª linha", casar `chave: valor` ou procurar `otpauth://` por conta própria: use `npass_entry_load`/`_require`/`_render` no core e `npass get` nas extensões. As exceções são os dois conversores em Python (`extensions/npass-import`, `extensions/npass-audit`), que espelham as regras e são cruzados com o parser do core em `tests/import-legacy.bats`. Mudou o formato? Mude os três e os testes juntos.
 9. Não existe leitura do formato antigo no core: entrada em texto puro é recusada com instrução para `npass import npass-legacy ID`.
-8. Documentação deve refletir o comportamento real, não uma intenção futura.
-9. `pin.md` e `diceware.md` ficam fora deste índice de trabalho conforme solicitado.
+10. Documentação deve refletir o comportamento real, não uma intenção futura.
+11. `pin.md` e `diceware.md` ficam fora deste índice de trabalho conforme solicitado.
+12. Comando ou extensão novos entram em `npass_help_data` (`lib/18-help.bash`), numa categoria e seção: `tests/help.bats` falha se ficarem de fora. O menu principal (`npass_help_essential`) é escolha, não lista completa: não acrescente nada ali sem tirar outra coisa.
 
 ## Fluxo recomendado
 

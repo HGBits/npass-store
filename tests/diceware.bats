@@ -336,7 +336,7 @@ in_section() { awk -F'\t' -v w="$1" -v sec="[$2]" '/^\[/{s=$0} s==sec && $2==w {
 }
 
 @test "help lista os dois comandos; sem argumentos mostra uso; identidade inexistente falha" {
-	run "$NPASS" help
+	run "$NPASS" help gerar frases
 	[[ "$output" == *"diceware"* ]]
 	[[ "$output" == *"memorable"* ]]
 	run "$NPASS" diceware

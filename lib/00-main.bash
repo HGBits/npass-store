@@ -44,47 +44,7 @@ npass_main() {
 		*) cmd_otp_code "$sub" "$@" ;; # `npass otp ID DIR/PASS` (default action)
 		esac
 		;;
-	'' | help | -h | --help)
-		cat <<-_EOF
-			npass $NPASS_VERSION - Wayland-native password store com resolução de identidade
-
-			Uso: npass COMANDO ID DIR/PASS [...]
-
-			  init ID RECIPIENT...     cria uma identidade nova
-			  init --sign[=KEYID] ID RECIPIENT...   idem, já assinando o .gpg-id
-			  identities               lista as identidades e quantas senhas cada uma tem
-			  sign ID [KEYID]          assina (ou reassina) o .gpg-id de uma identidade
-			  extension sign CAMINHO [KEYID]   assina um executável de extensão
-			  extension list           lista extensões e se cada uma passaria nas checagens
-			  show [--raw|--render] ID DIR/PASS   mostra um segredo (em terminal: markdown renderizado pelo glow; em pipe: cru)
-			  clip [CAMPO] ID DIR/PASS copia a senha (padrão), 'all' ou um campo '- chave: valor'
-			  get [CAMPO] ID DIR/PASS  imprime (em vez de copiar) o mesmo valor que o clip copiaria
-			  pin (--password|--field) [-c|-f] [--in-place] ID DIR/PASS [N]   gera um PIN numérico: como a senha ou como o campo 'pin:'
-			  backup [-f] -n N ID DIR/PASS   grava N senhas de backup (interativo) num arquivo cifrado anexo à entrada
-			  insert [-f] ID DIR/PASS  insere/atualiza um segredo
-			  insert --batch [-f] ID   grava vários (registros CAMINHO\\0CONTEÚDO\\0 no stdin)
-			  rm [-f] ID DIR/PASS      remove um segredo
-			  mv ID DIR/PASS DEST      renomeia (mesma identidade) ou move (entre identidades)
-			  open [--here] npass://ID/DIR/PASS   segue um link npass:// (só mostra; pede confirmação)
-			  tree [--flat] ID [DIR]   árvore dos caminhos lógicos de uma identidade (--flat: um por linha)
-			  generate [-n|-c|-f] [--in-place] ID DIR/PASS [LEN]   gera senha aleatória
-			  diceware [-c|-f] [--in-place] [-s SEP] ID DIR/PASS [N]   frase de N palavras (EFF Large); mostra as ALTURAS para anotar
-			  memorable [-c|-f] [--in-place] [-s SEP] [-l short|short1|short2] ID DIR/PASS [N]   frase memorável (palavras curtas), sem alturas
-			  edit ID DIR/PASS         edita o conteúdo bruto no \$EDITOR
-			  update [opts] ID PATTERN...   rotaciona senhas em massa (veja 'npass update -h')
-			  find ID PADRÃO           busca caminhos lógicos que casam PADRÃO
-			  grep ID [OPÇÕES] PADRÃO decifra e busca PADRÃO no conteúdo de cada entrada
-			  git ARGS...              passthrough para git dentro do store (repositório criado no primeiro init)
-			  log                     mostra os 20 últimos commits em formato resumido
-			  loglong                 mostra arquivos modificados nos últimos 6 meses
-			  otp ID DIR/PASS          gera o código OTP (TOTP/HOTP) do segredo
-			  otp insert [-f] ID DIR/PASS   insere/atualiza a URI OTP (interativo)
-			  otp uri [-c|-q] ID DIR/PASS   mostra a URI OTP, copia, ou exibe QR
-			  otp clip ID DIR/PASS     copia o código OTP para a área de transferência
-
-			Não existe modo de caminho físico "clássico": todo comando exige ID.
-		_EOF
-		;;
+	'' | help | -h | --help) cmd_help "$@" ;;
 	# Importing lives in the npass-import extension now; say so instead of
 	# a bare "unknown command" for the two names people already know.
 	migrate | migrate-secrets) npass_die "$(npass_t erro_migrate_movido "$cmd")" ;;

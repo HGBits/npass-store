@@ -248,6 +248,6 @@ PY
 }
 
 @test "help documenta --raw/--render" {
-	run "$NPASS" help
+	run "$NPASS" help entradas ver
 	[[ "$output" == *"show [--raw|--render] ID DIR/PASS"* ]]
 }

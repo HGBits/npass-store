@@ -276,6 +276,6 @@ PY
 	[[ "$output" == *"--here"* ]]
 	run "$NPASS" open --nada npass://HG/a
 	[ "$status" -ne 0 ]
-	run "$NPASS" help
-	[[ "$output" == *"open [--here] npass://ID/DIR/PASS"* ]]
+	run "$NPASS" help backup navegar
+	[[ "$output" == *"open [--here] [--pause] npass://ID/DIR/PASS"* ]]
 }

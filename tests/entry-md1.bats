@@ -101,7 +101,7 @@ put() { printf '%s\0%s\0' "$1" "$2" | "$NPASS" insert --batch -f HG >/dev/null; 
 }
 
 @test "help lista o get" {
-	run "$NPASS" help
+	run "$NPASS" help entradas ver
 	[[ "$output" == *"get [CAMPO] ID DIR/PASS"* ]]
 }
 

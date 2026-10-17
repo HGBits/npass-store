@@ -181,7 +181,7 @@ EOF
 }
 
 @test "help lista o tree e nao lista mais o ls" {
-	run "$NPASS" help
+	run "$NPASS" help todos
 	[[ "$output" == *"tree [--flat] ID [DIR]"* ]]
 	[[ "$output" != *"ls ID [DIR]"* ]]
 }

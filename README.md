@@ -97,6 +97,19 @@ NPASS_ENABLE_EXTENSIONS
 NPASS_EXTENSIONS_DIR
 ```
 
+## Ajuda
+
+`npass help` mostra só o **essencial** (os 10 comandos do dia a dia) e a lista de categorias. O resto fica em categorias, e cada categoria tem seções:
+
+```bash
+npass help                      # essencial + categorias
+npass help gerar                # a categoria inteira, com as seções (senha aleatória, frases, PIN)
+npass help gerar frases         # só uma seção
+npass help todos                # tudo, categoria por categoria (alias: all, tudo)
+```
+
+Categorias: `entradas` (ver, escrever, mover e remover, em massa), `gerar` (senha aleatória, frases, PIN), `otp` (código, cadastro), `backup` (gravar, navegar), `buscar` (caminhos, conteúdo), `identidades` (criar, listar, assinar), `git` e `extensoes` (gerenciar, disponíveis). Os nomes de categoria e de seção são exatos, em minúsculas e sem acento (uma categoria ou seção desconhecida mostra as válidas). Todo comando despachado pelo `npass`, e toda extensão do repositório, aparece em alguma categoria: `tests/help.bats` falha se um comando ou extensão ficar sem ajuda.
+
 ## Uso
 
 Criar uma identidade:

@@ -458,8 +458,25 @@ file in the extensions directory with its status: \c
 naming the specific gate that failed. Checks only \- never executes
 anything.
 .TP
+.BR help " [" CATEGORY " [" SECTION ]]
+Without arguments, show the essential commands and the list of help categories.
 .B help
-Show a command summary.
+.I CATEGORY
+shows a whole category, divided into sections;
+.B help
+.I CATEGORY SECTION
+shows only that section (for example
+.BR "npass help gerar frases" );
+.B help todos
+(or
+.BR all ", " tudo )
+prints every category. Categories:
+.BR entradas ", " gerar ", " otp ", " backup ", " buscar ", " identidades ", " git " and " extensoes .
+Category and section names are exact, ASCII, lowercase. No arguments,
+.BR \-h " and " \-\-help
+are the same as
+.BR help .
+Every command, including the optional extensions, appears in some category.
 .SH ENTRY FORMAT
 The decrypted content of every entry is a markdown document (md1):
 .PP
