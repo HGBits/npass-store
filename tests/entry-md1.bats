@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 # Formato md1: o conteudo de toda entrada (lib/14-entry.bash) e o comando `get`.
 # Cobre o contrato do formato, a preservacao de linhas desconhecidas, a recusa
-# de entradas no formato antigo em TODOS os comandos que leem o conteudo e a
+# de entradas fora de md1 em TODOS os comandos que leem o conteudo e a
 # validacao do que entra por insert --batch / edit.
 
 setup() {
@@ -146,7 +146,7 @@ put() { printf '%s\0%s\0' "$1" "$2" | "$NPASS" insert --batch -f HG >/dev/null; 
 }
 
 @test "entrada com marcador mas estrutura invalida (ja gravada): get e pin dizem 'estrutura invalida'" {
-	npass_test_legacy HG a/x $'<!-- npass:md1 -->\n## Senha\npw\nlixo'
+	npass_test_raw HG a/x $'<!-- npass:md1 -->\n## Senha\npw\nlixo'
 	run "$NPASS" get HG a/x
 	[ "$status" -ne 0 ]
 	[[ "$output" == *"estrutura é inválida"* ]]
@@ -155,23 +155,23 @@ put() { printf '%s\0%s\0' "$1" "$2" | "$NPASS" insert --batch -f HG >/dev/null; 
 	[[ "$output" == *"estrutura é inválida"* ]]
 }
 
-# --- formato antigo: recusado em todo comando que le o conteudo -----------------------------
+# --- fora de md1: recusado em todo comando que le o conteudo -----------------------------
 
-@test "formato antigo: get, clip, otp, generate --in-place e edit recusam, mandam converter e nao alteram" {
-	npass_test_legacy HG a/velha $'senha-velha\nlogin: x\notpauth://totp/a?secret=JBSWY3DPEHPK3PXP'
+@test "entrada fora de md1: get, clip, otp, generate --in-place e edit recusam e nao alteram nada" {
+	npass_test_raw HG a/velha $'senha-velha\nlogin: x\notpauth://totp/a?secret=JBSWY3DPEHPK3PXP'
 	local antes; antes="$("$NPASS" show HG a/velha)"
 	local cmd
 	for cmd in "get HG a/velha" "get login HG a/velha" "clip HG a/velha" "otp HG a/velha" "otp uri HG a/velha" "generate -f --in-place HG a/velha" "edit HG a/velha"; do
 		run bash -c "EDITOR=true '$NPASS' $cmd"
 		[ "$status" -ne 0 ]
-		[[ "$output" == *"formato antigo"* ]]
-		[[ "$output" == *"npass import npass-legacy HG"* ]]
+		[[ "$output" == *"não está no formato md1"* ]]
+		[[ "$output" != *"npass import"* ]]   # nao ha migracao para sugerir
 	done
 	[ "$("$NPASS" show HG a/velha)" = "$antes" ]
 }
 
-@test "formato antigo: show, ls, grep, mv e rm continuam funcionando (so ler conteudo exige md1)" {
-	npass_test_legacy HG a/velha 'senha-velha'
+@test "entrada fora de md1: show, tree, grep, mv e rm continuam funcionando (so ler conteudo exige md1)" {
+	npass_test_raw HG a/velha 'senha-velha'
 	run "$NPASS" show HG a/velha
 	[ "$output" = "senha-velha" ]
 	run "$NPASS" tree --flat HG
@@ -183,13 +183,13 @@ put() { printf '%s\0%s\0' "$1" "$2" | "$NPASS" insert --batch -f HG >/dev/null; 
 	[ "$status" -eq 0 ]
 }
 
-@test "anexo de backup: get/clip dizem que e um anexo, nao 'formato antigo'" {
+@test "anexo de backup: get/clip dizem que e um anexo, nao 'fora de md1'" {
 	printf 'x\nx\n' | "$NPASS" insert HG a/x >/dev/null
 	printf 'b1\nb1\n' | "$NPASS" backup -n 1 HG a/x >/dev/null
 	run "$NPASS" get HG a/x/Backup-x.dados.md
 	[ "$status" -ne 0 ]
 	[[ "$output" == *"anexo de backup"* ]]
-	[[ "$output" != *"formato antigo"* ]]
+	[[ "$output" != *"não está no formato md1"* ]]
 }
 
 # --- edit e update -m: so md1 entra ---------------------------------------------------------
@@ -245,13 +245,14 @@ put() { printf '%s\0%s\0' "$1" "$2" | "$NPASS" insert --batch -f HG >/dev/null; 
 	[[ "$output" == *"1 grupo(s) reutilizado(s)"* ]]
 }
 
-@test "audit: entrada no formato antigo e reportada como falha (aponta a conversao), nao lida como senha" {
+@test "audit: entrada fora de md1 e reportada como falha, nao lida como senha" {
 	command -v python3 >/dev/null || skip "python3 ausente"
 	put a/ok "$(md1_doc 'uma-senha-qualquer-1!')"
-	npass_test_legacy HG a/velha 'senha-velha'
+	npass_test_raw HG a/velha 'senha-velha'
 	NPASS_BIN="$NPASS" run python3 "$PROJECT_DIR/extensions/npass-audit" HG --offline
 	[[ "$output" == *"a/velha"* ]]
-	[[ "$output" == *"npass import npass-legacy"* ]]
+	[[ "$output" == *"não está em md1"* ]]
+	[[ "$output" != *"npass import"* ]]
 	[[ "$output" == *"Resumo: 1 senha(s)"* ]]
 	[[ "$output" != *"Traceback"* ]]
 }

@@ -67,13 +67,13 @@ setup() {
 	[ "$output" = "a" ]
 }
 
-@test "edit de entrada no formato antigo manda converter e nao abre o editor" {
-	npass_test_legacy personal notes/velha $'senha-velha\nlogin: x'
+@test "edit de entrada fora de md1 recusa e nao abre o editor" {
+	npass_test_raw personal notes/velha $'senha-velha\nlogin: x'
 	printf '#!/bin/sh\ntouch "%s"\n' "$BATS_TEST_TMPDIR/abriu" > "$BATS_TEST_TMPDIR/e.sh"
 	chmod +x "$BATS_TEST_TMPDIR/e.sh"
 	EDITOR="$BATS_TEST_TMPDIR/e.sh" run "$NPASS" edit personal notes/velha
 	[ "$status" -ne 0 ]
-	[[ "$output" == *"npass import npass-legacy personal"* ]]
+	[[ "$output" == *"não está no formato md1"* ]]
 	[ ! -e "$BATS_TEST_TMPDIR/abriu" ]
 }
 
@@ -155,14 +155,14 @@ setup() {
 	[ "$output" = "linha1" ]
 }
 
-# --- update: entrada no formato antigo e pulada com aviso -----------------
+# --- update: entrada fora de md1 e pulada com aviso -----------------
 
-@test "update pula entrada no formato antigo, avisa como converter e atualiza as outras" {
-	npass_test_legacy personal g/velha 'segredo-velho'
+@test "update pula entrada fora de md1 com aviso e atualiza as outras" {
+	npass_test_raw personal g/velha 'segredo-velho'
 	printf 'novo1\nnovo1\n' | "$NPASS" insert personal g/nova
 	run "$NPASS" update -f -l 11 personal 'g/'
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"g/velha"*"npass import npass-legacy personal"* ]]
+	[[ "$output" == *"g/velha"*"não está em md1, pulando"* ]]
 	run "$NPASS" get personal g/nova
 	[ "${#output}" -eq 11 ]
 	run "$NPASS" show personal g/velha

@@ -25,11 +25,10 @@ Use para tarefas envolvendo:
 - CSV genérico;
 - `pass`;
 - `pass-secrets`;
-- `npass-legacy`: converte, no próprio store, as entradas do formato antigo (texto puro) para md1.
 
-Todo import grava **md1** (`render()` / `render_md1()`); o corpo dos stores `pass` passa por `legacy_to_md1()` e por `verify_conversion()`, que reprova a conversão que perder ou duplicar uma linha. `parse_md1()` aqui e em `npass-audit` espelha `lib/14-entry.bash`: mudou o formato, mude os três.
+Todo import grava **md1** (`render()` / `render_md1()`); o corpo dos stores `pass` passa por `pass_body_to_md1()` e por `verify_conversion()`, que reprova a conversão que perder ou duplicar uma linha. `parse_md1()` aqui e em `npass-audit` espelha `lib/14-entry.bash`: mudou o formato, mude os três.
 
-Testes relacionados: `tests/import.bats`, `tests/import-pass.bats`, `tests/import-pass-secrets.bats`, `tests/import-legacy.bats`.
+Testes relacionados: `tests/import.bats`, `tests/import-pass.bats`, `tests/import-pass-secrets.bats`, `tests/import-convert.bats`.
 
 ### `npass-passkey`
 

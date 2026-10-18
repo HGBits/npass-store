@@ -238,7 +238,7 @@ cmd_view() {
 		nav="$(npass_nav_line_parent "$id" "$dir" "$logical")"
 		doc="$(npass_display_backup "$logical" "$content" "$nav" "$id")"
 	else
-		# formato antigo ou estrutura invalida: nao ha o que renderizar com seguranca
+		# fora de md1 ou estrutura invalida: nao ha o que renderizar com seguranca
 		printf '%s\n' "$content"
 		return 0
 	fi

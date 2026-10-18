@@ -107,7 +107,7 @@ Only the notes are real markdown, and
 .B http(s)://
 values become links. The text goes to glow on stdin, never as an argument, and
 nothing is written to disk. If glow is missing or fails, a warning is printed and
-the raw text is shown. An entry in the old format or with an invalid structure is
+the raw text is shown. An entry that is not in md1 or has an invalid structure is
 always shown raw. To copy a password use
 .BR clip :
 glow draws margins and padding around the text.
@@ -521,10 +521,10 @@ and
 .B edit
 reject anything else, and
 .B update \-m
-expects the complete document. An entry still in the old format is not read by
+expects the complete document. An entry that is not in md1 (no marker on line 1, or an invalid
+structure) is not read by
 .BR get ", " clip ", " otp ", " pin ", " "generate \-\-in\-place" ", " update " or " edit :
-the command stops and points to
-.BR "npass import npass\-legacy" .
+the command stops with an error. There is no migration: npass only reads md1.
 .BR show ", " tree ", " grep ", " mv " and " rm
 still work on it.
 .SH ENVIRONMENT
@@ -769,22 +769,16 @@ the plain\-text body of each
 .B pass
 file is converted on the way in.
 .PP
-.B npass import npass\-legacy
-.RB [ \-\-dry\-run ]
-.I ID
-converts, in place, the entries of one identity that are still in the old
-plain\-text format (password on line 1) to md1: it reads each entry with
-.BR "npass show" ,
-converts it, verifies the result (same password and
+The body of a
+.B pass
+file is plain text (password on line 1, then
+.BR "key: value" ,
 .B otpauth://
-lines, and every non\-empty original line present the same number of times) and
-writes the batch with
-.B insert \-\-batch \-f
-as a single git commit, so the old format stays in the git history. Entries already
-in md1 and the attachments of
-.B backup
-are left alone, so it is idempotent; an entry whose conversion fails verification is
-kept as it was and counted as a failure (non\-zero exit).
+lines and notes); the import converts it to md1 and verifies the result (same password and
+.B otpauth://
+lines, and every non\-empty original line present the same number of times). An entry whose
+conversion fails verification is skipped and counted as a failure (non\-zero exit). This is the
+only format conversion npass performs.
 .PP
 .B npass\-clip\-x11
 copies the password or a field to the X11 clipboard (needs

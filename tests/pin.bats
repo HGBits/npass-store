@@ -237,12 +237,12 @@ mkentry() {
 	[[ "$output" == *"--in-place só vale com --password"* ]]
 }
 
-@test "entrada no formato antigo: --field e --password --in-place mandam converter e nao alteram nada" {
-	npass_test_legacy HG banco/velho $'senha-velha\nlogin: x'
+@test "entrada fora de md1: --field e --password --in-place recusam e nao alteram nada" {
+	npass_test_raw HG banco/velho $'senha-velha\nlogin: x'
 	local antes; antes="$("$NPASS" show HG banco/velho)"
 	run "$NPASS" pin --field HG banco/velho
 	[ "$status" -ne 0 ]
-	[[ "$output" == *"npass import npass-legacy HG"* ]]
+	[[ "$output" == *"não está no formato md1"* ]]
 	run "$NPASS" pin --password --in-place HG banco/velho
 	[ "$status" -ne 0 ]
 	[ "$("$NPASS" show HG banco/velho)" = "$antes" ]

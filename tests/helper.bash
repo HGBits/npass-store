@@ -105,11 +105,11 @@ md1_doc() {
 	fi
 }
 
-# npass_test_legacy ID LOGICAL CORPO -> grava no store um conteudo no formato
-# ANTIGO (texto puro, linha 1 = senha) chamando as funcoes internas do npass.
-# O comando `insert` so grava md1, entao este e o unico jeito de semear uma
-# entrada legada para testar a conversao (npass-legacy) e a recusa do core.
-npass_test_legacy() {
+# npass_test_raw ID LOGICAL CORPO -> grava no store um conteudo CRU, sem validar, chamando
+# as funcoes internas do npass. Os comandos (insert, edit, --batch...) so gravam md1, entao
+# este e o unico jeito de semear uma entrada fora de md1 (ou com estrutura invalida) para
+# testar a recusa do core.
+npass_test_raw() {
 	NPASS_SRC="$BATS_TEST_DIRNAME/../bin/npass" bash -c '
 		source <(sed "\$d" "$NPASS_SRC")
 		npass_tmp_init

@@ -112,8 +112,7 @@ npass_help_data() {
   extension sign CAMINHO [KEYID]   assina um executável de extensão
   extension list           lista extensões e se cada uma passaria nas checagens
 @sub disponiveis|Disponíveis (instale com ./install.sh --extensions-only)
-  import                   importa de outros gerenciadores e de stores pass; converte entradas
-                           do formato antigo do npass (npass import --help)
+  import                   importa de outros gerenciadores e de stores pass (npass import --help)
   audit                    audita senhas por vazamentos, força e reutilização
   passkey                  passkeys (WebAuthn/FIDO2) guardadas só no npass
   clip-x11                 copia senha ou campo para o clipboard do X11 (xclip)

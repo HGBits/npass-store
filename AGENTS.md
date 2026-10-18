@@ -29,7 +29,7 @@ Este arquivo é o índice operacional do projeto. Use-o para localizar rapidamen
 | Senhas de backup (`backup`, anexos cifrados) | `lib/13-backup.bash` | `lib/03-store.bash` (cascata em `rm`/`mv`), `lib/06-update.bash`, `extensions/npass-audit`, `tests/backup.bats` |
 | Assinatura de identidades/artefatos | `lib/10-signing.bash` | `tests/signing.bats` |
 | Sistema de extensões | `lib/11-extensions.bash` | `extensions/`, testes de extensão |
-| Importação de outros gerenciadores e conversão do formato antigo (`import npass-legacy`) | `extensions/npass-import` | `tests/import*.bats`, `tests/import-legacy.bats` |
+| Importação de outros gerenciadores e de stores pass (o corpo do pass é convertido para md1) | `extensions/npass-import` | `tests/import*.bats`, `tests/import-convert.bats` |
 | Passkeys / WebAuthn (backend, índice, blobs) | `extensions/npass-passkey` | `tests/passkey.bats`, `npass-passkey-arquitetura.md` |
 | Daemon FIDO2/CTAP2/UHID (Rust) | `passkey/src/` | `passkey/tests/e2e.rs`, `passkey/Cargo.toml` |
 | Clipboard X11 | `extensions/npass-clip-x11.bash` | `tests/clip-ext.bats` |
@@ -83,8 +83,8 @@ build.sh ---> gera bin/npass a partir de lib/
 5. Não modificar fixtures GPG só para fazer um teste passar sem entender o motivo.
 6. Em segurança, distinguir claramente comportamento observado de inferência.
 7. Não assumir que uma função em outro módulo pode ser alterada sem verificar seu contrato.
-8. **O conteúdo de uma entrada é md1 e só `lib/14-entry.bash` o interpreta.** Nenhum outro módulo (nem extensão em shell) pode ler "a 1ª linha", casar `chave: valor` ou procurar `otpauth://` por conta própria: use `npass_entry_load`/`_require`/`_render` no core e `npass get` nas extensões. As exceções são os dois conversores em Python (`extensions/npass-import`, `extensions/npass-audit`), que espelham as regras e são cruzados com o parser do core em `tests/import-legacy.bats`. Mudou o formato? Mude os três e os testes juntos.
-9. Não existe leitura do formato antigo no core: entrada em texto puro é recusada com instrução para `npass import npass-legacy ID`.
+8. **O conteúdo de uma entrada é md1 e só `lib/14-entry.bash` o interpreta.** Nenhum outro módulo (nem extensão em shell) pode ler "a 1ª linha", casar `chave: valor` ou procurar `otpauth://` por conta própria: use `npass_entry_load`/`_require`/`_render` no core e `npass get` nas extensões. As exceções são os dois conversores em Python (`extensions/npass-import`, `extensions/npass-audit`), que espelham as regras e são cruzados com o parser do core em `tests/import-convert.bats`. Mudou o formato? Mude os três e os testes juntos.
+9. O core só lê md1 e não migra nada: entrada fora de md1 é recusada (`erro_nao_md1`), sem sugerir conversão. A única conversão de formato é a do corpo de stores `pass` no import (`pass_body_to_md1`, protegida por `verify_conversion`); não volte a criar suporte a formato legado nem comando de migração.
 10. Documentação deve refletir o comportamento real, não uma intenção futura.
 11. `pin.md` e `diceware.md` ficam fora deste índice de trabalho conforme solicitado.
 12. Comando ou extensão novos entram em `npass_help_data` (`lib/18-help.bash`), numa categoria e seção: `tests/help.bats` falha se ficarem de fora. O menu principal (`npass_help_essential`) é escolha, não lista completa: não acrescente nada ali sem tirar outra coisa.

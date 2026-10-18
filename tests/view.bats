@@ -210,11 +210,11 @@ PY
 
 # --- o que nao se renderiza ---------------------------------------------------------------------------------
 
-@test "formato antigo ou estrutura invalida: cru, sem chamar o glow" {
-	npass_test_legacy HG a/velha $'senha-velha\nlogin: x'
+@test "fora de md1 ou estrutura invalida: cru, sem chamar o glow" {
+	npass_test_raw HG a/velha $'senha-velha\nlogin: x'
 	run "$NPASS" show --render HG a/velha
 	[ "$output" = $'senha-velha\nlogin: x' ]
-	npass_test_legacy HG a/ruim $'<!-- npass:md1 -->\n## Senha\npw\nlixo'
+	npass_test_raw HG a/ruim $'<!-- npass:md1 -->\n## Senha\npw\nlixo'
 	run "$NPASS" show --render HG a/ruim
 	[ "$output" = $'<!-- npass:md1 -->\n## Senha\npw\nlixo' ]
 	[ ! -e "$GLOWLOG.in" ]

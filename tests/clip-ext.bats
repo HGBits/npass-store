@@ -45,15 +45,15 @@ teardown() { pkill -f "sleep 1$" 2>/dev/null || true; }
 	[ "$(cat "$OUT")" = "https://x" ]
 }
 
-@test "wclip e clip-x11: campo inexistente, entrada no formato antigo e anexo falham com a mensagem do core" {
+@test "wclip e clip-x11: campo inexistente e entrada fora de md1 falham com a mensagem do core" {
 	run "$NPASS" wclip telefone HG a/x
 	[ "$status" -ne 0 ]
 	[[ "$output" == *"login"* ]]
-	npass_test_legacy HG a/velha 'senha-velha'
+	npass_test_raw HG a/velha 'senha-velha'
 	for c in wclip clip-x11; do
 		run "$NPASS" "$c" HG a/velha
 		[ "$status" -ne 0 ]
-		[[ "$output" == *"npass import npass-legacy HG"* ]]
+		[[ "$output" == *"não está no formato md1"* ]]
 	done
 	[ ! -s "$OUT" ] || [ "$(cat "$OUT")" != "senha-velha" ]
 }

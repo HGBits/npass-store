@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# npass-extension-desc: Importa senhas de outros gerenciadores (Bitwarden, KeePassXC, Firefox, Aegis, ...) e de stores pass/pass-secrets, e converte entradas antigas do npass para md1
+# npass-extension-desc: Importa senhas de outros gerenciadores (Bitwarden, KeePassXC, Firefox, Aegis, ...) e de stores pass/pass-secrets para md1
 # npass-extension-needs: python3
 """npass-import - importa senhas de outros gerenciadores para uma identidade do npass.
 
@@ -79,19 +79,10 @@ _M = {
                     "warning: %s is on btrfs (copy-on-write); shred does NOT guarantee the old blocks are wiped. "
                     "Prefer importing from a .gpg file or from /dev/shm."),
     "apagado": ("origem apagada: %s", "source removed: %s"),
-    "id_inexistente": ("identidade não encontrada: %s", "identity not found: %s"),
-    "legacy_args": ("'npass-legacy' espera só a identidade: npass import npass-legacy ID",
-                    "'npass-legacy' takes only the identity: npass import npass-legacy ID"),
-    "legacy_falha_ler": ("%s: falha ao decifrar, mantida como está", "%s: failed to decrypt, left as is"),
-    "legacy_verif": ("%s: a conversão não passou na verificação, mantida como está",
-                     "%s: the conversion failed verification, left as is"),
-    "legacy_notas": ("%s: %d linha(s) 'chave: valor' ficaram nas notas (não viram campo)",
-                     "%s: %d 'key: value' line(s) stayed in the notes (they do not become fields)"),
-    "legacy_nada": ("Nenhuma entrada de \"%s\" precisa de conversão.", "No entry of \"%s\" needs conversion."),
-    "legacy_resumo": ("Conversão de \"%s\" para md1: %d convertida(s), %d já em md1, %d anexo(s) de backup, %d falhou(aram).",
-                      "Conversion of \"%s\" to md1: %d converted, %d already md1, %d backup attachment(s), %d failed."),
-    "legacy_git": ("o formato antigo continua no histórico do git de %s (git -C %s log)",
-                   "the old format stays in the git history of %s (git -C %s log)"),
+    "conv_verif": ("%s: a conversão não passou na verificação, entrada ignorada",
+                   "%s: the conversion failed verification, entry skipped"),
+    "conv_notas": ("%s: %d linha(s) 'chave: valor' ficaram nas notas (não viram campo)",
+                   "%s: %d 'key: value' line(s) stayed in the notes (they do not become fields)"),
 }
 
 
@@ -409,8 +400,6 @@ FORMATS = {
     "1password": (imp_profile("1password"), "1Password (CSV)", "1Password (CSV)"),
     "aegis": (imp_aegis, "Aegis Authenticator (JSON plain) -> OTP", "Aegis Authenticator (plain JSON) -> OTP"),
     "andotp": (imp_andotp, "andOTP (JSON plain) -> OTP", "andOTP (plain JSON) -> OTP"),
-    "npass-legacy": (None, "converte uma identidade do npass do formato antigo (texto puro) para md1, no próprio store",
-                     "converts an npass identity from the old plain-text format to md1, in place"),
     "pass": (None, "store pass tradicional (diretório de arquivos .gpg)", "classic pass store (directory of .gpg files)"),
     "pass-secrets": (None, "layout pass-secrets-redesign (codinomes + .secrets.gpg/.mask.gpg)",
                      "pass-secrets-redesign layout (codenames + .secrets.gpg/.mask.gpg)"),
@@ -468,7 +457,6 @@ def assign_paths(entries, prefix):
 # formato md1 (mesmas regras de lib/14-entry.bash, que e o parser oficial)
 # --------------------------------------------------------------------------
 MD1_MARKER = "<!-- npass:md1 -->"
-BACKUP_MARKER = re.compile(r"^<!-- npass:backup-(index|data) v1 -->$")
 _MD1_FIELD = re.compile(r"^-\s+([^:]+):\s*(.*)$")
 _LEG_FIELD = re.compile(r"^(#[ \t]*)?([^:\s#][^:]*):[ \t]*(.*)$")
 
@@ -491,7 +479,7 @@ def render_md1(password, fields, otp, notes):
 
 
 def parse_md1(text):
-    """Devolve {password, fields, otp, notes} ou None (formato antigo / invalido)."""
+    """Devolve {password, fields, otp, notes} ou None (nao e md1 / estrutura invalida)."""
     lines = text.rstrip("\n").split("\n")
     if lines[0] != MD1_MARKER:
         return None
@@ -527,9 +515,9 @@ def parse_md1(text):
     return doc
 
 
-def legacy_to_md1(body):
-    """Converte o conteudo do formato ANTIGO (linha 1 = senha; depois 'chave: valor',
-    otpauth:// e notas) em md1. Devolve (documento, n_linhas_chave_valor_nas_notas).
+def pass_body_to_md1(body):
+    """Converte o corpo de uma entrada de um store PASS (linha 1 = senha; depois
+    'chave: valor', otpauth:// e notas) em md1. Devolve (documento, n_linhas_chave_valor_nas_notas).
 
     Regras, na ordem:
       - linha 1 e a senha; se for otpauth:// (entrada so de OTP) a senha fica vazia
@@ -805,14 +793,14 @@ def import_tree(fmt, o, binp, ident, args):
             if alias:
                 body += "\n# %s: %s" % (LABEL_ALIAS, alias)
         # o conteudo de um store pass e o formato antigo: entra no npass ja em md1
-        legacy_body = body
-        body, lost = legacy_to_md1(legacy_body)
-        if not verify_conversion(legacy_body, body):
-            warn(t("legacy_verif", logical))
+        pass_body = body
+        body, lost = pass_body_to_md1(pass_body)
+        if not verify_conversion(pass_body, body):
+            warn(t("conv_verif", logical))
             failed += 1
             continue
         if lost and o.verbose:
-            warn(t("legacy_notas", logical, lost))
+            warn(t("conv_notas", logical, lost))
         if o.verbose:
             print(("! " if path in have else "+ ") + path)
         items.append((path, body))
@@ -832,64 +820,6 @@ def import_tree(fmt, o, binp, ident, args):
             for f in sources:
                 delete_source(f, quiet=True)
     print(t("resumo_tree", ident, len(items), skipped, failed))
-    return 1 if failed else 0
-
-
-# --------------------------------------------------------------------------
-# npass-legacy: converter uma identidade do proprio npass (formato antigo -> md1)
-# --------------------------------------------------------------------------
-def migrate_legacy_store(o, binp, ident):
-    """Le cada entrada com `npass show`, converte as que ainda estao no formato antigo
-    e regrava o lote com `npass insert --batch -f` (uma assinatura conferida, um commit).
-    Idempotente: o que ja esta em md1 e os anexos de `npass backup` nao sao tocados.
-    Cada conversao passa por verify_conversion; a que nao passar fica como estava."""
-    # `npass tree --flat` ja falha com identidade inexistente; a checagem aqui da a mensagem
-    # propria do import (e vale mesmo contra um core que so avise).
-    if not os.path.isfile(os.path.join(os.environ.get("NPASS_STORE", ""), ident, ".gpg-id")):
-        die(t("id_inexistente", ident))
-    paths = sorted(existing_paths(binp, ident))
-    items, converted, already, attach, failed = [], 0, 0, 0, 0
-    for path in paths:
-        r = subprocess.run([binp, "show", ident, path], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        if r.returncode != 0:
-            warn(t("legacy_falha_ler", path))
-            failed += 1
-            continue
-        body = r.stdout.decode("utf-8", "surrogateescape").replace("\0", "").rstrip("\n")
-        first = body.split("\n", 1)[0]
-        if first == MD1_MARKER:
-            already += 1
-            continue
-        if BACKUP_MARKER.match(first):
-            attach += 1
-            continue
-        doc, lost = legacy_to_md1(body)
-        if not verify_conversion(body, doc):
-            warn(t("legacy_verif", path))
-            failed += 1
-            continue
-        if lost:
-            warn(t("legacy_notas", path, lost))
-        if o.dry_run or o.verbose:
-            print("~ " + path)
-        items.append((path, doc))
-        converted += 1
-
-    if converted == 0 and failed == 0:
-        print(t("legacy_nada", ident))
-        return 0
-    print(t("legacy_resumo", ident, converted, already, attach, failed))
-    if o.dry_run:
-        print(t("dry"), file=sys.stderr)
-        return 1 if failed else 0
-    if items:
-        rc = write_batch(binp, ident, items, True)
-        if rc != 0:
-            warn(t("core_falhou", rc))
-            return rc
-        store = os.environ.get("NPASS_STORE", "")
-        if os.path.isdir(os.path.join(store, ".git")):
-            print(t("legacy_git", store, store), file=sys.stderr)
     return 1 if failed else 0
 
 
@@ -933,10 +863,6 @@ def main(argv):
     fmt = o.args[0].lower()
     if fmt not in FORMATS:
         die(t("fmt_desc", fmt), 2)
-    if fmt == "npass-legacy":
-        if len(o.args) != 2:
-            die(t("legacy_args"), 2)
-        return migrate_legacy_store(o, npass_bin(), o.args[1])
     if len(o.args) < 3:
         die(t("faltam_args"), 2)
     ident, files = o.args[1], o.args[2:]

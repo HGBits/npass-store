@@ -139,7 +139,7 @@ O `glow` é **dependência do `show` em terminal**: sem ele o npass avisa e impr
 - as **notas** são markdown de verdade: negrito, listas e links funcionam;
 - o texto vai ao `glow` por **stdin**, nunca por argumento, e nada é gravado em disco.
 
-Variáveis: `NPASS_SHOW_RENDER=auto|always|never` (padrão `auto`: renderiza só em terminal; a flag `--raw`/`--render` vence a variável), `NPASS_GLOW` (caminho do binário), `NPASS_GLOW_STYLE` (`-s` do glow: `dark`, `light`, `notty`...) e `NPASS_GLOW_WIDTH` (`-w`). O npass não passa `-p`; se o seu `glow.yml` tiver `pager: true`, o pager abre por escolha sua. **Para copiar a senha use `npass clip`**: o `glow` desenha margem e preenchimento ao redor do texto, e selecionar da tela leva isso junto. Entrada no formato antigo ou com estrutura inválida sai crua, sem renderizar.
+Variáveis: `NPASS_SHOW_RENDER=auto|always|never` (padrão `auto`: renderiza só em terminal; a flag `--raw`/`--render` vence a variável), `NPASS_GLOW` (caminho do binário), `NPASS_GLOW_STYLE` (`-s` do glow: `dark`, `light`, `notty`...) e `NPASS_GLOW_WIDTH` (`-w`). O npass não passa `-p`; se o seu `glow.yml` tiver `pager: true`, o pager abre por escolha sua. **Para copiar a senha use `npass clip`**: o `glow` desenha margem e preenchimento ao redor do texto, e selecionar da tela leva isso junto. Entrada fora de md1 ou com estrutura inválida sai crua, sem renderizar.
 
 Copiar para o clipboard (só a senha, por padrão):
 
@@ -241,13 +241,13 @@ otpauth://totp/...
 texto livre; sempre a última seção
 ```
 
-- A 1ª linha é exatamente o marcador. Sem ele a entrada **não está em md1** (veja "Migração e importação").
+- A 1ª linha é exatamente o marcador. Sem ele a entrada **não está em md1** e o npass não a lê.
 - `## Senha` é obrigatória e vem primeiro. A senha é a linha logo abaixo do cabeçalho, lida **por posição e sem tirar espaços**: uma senha pode ser `## Campos`, `- x: y` ou começar com `#` sem confundir o parser.
 - `## Campos`, `## OTP` e `## Notas` são opcionais, nessa ordem e no máximo uma vez cada. Uma linha de campo é `- chave: valor`; a chave não diferencia maiúsculas. Entrada só de OTP tem `## Senha` vazia.
 - `## Notas` vai até o fim do documento: tudo depois dela é nota, mesmo que pareça cabeçalho ou campo (e por isso nunca vira campo).
 - Linha não reconhecida dentro de Campos/OTP é mantida como está ao reescrever. Estrutura inválida (seção fora de ordem ou repetida, texto solto) é recusada, nunca "consertada" em silêncio.
 - **Só md1 entra:** `insert`, `generate`, `pin`, `diceware`, `otp insert` e os imports gravam md1; `insert --batch` e `edit` recusam qualquer outra coisa; `update -m` espera o documento completo. O único parser do formato é `lib/14-entry.bash`.
-- Uma entrada ainda no formato antigo (texto puro, senha na 1ª linha) **não é lida** por `get`, `clip`, `otp`, `pin`, `generate --in-place`, `update` nem `edit`: o comando para e manda rodar `npass import npass-legacy ID`. `show`, `ls`, `grep`, `mv` e `rm` continuam funcionando com ela.
+- Uma entrada **fora de md1** (sem o marcador na 1ª linha, ou com estrutura inválida) **não é lida** por `get`, `clip`, `otp`, `pin`, `generate --in-place`, `update` nem `edit`: o comando para com `não está no formato md1`. `show`, `tree`, `grep`, `mv` e `rm` continuam funcionando com ela. O npass **só lê md1** e não tem fluxo de migração: o único conversor é o do import de stores `pass`, descrito em "Migração e importação".
 
 ## PIN
 
@@ -385,25 +385,18 @@ npass import pass-secrets pessoal /caminho/da/identidade     # layout pass-secre
 - Se a identidade `pessoal` ainda não existir e a origem tiver `.gpg-id`, ela é criada com os mesmos destinatários, e já **assinada** se a origem tiver `.gpg-id.sig`. Uma identidade que já existia nunca é assinada como efeito colateral (isso continua sendo `npass sign`).
 - As fontes não são removidas por padrão (`--delete-source` apaga cada `.gpg` depois de importar com sucesso). O que já existe é pulado; `-f` sobrescreve. `-p PREFIXO` e `--dry-run` também valem aqui.
 - No `pass-secrets` o codinome continua sendo o caminho lógico (para não ir parar no histórico do shell nem em `/proc/*/cmdline`); o nome real e o alias de e-mail viram os campos `- nome-real: ...` e `- email-alias: ...` dentro do segredo cifrado.
-- O corpo de cada `.gpg` de um store `pass` é texto puro (formato antigo); o import o **converte para md1** na hora, pelas regras de "Converter do formato antigo" abaixo.
+- O corpo de cada `.gpg` de um store `pass` é texto puro (linha 1 = senha, depois `chave: valor`); o import o **converte para md1** na hora, pelas regras de "Como o corpo de um store pass vira md1" abaixo.
 
-> `npass migrate` e `npass migrate-secrets` não existem mais no core: viraram `npass import pass`, `npass import pass-secrets` e `npass import npass-legacy`. Rodar o comando antigo mostra esse aviso.
+> `npass migrate` e `npass migrate-secrets` não existem mais no core: viraram `npass import pass` e `npass import pass-secrets`. Rodar o comando antigo mostra esse aviso.
 
-### Converter do formato antigo (`npass-legacy`)
+### Como o corpo de um store pass vira md1
 
-Entradas gravadas antes do md1 (texto puro, senha na 1ª linha) não são lidas pelo core. Convertê-las é um fluxo da mesma extensão, **no próprio store**:
+O corpo de um `.gpg` do `pass` é texto puro. O import de `pass` e de `pass-secrets` o converte para md1 antes de gravar, e essa é a **única** conversão de formato que o npass faz (não há comando para converter entradas já gravadas):
 
-```bash
-npass import npass-legacy pessoal --dry-run   # lista o que seria convertido (~ caminho); não grava
-npass import npass-legacy pessoal             # converte e grava
-```
-
-- Lê cada entrada com `npass show`, converte as que ainda estão no formato antigo e grava o lote com `insert --batch -f`: **um** commit Git, e o formato antigo continua no histórico (`git -C ~/.npass log`).
-- **Idempotente:** o que já está em md1 e os anexos do `npass backup` não são tocados; rodar de novo diz que não há nada a converter.
-- Regras da conversão: a 1ª linha é a senha (se for `otpauth://`, a entrada era só de OTP e a senha fica vazia); o **bloco de campos** é o prefixo de linhas `chave: valor` (ou `# chave: valor`) e `otpauth://`; uma linha em branco logo depois dele é só o separador; o resto vai para `## Notas` sem mudar uma vírgula. Linhas `otpauth://` e as etiquetas `# nome-real:` / `# email-alias:` que estiverem soltas nas notas **sobem** para OTP/Campos, para o OTP e a busca por campo continuarem funcionando.
-- **O que muda de comportamento:** uma linha `chave: valor` que estava *depois* da primeira linha em branco (nas notas) era achada pelo `clip CAMPO` do formato antigo e agora fica nas notas, sem virar campo. O comando avisa, entrada por entrada (`ficaram nas notas`).
-- **Cada conversão é verificada** antes de gravar: relê o md1 gerado e confere que a senha e as linhas `otpauth://` são idênticas e que toda linha não vazia do original aparece no resultado (como campo ou nota) o mesmo número de vezes. Se não passar, a entrada é mantida como estava e entra na contagem de falhas (saída ≠ 0).
-- Identidade inexistente, ilegível ou entrada não decifrável: a entrada fica como está e o comando relata.
+- A 1ª linha é a senha (se for `otpauth://`, a entrada era só de OTP e a senha fica vazia). O **bloco de campos** é o prefixo de linhas `chave: valor` (ou `# chave: valor`) e `otpauth://`. Uma linha em branco logo depois dele é só o separador, e o resto vai para `## Notas` sem mudar uma vírgula.
+- Linhas `otpauth://` soltas nas notas, e as etiquetas `# nome-real:` / `# email-alias:` (as que o próprio import de `pass-secrets` acrescenta), **sobem** para OTP/Campos, para o OTP e a busca por campo funcionarem.
+- Uma linha `chave: valor` que estiver *depois* da primeira linha em branco (nas notas) **fica nas notas**, sem virar campo; com `--verbose` o import avisa, entrada por entrada (`ficaram nas notas`).
+- **Cada conversão é verificada** antes de gravar: relê o md1 gerado e confere que a senha e as linhas `otpauth://` são idênticas e que toda linha não vazia do original aparece no resultado (como campo ou nota) o mesmo número de vezes. Se não passar, a entrada é ignorada e entra na contagem de falhas (saída ≠ 0).
 
 Para importar de **outros gerenciadores** (Bitwarden, KeePassXC, Firefox, Chrome, LastPass, 1Password, Aegis, andOTP, CSV genérico), é a mesma extensão: seção abaixo.
 
@@ -463,7 +456,7 @@ npass import pass pessoal ~/.password-store                  # store pass tradic
 npass import pass-secrets pessoal /caminho/da/identidade     # layout pass-secrets-redesign
 ```
 
-Formatos: `csv` (genérico), `bitwarden` (csv/json), `keepassxc`/`keepass`, `firefox`, `chrome`, `lastpass`, `1password`, `aegis`, `andotp`, `pass`, `pass-secrets` e `npass-legacy` (converte o próprio store, sem arquivo de origem).
+Formatos: `csv` (genérico), `bitwarden` (csv/json), `keepassxc`/`keepass`, `firefox`, `chrome`, `lastpass`, `1password`, `aegis`, `andotp`, `pass` e `pass-secrets`.
 
 - Por padrão **pula** o que já existe (reimportar é seguro); `-f` sobrescreve. Títulos repetidos viram `titulo/login`.
 - Opções: `-p PREFIXO`, `-f`, `-d/--dry-run`, `-v`, `--delete-source`, `--encoding`, `--del`, `--cols`, `--skip-header`.

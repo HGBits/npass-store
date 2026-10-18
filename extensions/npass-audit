@@ -52,7 +52,7 @@ _FIELD = re.compile(r"^-\s+([^:]+):\s*(.*)$")
 def parse_md1(text):
     """Le um documento md1 (mesmas regras de lib/14-entry.bash). Devolve
     {password, fields[(chave|None, valor|linha)], otp[], notes} ou None se o texto
-    nao esta em md1 (formato antigo) ou tem a estrutura invalida."""
+    nao esta em md1 ou tem a estrutura invalida."""
     lines = text.rstrip("\n").split("\n")
     if lines[0] != MD1_MARKER:
         return None
@@ -88,8 +88,7 @@ def parse_md1(text):
 def parse_entry(path, raw):
     doc = parse_md1(raw)
     if doc is None:
-        raise RuntimeError(tr("não está em md1 (converta com: npass import npass-legacy ID)",
-                              "not in md1 (convert with: npass import npass-legacy ID)"))
+        raise RuntimeError(tr("não está em md1", "not in md1"))
     values = []
     for key, value in doc["fields"]:
         values.extend((key, value) if key is not None else (value,))

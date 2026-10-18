@@ -87,7 +87,7 @@ cmd_update() {
 
 		content="$(cmd_show "$id" "$logical")" || { npass_warn "$(npass_t warn_falha_decifrar "$logical")"; continue; }
 		if ! npass_entry_load "$content"; then
-			npass_warn "$(npass_t warn_update_nao_md1 "$id" "$logical" "$id")"
+			npass_warn "$(npass_t warn_update_nao_md1 "$id" "$logical")"
 			continue
 		fi
 		oldpw="$NPASS_E_PW"

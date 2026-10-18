@@ -309,13 +309,13 @@ in_section() { awk -F'\t' -v w="$1" -v sec="[$2]" '/^\[/{s=$0} s==sec && $2==w {
 	[ "$("$NPASS" get HG a/b)" != "senha-velha" ]
 }
 
-@test "--in-place numa entrada no formato antigo manda converter e nao altera nada" {
-	npass_test_legacy HG a/velha $'senha-velha\nlogin: eu'
+@test "--in-place numa entrada fora de md1 recusa e nao altera nada" {
+	npass_test_raw HG a/velha $'senha-velha\nlogin: eu'
 	local cmd antes; antes="$("$NPASS" show HG a/velha)"
 	for cmd in diceware memorable; do
 		run "$NPASS" "$cmd" --in-place HG a/velha
 		[ "$status" -ne 0 ]
-		[[ "$output" == *"npass import npass-legacy HG"* ]]
+		[[ "$output" == *"não está no formato md1"* ]]
 	done
 	[ "$("$NPASS" show HG a/velha)" = "$antes" ]
 }

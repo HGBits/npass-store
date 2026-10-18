@@ -55,7 +55,7 @@ npass_entry_is_v2() {
 }
 
 # npass_entry_load CONTEUDO -> preenche NPASS_E_*.
-# Retorna 0 ok, 1 se nao esta em md1 (formato antigo ou lixo), 2 se tem o
+# Retorna 0 ok, 1 se nao esta em md1 (sem o marcador na 1a linha), 2 se tem o
 # marcador mas a estrutura e invalida.
 npass_entry_load() {
 	local content="$1" line state="" rank=0 n=0 notes_started=0
@@ -127,7 +127,7 @@ npass_entry_with_password() {
 }
 
 # npass_entry_require ID LOGICAL CONTEUDO -> carrega ou morre com a mensagem
-# certa (formato antigo / anexo de backup / estrutura invalida).
+# certa (nao e md1 / anexo de backup / estrutura invalida).
 npass_entry_require() {
 	local id="$1" logical="$2" rc=0
 	npass_entry_load "$3" || rc=$?
@@ -136,7 +136,7 @@ npass_entry_require() {
 		if npass_backup_is_marker "$3"; then
 			npass_die "$(npass_t erro_entrada_anexo "$id" "$logical")"
 		fi
-		npass_die "$(npass_t erro_formato_antigo "$id" "$logical" "$id")"
+		npass_die "$(npass_t erro_nao_md1 "$id" "$logical")"
 	fi
 	npass_die "$(npass_t erro_formato_invalido "$id" "$logical")"
 }
