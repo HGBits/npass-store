@@ -17,6 +17,7 @@ Testes Bats do projeto. Use-os como índice de comportamento esperado antes de a
 | `import-pass.bats` | importação de `pass` |
 | `import-pass-secrets.bats` | importação de `pass-secrets` |
 | `otp.bats` | OTP |
+| `readonly-store.bats` | leitura com o store somente leitura: `get`, `otp` (TOTP) e a falha do HOTP sem imprimir código (pulado como root) |
 | `pin.bats` | PIN (`--password`, `--field`) |
 | `help.bats` | `help`: menu enxuto, categorias e seções, e guardas (todo comando despachado e toda extensão têm ajuda; dados bem formados) |
 | `nav.bats` | navegação de backup no `show` renderizado: `Backup:`/`Entrada:`, par completo, renomeação, nomes difíceis, round-trip com `open` |
