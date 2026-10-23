@@ -149,6 +149,7 @@ npass clip pass pessoal email/gmail     # idem, explícito
 npass clip email pessoal email/gmail    # valor da linha "- email: ..."
 npass clip all pessoal email/gmail      # o documento md1 inteiro
 npass get email pessoal email/gmail     # imprime no stdout em vez de copiar (mesmos argumentos)
+npass get --exact email pessoal email/gmail   # só a chave "email", nunca "email-alias"
 ```
 
 `get` recebe os mesmos argumentos do `clip` e imprime o valor em vez de copiá-lo: é o que as extensões de clipboard (`wclip`, `clip-x11`) chamam, para o formato ser lido em um lugar só.
@@ -156,6 +157,8 @@ npass get email pessoal email/gmail     # imprime no stdout em vez de copiar (me
 Com 2 argumentos é `ID CAMINHO`; com 3, `CAMPO ID CAMINHO`. O campo é
 comparado sem diferenciar maiúsculas e aceita prefixo único (`email` acha
 `email-alias` se for a única chave começando com `email`).
+
+`get --exact [CAMPO] ID CAMINHO` tira o prefixo único: `CAMPO` precisa ser igual a uma chave (sem diferenciar maiúsculas), senão o comando falha. É para quem não pode receber um campo diferente do que pediu (um acesso concedido a `email` não entrega `email-alias`). Só o `get` tem a opção. Os seletores `pass`, `password`, `senha`, `all` e `tudo` continuam valendo com `--exact`: quem repassar texto de terceiros como `CAMPO` precisa recusá-los antes.
 
 Listar as identidades (conta os blobs em disco, sem decifrar nada):
 

@@ -44,6 +44,7 @@ npass_help_data() {
                            pelo glow; em pipe: o documento md1 cru)
   clip [CAMPO] ID DIR/PASS copia a senha (padrão), 'all' ou um campo '- chave: valor'
   get [CAMPO] ID DIR/PASS  imprime (em vez de copiar) o mesmo valor que o clip copiaria
+  get --exact [CAMPO] ID DIR/PASS   como o get, mas CAMPO só casa por chave exata (sem prefixo)
 @sub escrever|Escrever
   insert [-f] ID DIR/PASS  insere/atualiza uma entrada (alias: add)
   insert --batch [-f] ID   grava várias (registros CAMINHO\0DOCUMENTO-MD1\0 no stdin)

@@ -144,6 +144,20 @@ but print the value on stdout instead of copying it. The clipboard extensions
 .RB ( npass\-wclip ", " npass\-clip\-x11 )
 call it, so the md1 format is parsed in one place only.
 .TP
+.BI "get \-\-exact " "[FIELD] " ID " " DIR/PASS
+Like
+.BR get ,
+but FIELD must equal a key (case\-insensitively): there is no unique\-prefix
+fallback, so
+.I email
+never finds
+.IR email\-alias .
+The selectors
+.BR pass ", " password ", " senha ", " all " and " tudo
+keep their meaning with
+.BR \-\-exact ;
+a caller that forwards untrusted text as FIELD must refuse them itself.
+.TP
 .BI "insert " "[\-f] " ID " " DIR/PASS
 Prompt twice (no echo) for a new secret and store it. With an existing
 entry, prompts to overwrite unless

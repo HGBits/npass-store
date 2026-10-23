@@ -48,9 +48,19 @@ npass_clip() {
 # FIELD ID PATH. A field name is matched case-insensitively, exact key
 # first, then as a unique prefix ("email" finds "email-alias" when it is
 # the only key starting with "email").
+#
+# `npass get --exact [CAMPO] ID DIR/PASS` drops the unique-prefix fallback:
+# CAMPO must equal a key (case-insensitively), or the command fails. It is for
+# callers that must not release a different field than the one they named
+# (a grant for "email" must not hand out "email-alias"). Only the PREFIX
+# fallback changes: the selectors pass/password/senha/all/tudo keep their
+# meaning, so a caller that forwards untrusted text as CAMPO must reject
+# those words itself. `clip` has no --exact.
 
 NPASS_FK=()
 NPASS_FV=()
+# 1 (set by `get --exact`): npass_entry_lookup does not fall back to a prefix.
+NPASS_LOOKUP_EXACT=0
 
 # Fill NPASS_FK / NPASS_FV (keys lower-cased) from the "## Campos" section of an
 # md1 document. Returns the npass_entry_load status (1 = not md1, 2 = invalid).
@@ -69,7 +79,8 @@ npass_entry_parse() {
 }
 
 # npass_entry_lookup FIELD -> value in $REPLY; returns 1 if not found or
-# ambiguous. Call npass_entry_parse first.
+# ambiguous (or, with NPASS_LOOKUP_EXACT=1, if there is no exact key). Call
+# npass_entry_parse first.
 npass_entry_lookup() {
 	local want="${1,,}" i hit=-1 hits=0
 	for i in "${!NPASS_FK[@]}"; do
@@ -78,6 +89,7 @@ npass_entry_lookup() {
 			return 0
 		fi
 	done
+	((NPASS_LOOKUP_EXACT)) && return 1
 	for i in "${!NPASS_FK[@]}"; do
 		if [[ "${NPASS_FK[i]}" == "$want"* ]]; then
 			hit=$i
@@ -138,6 +150,11 @@ cmd_clip() {
 
 cmd_get() {
 	local content
+	NPASS_LOOKUP_EXACT=0
+	if [[ "$1" == --exact ]]; then
+		NPASS_LOOKUP_EXACT=1
+		shift
+	fi
 	npass_entry_args get "$@"
 	content="$(cmd_show "$NPASS_A_ID" "$NPASS_A_LOGICAL")" || exit 1
 	npass_entry_pick "$NPASS_A_FIELD" "$content" "$NPASS_A_ID" "$NPASS_A_LOGICAL"

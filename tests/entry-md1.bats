@@ -74,6 +74,48 @@ put() { printf '%s\0%s\0' "$1" "$2" | "$NPASS" insert --batch -f HG >/dev/null; 
 	[ "$("$NPASS" get email-a HG a/x)" = "a@x.com" ]
 }
 
+@test "get --exact: so chave exata (sem diferenciar caixa); prefixo nao casa" {
+	put a/x "$(md1_doc segredo 'Email: nat@x.com' 'email-alias: a@x.com' 'user: natty')"
+	[ "$("$NPASS" get --exact USER HG a/x)" = "natty" ]
+	[ "$("$NPASS" get --exact email HG a/x)" = "nat@x.com" ]
+	# 'email-a' e prefixo unico de 'email-alias': sem --exact acha, com --exact nao
+	[ "$("$NPASS" get email-a HG a/x)" = "a@x.com" ]
+	run "$NPASS" get --exact email-a HG a/x
+	[ "$status" -ne 0 ]
+	[[ "$output" != *"a@x.com"* ]]
+	run "$NPASS" get --exact us HG a/x
+	[ "$status" -ne 0 ]
+	[[ "$output" != *"natty"* ]]
+}
+
+@test "get --exact: sem a chave pedida nao entrega outro campo por prefixo (email nao acha email-alias)" {
+	put a/x "$(md1_doc segredo 'email-alias: a@x.com')"
+	[ "$("$NPASS" get email HG a/x)" = "a@x.com" ]
+	run "$NPASS" get --exact email HG a/x
+	[ "$status" -ne 0 ]
+	[[ "$output" != *"a@x.com"* ]]
+	# e a falha e "campo nao encontrado" (lista as chaves), nao erro de uso
+	[[ "$output" == *"email-alias"* ]]
+}
+
+@test "get --exact: sem CAMPO le a senha; os seletores pass/senha/all continuam valendo" {
+	put a/x "$(md1_doc segredo 'login: eu@x.com')"
+	[ "$("$NPASS" get --exact HG a/x)" = "segredo" ]
+	[ "$("$NPASS" get --exact pass HG a/x)" = "segredo" ]
+	[ "$("$NPASS" get --exact SENHA HG a/x)" = "segredo" ]
+	[ "$("$NPASS" get --exact all HG a/x)" = "$(md1_doc segredo 'login: eu@x.com')" ]
+}
+
+@test "get --exact: argumentos invalidos mostram uso; o clip nao tem --exact" {
+	run "$NPASS" get --exact HG
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"uso:"* ]]
+	put a/x "$(md1_doc segredo 'login: eu')"
+	run "$NPASS" clip --exact login HG a/x
+	[ "$status" -ne 0 ]
+	[ ! -e "$CLIPFILE" ]
+}
+
 @test "get: campo inexistente lista so as chaves; senha vazia e campo vazio falham" {
 	put a/x "$(md1_doc segredo 'email: nat@x.com' 'vazio:')"
 	run "$NPASS" get telefone HG a/x
@@ -100,9 +142,10 @@ put() { printf '%s\0%s\0' "$1" "$2" | "$NPASS" insert --batch -f HG >/dev/null; 
 	[ "$(cat "$CLIPFILE")" = "$("$NPASS" get login HG a/x)" ]
 }
 
-@test "help lista o get" {
+@test "help lista o get e o get --exact" {
 	run "$NPASS" help entradas ver
 	[[ "$output" == *"get [CAMPO] ID DIR/PASS"* ]]
+	[[ "$output" == *"get --exact [CAMPO] ID DIR/PASS"* ]]
 }
 
 # --- estrutura: o que se preserva e o que se recusa -----------------------------------------
