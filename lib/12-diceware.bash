@@ -84,8 +84,8 @@ npass_wordlist_load() {
 		NPASS_WL_W+=("$w")
 	done < <(LC_ALL=C awk -F'\t' -v want=" $* " '
 		/^[[:space:]]*(#|$)/ { next }
-		/^[[:space:]]*@list[[:space:]]+[A-Za-z0-9_-]+[[:space:]]*$/ {
-			cur = $2
+		/^\[[A-Za-z0-9_-]+\]$/ {
+			cur = substr($0, 2, length($0) - 2)
 			next
 		}
 		cur != "" && index(want, " " cur " ") &&
