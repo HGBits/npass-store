@@ -4,7 +4,7 @@ Gerenciador de senhas para Linux baseado em **Bash + GPG**, com armazenamento po
 
 ## Status
 
-**Versão:** `2.5`
+**Versão:** `2.8`
 **Estado:** Pronto para uso
 | **Instalação:** curl -sSL https://raw.githubusercontent.com/HGBits/npass-store/refs/heads/master/install.sh | bash
 
