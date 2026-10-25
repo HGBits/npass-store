@@ -320,6 +320,8 @@ O npass suporta **TOTP e HOTP** através de URIs `otpauth://`.
 ## Diceware
 Atenção: No futuro a lista wordlist será reescrita, os indices passarão a não viver junto das palavras. seu indice de palavras será encriptado e único sendo fornecido na hora, você precisará manter seu indice em backup no futuro leve isso em consideração na sua estratégia de segurança.
 
+Primeiro passo já feito: a lista que o npass cria na primeira vez é **pessoal** (embaralhada, veja "Lista pessoal" abaixo). O índice cifrado e separado das palavras continua no roteiro.
+
 Frases de palavras com as listas da EFF, todas num único arquivo (`encrypts_alternatives/wordlist.txt`):
 
 ```bash
@@ -329,7 +331,7 @@ npass memorable pessoal wifi/casa              # palavras curtas, para decorar; 
 npass memorable -l short1 pessoal wifi/casa    # só a Short #1 (palavras de até 5 letras)
 ```
 
-**`diceware`** grava a frase no cofre e mostra no terminal só a *altura* de cada palavra (o número de dados dela na lista publicada), para você anotar em papel:
+**`diceware`** grava a frase no cofre e mostra no terminal só a *altura* de cada palavra (o número de dados dela na **sua** lista), para você anotar em papel:
 
 ```text
 ALTURAS - anote em papel, nesta ordem:
@@ -339,15 +341,17 @@ ALTURAS - anote em papel, nesta ordem:
 Separador: "-" (anote também)
 ```
 
-Se você perder o gerenciador, a senha se refaz: ache cada altura na lista (a sua `~/.npass/wordlist.txt`, seção `[large]`, ou a lista pública da EFF) e junte as palavras com o separador. A frase em si não é mostrada (use `npass show` ou `-c`), e as alturas **não são gravadas em lugar nenhum**: saem no **stderr**, para não irem parar sem querer num pipe, num arquivo ou num `$(...)`.
+Se você perder o gerenciador, a senha se refaz: ache cada altura na sua lista (`~/.npass/wordlist.txt`, seção `[large]`; a lista pública da EFF **não** serve, veja abaixo) e junte as palavras com o separador. A frase em si não é mostrada (use `npass show` ou `-c`), e as alturas **não são gravadas em lugar nenhum**: saem no **stderr**, para não irem parar sem querer num pipe, num arquivo ou num `$(...)`.
 
-> **O papel com as alturas é a sua senha.** A lista é pública, então quem tiver o papel reconstrói a senha sem precisar do cofre nem da sua chave. Guarde-o longe do computador e do cofre; nunca em arquivo, foto, nuvem ou app de notas; e limpe a tela e o scrollback do terminal depois de anotar.
+> **O papel com as alturas é a sua senha, junto com a sua lista.** Com a lista pessoal, quem tiver só o papel não reconstrói nada; quem tiver o papel **e** o `wordlist.txt` reconstrói a senha sem precisar do cofre nem da sua chave. Guarde o papel longe do computador e do cofre; nunca em arquivo, foto, nuvem ou app de notas; e limpe a tela e o scrollback do terminal depois de anotar.
+
+**Lista pessoal.** Na primeira vez o npass cria o `wordlist.txt` embaralhando as palavras da seção `[large]` com o `shuf` lendo `/dev/urandom` (uma permutação uniforme; o `$RANDOM` do bash não serve, tem 15 bits). As alturas continuam sendo as mesmas 7776 de 5 dados (1 a 6), só que cada altura aponta para outra palavra: a sua lista é uma mistura só sua, e os dados continuam servindo para sortear à mão. A entropia não muda (as palavras seguem sendo sorteadas por igual); muda a tabela número→palavra. O custo é real: **o arquivo passa a fazer parte da recuperação.** Se você perder o disco junto com o cofre, o papel não vale nada sem ele. Guarde uma cópia do `wordlist.txt` em outro lugar que o do papel e que o do cofre, e **nunca o apague**: uma lista nova é outra mistura e as anotações antigas deixam de servir. Ele fica fora do git. Uma lista que você já tem nunca é tocada, e se preferir a numeração pública da EFF basta copiar `encrypts_alternatives/wordlist.txt` para o lugar dela antes da primeira vez (as anotações são sempre da lista em uso na hora).
 
 **`memorable`** usa as listas Short (#1 e #2.0 juntas: 2.448 palavras distintas; `-l short1` ou `-l short2` escolhe uma só) e **não tem índice**: a frase aparece no terminal (ou vai para o clipboard com `-c`) para ser decorada.
 
 Opções dos dois: `-s/--sep SEP` (0 a 3 caracteres, padrão `-`), `-c`, `-f`, `--in-place` (troca só a senha e preserva campos, OTP e notas) e o número de palavras (4 a 20, padrão 6). O separador pode ser predefinido com `export NPASS_DICEWARE_SEP='.'` (vazio = sem separador); `--sep` vence. A entropia sai calculada sobre a lista realmente usada.
 
-A lista fica em `~/.npass/wordlist.txt` (ou `NPASS_WORDLIST`). Na primeira vez o npass a copia da que acompanha a instalação (`PREFIX/share/npass/encrypts_alternatives/`, ou `encrypts_alternatives/` num clone do repositório; `NPASS_WORDLIST_SRC` força a origem). É só dado, nunca executado, e o npass recusa uma lista com menos de 1296 palavras utilizáveis (sinal de arquivo truncado ou adulterado). Formato: seções `[large]`, `[short1]`, `[short2]`, linhas `ALTURA<TAB>palavra`. Listas da EFF, licença CC BY 3.0 US.
+A lista fica em `~/.npass/wordlist.txt` (ou `NPASS_WORDLIST`). Na primeira vez o npass a cria (embaralhada) a partir da que acompanha a instalação (`PREFIX/share/npass/encrypts_alternatives/`, ou `encrypts_alternatives/` num clone do repositório; `NPASS_WORDLIST_SRC` força a origem). É só dado, nunca executado, e o npass recusa uma lista com menos de 1296 palavras utilizáveis (sinal de arquivo truncado ou adulterado). Formato: seções `[large]`, `[short1]`, `[short2]`, linhas `ALTURA<TAB>palavra`. Listas da EFF, licença CC BY 3.0 US.
 
 ## Links `npass://` e `npass open`
 

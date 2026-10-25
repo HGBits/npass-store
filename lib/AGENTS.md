@@ -20,7 +20,7 @@ Este é o código-fonte principal do `npass`. O executável em `bin/npass` é ge
 | `09-i18n.bash` | mensagens/traduções |
 | `10-signing.bash` | assinatura e verificação |
 | `11-extensions.bash` | descoberta, instalação e execução de extensões |
-| `12-diceware.bash` | comandos `diceware` (com alturas) e `memorable` (sem índice); lista de palavras em `$NPASS_STORE/wordlist.txt` |
+| `12-diceware.bash` | comandos `diceware` (com alturas) e `memorable` (sem índice); lista de palavras em `$NPASS_STORE/wordlist.txt`, criada pessoal (embaralhada) na primeira vez |
 | `18-help.bash` | `npass help`: essencial no menu principal; categorias e seções saem de um bloco único (`npass_help_data`, marcadores `@cat`/`@sub`); novo comando = linha numa seção |
 | `17-open.bash` | `npass open npass://ID/caminho` (handler do esquema), `npass_url_encode/_decode`, parser estrito, confirmação antes de decifrar, abre terminal (`NPASS_TERMINAL`) quando chamado sem tty |
 | `16-view.bash` | comando `show` (`cmd_view`): renderiza com glow em terminal, cru em pipe; monta o documento de exibição (senha/OTP/valores em código, nomes escapados) e a navegação de backup calculada (`npass_nav_*`: `Backup:` na entrada, `Entrada:` no anexo); `cmd_show` (03) segue sendo o decifrador cru interno |

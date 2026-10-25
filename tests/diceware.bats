@@ -43,14 +43,88 @@ rebuild() {
 
 in_section() { awk -F'\t' -v w="$1" -v sec="[$2]" '/^\[/{s=$0} s==sec && $2==w {f=1} END{exit !f}' "$WL"; }
 
+# linhas "ALTURA<TAB>palavra" da secao [large] de um arquivo (so as bem formadas)
+large_rows() { awk -F'\t' '/^\[/{s=$0} s=="[large]" && NF==2 {print $1 "\t" $2}' "$1" | LC_ALL=C sort; }
+large_words() { awk -F'\t' '/^\[/{s=$0} s=="[large]" && NF==2 {print $2}' "$1" | LC_ALL=C sort; }
+large_heights() { awk -F'\t' '/^\[/{s=$0} s=="[large]" && NF==2 {print $1}' "$1" | LC_ALL=C sort; }
+# tudo que NAO e a secao [large] (as curtas), para comparar byte a byte
+short_sections() { awk '/^\[/{s=$0} s!="[large]" && s!="" {print}' "$1"; }
+# palavra da lista PUBLICA (a do repositorio) para uma altura
+public_word_of() { awk -F'\t' -v h="$1" '/^\[/{s=$0} s=="[large]" && $1==h {print $2}' "$PROJECT_DIR/encrypts_alternatives/wordlist.txt"; }
+
 # --- a lista: onde fica e como chega la -------------------------------------------
 
-@test "primeira vez: copia a lista para o store, identica a do repositorio, e avisa" {
+@test "primeira vez: cria a lista PESSOAL (mesmas palavras e alturas da EFF, mapeamento embaralhado) e avisa" {
 	[ ! -e "$WL" ]
 	run "$NPASS" diceware HG a/b
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"lista de palavras copiada para $WL"* ]]
+	[[ "$output" == *"lista de palavras PESSOAL criada em $WL"* ]]
+	grep -qx '# npass:lista-pessoal' "$WL"
+	[ "$(stat -c %a "$WL")" = "644" ]
+	local repo="$PROJECT_DIR/encrypts_alternatives/wordlist.txt"
+	# mesmas 7776 palavras e as mesmas 7776 alturas, cada uma uma vez
+	[ "$(large_words "$WL" | wc -l)" -eq 7776 ]
+	[ "$(large_words "$WL" | uniq | wc -l)" -eq 7776 ]
+	cmp <(large_words "$repo") <(large_words "$WL")
+	cmp <(large_heights "$repo") <(large_heights "$WL")
+	# mas a altura de cada palavra mudou (um embaralhamento ao acaso deixa ~1 igual)
+	[ "$(comm -12 <(large_rows "$repo") <(large_rows "$WL") | wc -l)" -lt 50 ]
+	# as listas curtas nao mudam
+	cmp <(short_sections "$repo") <(short_sections "$WL")
+}
+
+@test "cada lista pessoal e uma mistura diferente (duas listas novas nao coincidem)" {
+	run "$NPASS" diceware HG a/b
+	[ "$status" -eq 0 ]
+	export NPASS_WORDLIST="$BATS_TEST_TMPDIR/outra/lista.txt"
+	run "$NPASS" diceware HG c/d
+	[ "$status" -eq 0 ]
+	[ -f "$NPASS_WORDLIST" ]
+	cmp <(large_words "$WL") <(large_words "$NPASS_WORDLIST")
+	[ "$(comm -12 <(large_rows "$WL") <(large_rows "$NPASS_WORDLIST") | wc -l)" -lt 50 ]
+}
+
+@test "lista pessoal: as alturas anotadas NAO refazem a senha com a lista publica da EFF, so com a sua" {
+	run "$NPASS" diceware -s ' ' HG a/b 8
+	[ "$status" -eq 0 ]
+	read -r -a H <<<"$(heights)"
+	[ "${#H[@]}" -eq 8 ]
+	local frase; frase="$("$NPASS" get HG a/b)"
+	[ "$(rebuild ' ' "${H[@]}")" = "$frase" ]
+	local pub="" h first=1
+	for h in "${H[@]}"; do ((first)) || pub+=" "; pub+="$(public_word_of "$h")"; first=0; done
+	[ "$pub" != "$frase" ]
+}
+
+@test "lista pessoal: o aviso diz que o papel so vale com a lista e manda guarda-la em outro lugar" {
+	run "$NPASS" diceware HG a/b
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"ALTURAS"* ]]
+	[[ "$output" == *"só recupera a senha junto com a sua lista"* ]]
+	[[ "$output" == *"OUTRO lugar"* ]]
+	[[ "$output" == *"NÃO serve"* ]]
+	[[ "$output" == *"scrollback"* ]]
+	[[ "$output" != *"É a sua senha em outra forma"* ]]
+}
+
+@test "lista publica copiada a mao continua valendo e mantem o aviso antigo" {
+	cp "$PROJECT_DIR/encrypts_alternatives/wordlist.txt" "$WL"
+	run "$NPASS" diceware HG a/b
+	[ "$status" -eq 0 ]
+	[[ "$output" != *"lista de palavras PESSOAL"* ]]
+	[[ "$output" == *"É a sua senha em outra forma"* ]]
+	[[ "$output" == *"lista pública da EFF"* ]]
 	cmp "$PROJECT_DIR/encrypts_alternatives/wordlist.txt" "$WL"
+}
+
+@test "sem shuf nao cria lista nem senha: erro claro e nada gravado" {
+	printf '#!/bin/sh\nexit 1\n' >"$MOCKBIN/shuf"
+	chmod +x "$MOCKBIN/shuf"
+	run "$NPASS" diceware HG a/b
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"embaralhar"* ]]
+	[ ! -e "$WL" ]
+	[ -z "$(ls "$NPASS_STORE/HG/blobs")" ]
 }
 
 @test "uma lista que o usuario ja tem nunca e sobrescrita" {
@@ -123,11 +197,10 @@ in_section() { awk -F'\t' -v w="$1" -v sec="[$2]" '/^\[/{s=$0} s==sec && $2==w {
 	[ -z "$output" ]
 }
 
-@test "diceware: avisa que o indice E a senha e como guarda-lo" {
+@test "diceware: avisa que o indice e sensivel e como guarda-lo" {
 	run "$NPASS" diceware HG a/b
 	[[ "$output" == *"ALTURAS"* ]]
 	[[ "$output" == *"ATENÇÃO"* ]]
-	[[ "$output" == *"É a sua senha em outra forma"* ]]
 	[[ "$output" == *"scrollback"* ]]
 	[[ "$output" == *"anote também"* ]]
 }
@@ -419,7 +492,9 @@ in_section() { awk -F'\t' -v w="$1" -v sec="[$2]" '/^\[/{s=$0} s==sec && $2==w {
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"a partir de $(readlink -f "$inst")"* ]]
 	[[ "$output" != *"/../"* ]]
-	cmp "$inst" "$NPASS_STORE/wordlist.txt"
+	# a lista do usuario novo e a pessoal, feita a partir da instalada
+	grep -qx '# npass:lista-pessoal' "$NPASS_STORE/wordlist.txt"
+	cmp <(large_words "$inst") <(large_words "$NPASS_STORE/wordlist.txt")
 }
 
 @test "--uninstall remove a lista instalada e nao deixa diretorio vazio para tras" {

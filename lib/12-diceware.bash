@@ -13,9 +13,19 @@
 # file. They exist on the terminal (stderr) only at the moment of generation.
 #
 # The wordlist is plain DATA, never executed, at $NPASS_STORE/wordlist.txt (or
-# $NPASS_WORDLIST). On first use it is copied there from the copy that ships
+# $NPASS_WORDLIST). On first use it is created there from the copy that ships
 # with npass (encrypts_alternatives/wordlist.txt in the repository). Format:
 # comment lines, "[section]" lines, and "HEIGHT<TAB>word" lines.
+#
+# The list created on first use is PERSONAL: the words of [large] are shuffled
+# with the kernel CSPRNG and keep the same set of heights, so a height means a
+# different word in every user's file (and not the word it has in EFF's public
+# list). A paper with the heights is then useless without THIS file. The cost is
+# real: lose the file together with the vault and the paper recovers nothing, so
+# the file has to be backed up apart from the paper. Lists the user copies in by
+# hand (public EFF numbering) keep working untouched. Personal lists carry the
+# marker line below.
+readonly NPASS_WORDLIST_MARKER="# npass:lista-pessoal"
 
 readonly NPASS_PASSPHRASE_MIN_WORDS=4
 readonly NPASS_PASSPHRASE_MAX_WORDS=20
@@ -61,11 +71,56 @@ npass_wordlist_ensure() {
 	if [[ ! -f "$wl" ]]; then
 		src="$(npass_wordlist_template)" || npass_die "$(npass_t erro_wordlist_ausente "$wl")"
 		[[ -f "$src" ]] || npass_die "$(npass_t erro_wordlist_ausente "$wl")"
-		mkdir -p -- "${wl%/*}" && install -m 644 -- "$src" "$wl" \
-			|| npass_die "$(npass_t erro_wordlist_copiar "$src" "$wl")"
-		npass_warn "$(npass_t warn_wordlist_copiada "$wl" "$src")"
+		npass_wordlist_personalize "$src" "$wl"
+		npass_warn "$(npass_t warn_wordlist_pessoal "$wl" "$src")"
 	fi
 	printf '%s\n' "$wl"
+}
+
+# True if FILE is a personal list made by npass_wordlist_personalize.
+npass_wordlist_is_personal() {
+	grep -qxF -- "$NPASS_WORDLIST_MARKER" "$1" 2>/dev/null
+}
+
+# npass_wordlist_personalize SRC DEST
+# Writes DEST = SRC with the words of [large] shuffled: the rows keep their
+# heights, in the same order, but each height now points at a random word
+# (uniform permutation: shuf reading /dev/urandom, not bash $RANDOM, which is a
+# 15-bit PRNG and would also be biased by a modulo). The other sections, the
+# comments and the file layout are copied as they are. Dies without writing DEST
+# if anything fails (no shuf, short read): never a half-shuffled list.
+npass_wordlist_personalize() {
+	local src="$1" dest="$2" words shuffled out nw ns
+	command -v shuf >/dev/null 2>&1 || npass_die "$(npass_t erro_wordlist_embaralhar "$dest")"
+	words="$(npass_mktemp wlwords)"
+	shuffled="$(npass_mktemp wlshuf)"
+	out="$(npass_mktemp wlout)"
+	# the same filter the loader applies (well-formed row, first occurrence of a word)
+	LC_ALL=C awk -F'\t' '
+		/^\[[A-Za-z0-9_-]+\]$/ { cur = substr($0, 2, length($0) - 2); next }
+		cur == "large" && NF == 2 && $1 ~ /^[1-6]+$/ && $2 ~ /^[a-z-]+$/ && !seen[$2]++ { print $2 }
+	' "$src" >"$words" || npass_die "$(npass_t erro_wordlist_embaralhar "$dest")"
+	shuf --random-source=/dev/urandom <"$words" >"$shuffled" \
+		|| npass_die "$(npass_t erro_wordlist_embaralhar "$dest")"
+	nw="$(wc -l <"$words")" ns="$(wc -l <"$shuffled")"
+	[[ "$nw" -eq "$ns" ]] || npass_die "$(npass_t erro_wordlist_embaralhar "$dest")"
+	{
+		printf '%s\n' "$NPASS_WORDLIST_MARKER" \
+			'# Esta e a SUA lista. As palavras da secao [large] foram embaralhadas ao criar este' \
+			'# arquivo: a ALTURA de cada palavra aqui NAO e a da lista publica da EFF, e as alturas' \
+			'# que o `npass diceware` mostra so servem com ESTE arquivo. Guarde uma copia dele longe' \
+			'# das suas anotacoes e do cofre, e nunca o apague: uma lista nova seria outra mistura e' \
+			'# as anotacoes antigas deixariam de servir.' \
+			'#'
+		LC_ALL=C awk -F'\t' -v OFS='\t' -v wf="$shuffled" '
+			BEGIN { while ((getline w < wf) > 0) W[++n] = w }
+			/^\[[A-Za-z0-9_-]+\]$/ { cur = substr($0, 2, length($0) - 2); print; next }
+			cur == "large" && NF == 2 && $1 ~ /^[1-6]+$/ && $2 ~ /^[a-z-]+$/ && !seen[$2]++ { print $1, W[++i]; next }
+			{ print }
+		' "$src"
+	} >"$out" || npass_die "$(npass_t erro_wordlist_embaralhar "$dest")"
+	mkdir -p -- "${dest%/*}" && install -m 644 -- "$out" "$dest" \
+		|| npass_die "$(npass_t erro_wordlist_copiar "$src" "$dest")"
 }
 
 # npass_wordlist_load FILE SECTION...
@@ -240,8 +295,13 @@ npass_passphrase_cmd() {
 			npass_t msg_diceware_cab "$count" "$id" "$logical" "$pool" "$bits"
 			npass_t msg_diceware_alturas "$heights"
 			npass_t msg_diceware_sep "$sep_shown"
-			npass_t msg_diceware_recuperar "$wl"
-			npass_t msg_diceware_aviso
+			if npass_wordlist_is_personal "$wl"; then
+				npass_t msg_diceware_recuperar_pessoal "$wl"
+				npass_t msg_diceware_aviso_pessoal "$wl"
+			else
+				npass_t msg_diceware_recuperar "$wl"
+				npass_t msg_diceware_aviso
+			fi
 		} >&2
 		[[ $clip -eq 1 ]] && npass_clip "$phrase" "$id: $logical"
 	else

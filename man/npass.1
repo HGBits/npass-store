@@ -211,10 +211,10 @@ Generate a diceware passphrase of
 words (4 to 20, default 6) from the EFF Large list and store it in the vault. The
 passphrase itself is not printed; instead the
 .I height
-of each word (its dice number in the published list) is written to
+of each word (its dice number in the user's own, shuffled list) is written to
 .B stderr
 for the user to copy onto paper, with the separator and a warning. With the
-paper, the list and the separator the passphrase can be rebuilt by hand if the
+paper, the user's list and the separator the passphrase can be rebuilt by hand if the
 password manager is lost. Heights are never stored by
 .BR npass .
 .B \-s
@@ -730,11 +730,24 @@ in one file: comment lines,
 .B [short2]
 section lines, and
 .I HEIGHT TAB word
-rows. Plain data, never executed. Copied on first use from the copy that ships with
+rows. Plain data, never executed. Created on first use from the copy that ships with
 .B npass
 (\fIPREFIX/share/npass/encrypts_alternatives/wordlist.txt\fR, or
 .I encrypts_alternatives/
-in the source tree). A list with fewer than 1296 usable words is refused. EFF
+in the source tree) as a
+.B personal
+list: the words of
+.B [large]
+are shuffled with
+.BR shuf (1)
+reading /dev/urandom and keep the same heights, so a height means a different
+word in every user's file, and not the word it has in EFF's public list. The
+other sections are copied as they are, and a marker comment line
+.B # npass:lista\-pessoal
+identifies the list. An existing list is never overwritten, and a list copied in
+by hand (public numbering) keeps working. If the shuffle cannot be done (no
+.BR shuf ),
+nothing is written. A list with fewer than 1296 usable words is refused. EFF
 lists, CC BY 3.0 US.
 .TP
 .I $NPASS_STORE/ID/.gpg\-id
@@ -1043,10 +1056,15 @@ exactly that leak one layer up; keeping the codename closes it, at
 the cost of the real name only being visible after a secret is
 already decrypted.
 .TP
-.B The height index printed by diceware is the password.
-The EFF lists are public, so anyone holding the paper (or a photo, or a file)
-with the heights and the separator rebuilds the passphrase without the vault or
-your key. npass prints the heights only to
+.B The height index printed by diceware is the password, together with your list.
+With a personal list (the default) the paper alone recovers nothing: whoever holds
+the paper
+.I and
+your wordlist.txt rebuilds the passphrase without the vault or your key. That
+makes the file part of recovery: keep a copy of it apart from the paper and from
+the vault, and never delete it (a new list is a different shuffle, and the old
+notes stop working). npass does not put the list in git. With a public list
+copied in by hand, the paper alone is enough to rebuild the passphrase. npass prints the heights only to
 .B stderr
 and stores them nowhere, but that does not protect the paper: keep it away from
 the computer and the vault, and clear the terminal screen and scrollback after
