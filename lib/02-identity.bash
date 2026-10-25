@@ -287,8 +287,13 @@ npass_map_rename() {
 cmd_identities() {
 	case "$1" in
 	-h | --help)
-		printf '%s\n' "uso: npass identities"
+		printf '%s\n' "uso: npass identities [rename ID NOVO-ID]"
 		return 0
+		;;
+	rename)
+		shift
+		cmd_identity_rename "$@"
+		return
 		;;
 	'') ;;
 	*) npass_die "$(npass_t erro_opcao_desconhecida "$1")" ;;
@@ -308,4 +313,45 @@ cmd_identities() {
 		fi
 	done
 	[[ $found -eq 1 ]] || npass_t msg_sem_identidades "$NPASS_STORE"
+}
+
+# --- identities: rename ------------------------------------------------------------
+
+# npass identities rename ID NOVO-ID
+# Renames the identity directory with a single rename(2) (same filesystem, so
+# atomic) while holding the identity's map lock, then commits the rename.
+# Nothing inside is touched or re-encrypted: blobs, the map, .gpg-id and its
+# signature do not depend on the identity's name. What is NOT updated is
+# anything outside the store that spells the old name (scripts, aliases, the
+# passkey daemon's `serve ID`).
+cmd_identity_rename() {
+	local usage="uso: npass identities rename ID NOVO-ID"
+	case "$1" in
+	-h | --help)
+		printf '%s\n' "$usage"
+		return 0
+		;;
+	esac
+	[[ $# -eq 2 && -n "$1" && -n "$2" ]] || npass_die "$usage"
+	local old="$1" new="$2"
+	local dir; dir="$(npass_identity_dir "$old")"
+	npass_check_sneaky_path "$new"
+	case "$new" in
+	*/* | .* | extensions) npass_die "$(npass_t erro_id_nome_invalido "$new")" ;;
+	esac
+	[[ "$new" == "$old" ]] && npass_die "$(npass_t erro_id_mesmo_nome "$old")"
+	local dest="$NPASS_STORE/$new"
+	[[ -e "$dest" || -L "$dest" ]] && npass_die "$(npass_t erro_id_ja_existe "$new")"
+	local lock="$dir/.map.lock" fd
+	exec {fd}>"$lock" || npass_die "$(npass_t erro_lock_obter "$lock")"
+	flock -n "$fd" || npass_die "$(npass_t erro_id_ocupada "$old")"
+	if ! mv -T -- "$dir" "$dest"; then
+		exec {fd}>&-
+		npass_die "$(npass_t erro_id_renomear "$old" "$new")"
+	fi
+	exec {fd}>&-
+	npass_git_commit_rename "$old" "$new"
+	npass_t msg_id_renomeada "$old" "$new"
+	[[ -d "$dest/Fido" ]] && npass_warn "$(npass_t warn_id_renomeada_passkey "$new")"
+	return 0
 }

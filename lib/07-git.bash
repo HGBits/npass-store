@@ -63,6 +63,25 @@ npass_git_commit() {
 	return 0
 }
 
+# npass_git_commit_rename OLD NEW
+# Like npass_git_commit, for an identity rename: stages the removal of OLD and
+# the addition of NEW and commits both pathspecs together (git then reports it
+# as a rename). The message carries only the two identity ids.
+npass_git_commit_rename() {
+	local old="$1" new="$2" errfile
+	npass_git_ensure || return 0
+	git -C "$NPASS_STORE" add -A -- "$old" 2>/dev/null
+	git -C "$NPASS_STORE" add -A -- "$new" 2>/dev/null
+	if ! git -C "$NPASS_STORE" diff --cached --quiet -- "$old" "$new" 2>/dev/null; then
+		errfile="$(npass_mktemp giterr)"
+		if ! git -C "$NPASS_STORE" commit -q --no-verify --no-gpg-sign \
+			-m "rename: $old -> $new" -- "$old" "$new" 2>"$errfile"; then
+			npass_warn "$(npass_t warn_git_commit "$(head -n 1 "$errfile")")"
+		fi
+	fi
+	return 0
+}
+
 # npass log - show the last 20 commits in compact form.
 cmd_log() {
 	npass_git_ensure || npass_die "$(npass_t erro_git_indisponivel)"

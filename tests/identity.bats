@@ -151,3 +151,97 @@ setup() {
 	run "$NPASS" get personal email/gmail
 	[ "$output" = "a" ]
 }
+
+# --- identities rename -----------------------------------------------------------------
+
+@test "identities rename: entradas lidas pelo novo nome, nome antigo some, nada e recifrado (mesmos inodes)" {
+	"$NPASS" init personal "$FPR"
+	printf 'hunter2\nhunter2\n' | "$NPASS" insert personal email/gmail
+	local antes depois
+	antes="$(cd "$NPASS_STORE/personal" && stat -c '%n %i %Y' .map.gpg .gpg-id blobs/*.gpg | sort)"
+	run "$NPASS" identities rename personal pessoal
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"renomeada"* ]]
+	[ ! -e "$NPASS_STORE/personal" ]
+	depois="$(cd "$NPASS_STORE/pessoal" && stat -c '%n %i %Y' .map.gpg .gpg-id blobs/*.gpg | sort)"
+	[ "$antes" = "$depois" ]
+	[ "$("$NPASS" get pessoal email/gmail)" = "hunter2" ]
+	run "$NPASS" get personal email/gmail
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"identidade não encontrada"* ]]
+	run "$NPASS" identities
+	[[ "$output" == *"pessoal"* && "$output" != *"personal"* ]]
+}
+
+@test "identities rename: identidade assinada continua valida e aceita escrita; ids e --help funcionam" {
+	"$NPASS" init --sign personal "$FPR"
+	run "$NPASS" ids rename personal pessoal
+	[ "$status" -eq 0 ]
+	[ -f "$NPASS_STORE/pessoal/.gpg-id.sig" ]
+	run gpg --batch --verify "$NPASS_STORE/pessoal/.gpg-id.sig" "$NPASS_STORE/pessoal/.gpg-id"
+	[ "$status" -eq 0 ]
+	run bash -c "printf 'x1\nx1\n' | '$NPASS' insert pessoal a/b"
+	[ "$status" -eq 0 ]
+	run "$NPASS" identities rename --help
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"uso: npass identities rename"* ]]
+}
+
+@test "identities rename: vira um commit 'rename: ANTIGO -> NOVO', sem caminho logico, e nada fica sem commitar" {
+	"$NPASS" init personal "$FPR"
+	printf 'a\na\n' | "$NPASS" insert personal email/gmail
+	"$NPASS" identities rename personal pessoal
+	run git -C "$NPASS_STORE" log -1 --format=%s
+	[ "$output" = "rename: personal -> pessoal" ]
+	[[ "$output" != *"email"* ]]
+	run git -C "$NPASS_STORE" status --porcelain -- personal pessoal
+	[ -z "$output" ]
+	run git -C "$NPASS_STORE" show --stat --format= -M HEAD
+	[[ "$output" == *"=>"* ]]
+}
+
+@test "identities rename: erros (inexistente, destino existe, nome invalido, mesmo nome, sem argumentos)" {
+	"$NPASS" init personal "$FPR"
+	"$NPASS" init work "$FPR"
+	run "$NPASS" identities rename naoexiste novo
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"identidade não encontrada"* ]]
+	run "$NPASS" identities rename personal work
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"já existe"* ]]
+	local n
+	for n in a/b .oculta extensions ..; do
+		run "$NPASS" identities rename personal "$n"
+		[ "$status" -ne 0 ]
+		[ -d "$NPASS_STORE/personal" ]
+	done
+	run "$NPASS" identities rename personal personal
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"igual ao atual"* ]]
+	run "$NPASS" identities rename personal
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"uso: npass identities rename"* ]]
+	[ -d "$NPASS_STORE/personal" ] && [ -d "$NPASS_STORE/work" ]
+}
+
+@test "identities rename: com a trava do mapa ocupada por outro npass, recusa e nada muda" {
+	"$NPASS" init personal "$FPR"
+	flock -x "$NPASS_STORE/personal/.map.lock" sleep 20 &
+	local holder=$!
+	sleep 0.5
+	run "$NPASS" identities rename personal pessoal
+	kill "$holder" 2>/dev/null
+	wait "$holder" 2>/dev/null || true
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"em uso"* ]]
+	[ -d "$NPASS_STORE/personal" ]
+	[ ! -e "$NPASS_STORE/pessoal" ]
+}
+
+@test "identities rename: avisa de passkeys quando a identidade tem Fido/" {
+	"$NPASS" init personal "$FPR"
+	mkdir -p "$NPASS_STORE/personal/Fido"
+	run "$NPASS" identities rename personal pessoal
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"passkeys"* ]]
+}

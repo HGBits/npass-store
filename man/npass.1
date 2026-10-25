@@ -119,6 +119,27 @@ The count is the number of blob files on disk; nothing is decrypted.
 Alias:
 .BR ids .
 .TP
+.BI "identities rename " ID " " NEW\-ID
+Rename an identity. The directory is renamed with a single
+.BR rename (2)
+while the identity's map lock is held (if another npass holds it, the command
+stops), and the rename is committed to git (message
+.IR "rename: OLD -> NEW" ;
+no logical path is ever written to a commit message). Nothing inside is
+re\-encrypted: blobs, the map,
+.B .gpg\-id
+and its signature do not depend on the name. The new name cannot contain
+.BR / ,
+cannot start with
+.BR . ,
+cannot be
+.BR extensions ,
+and must not exist. Not updated: anything outside the store that spells the old
+name (scripts, aliases, the
+.B passkey
+daemon's
+.BR "serve ID" ).
+.TP
 .BI "clip " "[FIELD] " ID " " DIR/PASS
 Decrypt a secret and copy part of it to the Wayland clipboard. With two
 arguments (ID and path) the password (the

@@ -99,6 +99,8 @@ npass_help_data() {
   init --sign[=KEYID] ID RECIPIENT...   idem, já assinando o .gpg-id
 @sub listar|Listar
   identities               lista as identidades e quantas senhas cada uma tem (alias: ids)
+@sub renomear|Renomear
+  identities rename ID NOVO-ID   renomeia uma identidade (nada é recifrado; fica um commit)
 @sub assinar|Assinar
   sign ID [KEYID]          assina (ou reassina) o .gpg-id de uma identidade
 
