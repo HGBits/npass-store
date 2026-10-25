@@ -290,19 +290,55 @@ cmd_find() {
 	sed 's/^/  /' <<<"$matches"
 }
 
-# npass grep ID [GREP-OPTIONS] PADRÃO
+# npass_map_list_under DIR PREFIXO -> logical paths that ARE PREFIXO or lie
+# under it (a real prefix, by component: "ban" does not match "banco"), in map
+# order. Empty PREFIXO: all of them. Read through ENVIRON so awk does not
+# interpret backslashes in the path.
+npass_map_list_under() {
+	local dir="$1" prefix="$2"
+	if [[ -z "$prefix" ]]; then
+		npass_map_list "$dir"
+		return
+	fi
+	npass_map_list "$dir" \
+		| NPASS_UNDER="$prefix" LC_ALL=C awk 'BEGIN { p = ENVIRON["NPASS_UNDER"] } $0 == p || index($0, p "/") == 1'
+}
+
+# npass grep [--in DIR/PASS] ID [GREP-OPTIONS] PADRÃO
 # Decrypts every entry in the identity to search its content - this is
 # inherently O(n) in the number of secrets, same as upstream pass grep;
-# there's no way to grep ciphertext.
+# there's no way to grep ciphertext. --in narrows the search to one entry or
+# to one logical folder (same prefix rule as `ls`), and then only those are
+# decrypted.
 cmd_grep() {
+	local scope="" have_scope=0 usage="uso: npass grep [--in DIR/PASS] ID [OPÇÕES-DO-GREP] PADRÃO"
+	case "$1" in
+	--in)
+		[[ $# -ge 2 ]] || npass_die "$usage"
+		scope="$2" have_scope=1
+		shift 2
+		;;
+	--in=*)
+		scope="${1#--in=}" have_scope=1
+		shift
+		;;
+	esac
+	if ((have_scope)); then
+		while [[ "$scope" == */ ]]; do scope="${scope%/}"; done
+		[[ -n "$scope" ]] || npass_die "$usage"
+	fi
 	local id="$1"; shift
-	[[ -z "$id" || $# -eq 0 ]] && npass_die "uso: npass grep ID [OPÇÕES-DO-GREP] PADRÃO"
+	[[ -z "$id" || $# -eq 0 ]] && npass_die "$usage"
 	local -a grepopts=()
 	while [[ $# -gt 1 ]]; do
 		grepopts+=("$1"); shift
 	done
 	local pattern="$1"
 	local dir; dir="$(npass_identity_dir "$id")"
+	local paths; paths="$(npass_map_list_under "$dir" "$scope")"
+	if ((have_scope)) && [[ -z "$paths" ]]; then
+		npass_die "$(npass_t erro_grep_escopo "$scope" "$id")"
+	fi
 	local logical content matches found=0
 	while IFS= read -r logical; do
 		[[ -z "$logical" ]] && continue
@@ -313,6 +349,6 @@ cmd_grep() {
 			printf '%s: %s\n' "$id" "$logical"
 			sed 's/^/  /' <<<"$matches"
 		fi
-	done < <(npass_map_list "$dir")
+	done <<<"$paths"
 	[[ $found -eq 1 ]]
 }

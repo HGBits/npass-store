@@ -90,7 +90,8 @@ npass_help_data() {
   find ID PADRÃO           busca caminhos lógicos que casam PADRÃO
   ls [--flat] ID [DIR]     árvore (ou, com --flat, a lista) dos caminhos sob DIR
 @sub conteudo|Por conteúdo
-  grep ID [OPÇÕES] PADRÃO  decifra e busca PADRÃO no conteúdo de cada entrada
+  grep [--in DIR/PASS] ID [OPÇÕES] PADRÃO   decifra e busca PADRÃO no conteúdo das entradas
+                           (--in: só uma entrada ou pasta; só essas são decifradas)
 
 @cat identidades|Identidades e assinaturas
 @sub criar|Criar

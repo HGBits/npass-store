@@ -61,6 +61,88 @@ setup() {
 	[[ "$output" == *"work/aws"* ]]
 }
 
+# --- grep --in (escopo: entrada ou pasta logica) -------------------------------------
+
+_grep_escopo_cena() {
+	printf 'ChaveX1\nChaveX1\n' | "$NPASS" insert personal email/gmail
+	printf 'ChaveX1\nChaveX1\n' | "$NPASS" insert personal email/outlook
+	printf 'ChaveX1\nChaveX1\n' | "$NPASS" insert personal banco/itau/conta
+	printf 'ChaveX1\nChaveX1\n' | "$NPASS" insert personal bancoalt/x
+}
+
+@test "grep --in ENTRADA: so busca nessa entrada" {
+	_grep_escopo_cena
+	run "$NPASS" grep --in email/gmail personal "ChaveX1"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"email/gmail"* ]]
+	[[ "$output" != *"email/outlook"* ]]
+	[[ "$output" != *"banco"* ]]
+}
+
+@test "grep --in PASTA: so o que esta sob a pasta (prefixo por componente, barra final ignorada, forma --in=)" {
+	_grep_escopo_cena
+	run "$NPASS" grep --in email personal "ChaveX1"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"email/gmail"* && "$output" == *"email/outlook"* ]]
+	[[ "$output" != *"banco"* ]]
+	run "$NPASS" grep --in=banco/ personal "ChaveX1"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"banco/itau/conta"* ]]
+	# "banco" nao casa "bancoalt": prefixo de verdade, por componente
+	[[ "$output" != *"bancoalt"* ]]
+}
+
+@test "grep --in aceita opcoes do grep depois do ID" {
+	printf 'MAIUSCULA\nMAIUSCULA\n' | "$NPASS" insert personal email/gmail
+	printf 'MAIUSCULA\nMAIUSCULA\n' | "$NPASS" insert personal aws/root
+	run "$NPASS" grep --in email personal -i "maiuscula"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"email/gmail"* ]]
+	[[ "$output" != *"aws/root"* ]]
+}
+
+@test "grep --in sem nada naquele caminho: erro com mensagem (diferente de 'sem resultado')" {
+	_grep_escopo_cena
+	run "$NPASS" grep --in ema personal "ChaveX1"
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"nada sob 'ema'"* ]]
+	NPASS_LANG=en run "$NPASS" grep --in nada/aqui personal "ChaveX1"
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"nothing under 'nada/aqui'"* ]]
+	# escopo existe mas o padrao nao casa: status != 0 e SEM a mensagem de escopo
+	run "$NPASS" grep --in email personal "naoexiste_zzz"
+	[ "$status" -ne 0 ]
+	[[ "$output" != *"nada sob"* ]]
+}
+
+@test "grep --in sem valor ou com valor vazio: mostra uso" {
+	run "$NPASS" grep --in
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"uso: npass grep [--in DIR/PASS]"* ]]
+	run "$NPASS" grep --in "" personal "x"
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"uso: npass grep [--in DIR/PASS]"* ]]
+	run "$NPASS" grep --in / personal "x"
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"uso: npass grep [--in DIR/PASS]"* ]]
+}
+
+@test "grep --in so decifra o escopo (menos decifragens que a busca global)" {
+	_grep_escopo_cena
+	local wrap="$BATS_TEST_TMPDIR/gpgwrap" log="$BATS_TEST_TMPDIR/decifra.log"
+	printf '#!/bin/sh\ncase " $* " in *" -d "*) echo d >>"%s" ;; esac\nexec gpg "$@"\n' "$log" >"$wrap"
+	chmod +x "$wrap"
+	export NPASS_GPG="$wrap"
+	: >"$log"
+	"$NPASS" grep personal "ChaveX1" >/dev/null
+	local global; global="$(wc -l <"$log")"
+	: >"$log"
+	"$NPASS" grep --in email/gmail personal "ChaveX1" >/dev/null
+	local escopo; escopo="$(wc -l <"$log")"
+	[ "$escopo" -gt 0 ]
+	[ "$escopo" -lt "$global" ]
+}
+
 # --- git ---------------------------------------------------------------------
 
 @test "o store nasce como repositorio git (init cria o repo sem 'npass git init')" {

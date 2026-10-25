@@ -297,11 +297,22 @@ List logical paths whose name matches
 (case\-insensitive substring/regex via
 .BR grep (1)).
 .TP
-.BI "grep " ID " [" GREP\-OPTIONS "] " PATTERN
+.BI "grep [\-\-in " DIR/PASS "] " ID " [" GREP\-OPTIONS "] " PATTERN
 Decrypt every entry in the identity and search its content for
 .IR PATTERN .
 Inherently O(n) in the number of secrets \- there is no way to search
 ciphertext without decrypting it.
+.B \-\-in
+(also
+.BR \-\-in=DIR/PASS )
+narrows the search to one entry or to one logical folder, with the same
+prefix rule as
+.B ls
+(by path component: "ban" does not match "banco"); only those entries are
+decrypted. A trailing
+.B /
+is ignored. If nothing in the identity is that entry or under that folder, the
+command fails with an error (not the silent "no match" status).
 .TP
 .BI "update " "[opts] " ID " " PATTERN ...
 Bulk password rotation. Each

@@ -26,6 +26,7 @@ declare -gA NPASS_MSG_PT=(
 	[erro_gpgid_vazio]="%s está vazio"
 
 	[erro_id_nao_encontrada]="identidade não encontrada: %s"
+	[erro_grep_escopo]="nada sob '%s' em %s: nenhuma entrada nem pasta com esse caminho"
 	[erro_id_sem_gpgid]="'%s' não é uma identidade (sem .gpg-id)"
 	[erro_informe_destinatario]="informe ao menos um destinatário GPG"
 	[erro_id_ja_existe]="identidade já existe: %s"
@@ -183,6 +184,7 @@ declare -gA NPASS_MSG_EN=(
 	[erro_gpgid_vazio]="%s is empty"
 
 	[erro_id_nao_encontrada]="identity not found: %s"
+	[erro_grep_escopo]="nothing under '%s' in %s: no entry or folder with that path"
 	[erro_id_sem_gpgid]="'%s' is not an identity (no .gpg-id)"
 	[erro_informe_destinatario]="provide at least one GPG recipient"
 	[erro_id_ja_existe]="identity already exists: %s"
