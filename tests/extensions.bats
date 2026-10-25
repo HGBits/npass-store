@@ -120,3 +120,10 @@ EOF
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"arg com espaco segundo-arg"* ]]
 }
+
+@test "nenhuma referencia ao fluxo de migracao removido sobra no codigo, no instalador e nas docs" {
+	local root="$BATS_TEST_DIRNAME/.."
+	run grep -rIl --exclude-dir=__pycache__ --exclude-dir=target --exclude-dir=.git -e 'npass-legacy' -e 'migrate_legacy_store' -e 'legacy_to_md1' -e 'erro_formato_antigo' \
+		"$root/lib" "$root/README.md" "$root/man" "$root/AGENTS.md" "$root/install.sh" "$root/packaging"
+	[ -z "$output" ]
+}

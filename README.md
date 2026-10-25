@@ -444,7 +444,7 @@ Extensões que acompanham:
 
 - **`npass-import`**: importa de outros gerenciadores e de stores `pass`/`pass-secrets` (abaixo). Precisa de `python3`.
 - **`npass-clip-x11`**: copia a senha ou um campo para o clipboard do X11, para quem ainda usa sessão gráfica X11 (o `clip` do core é Wayland). `npass clip-x11 [CAMPO] ID DIR/PASS`. Precisa de `xclip`.
-- **`npass-wclip`**: copia a senha ou um campo para o clipboard do windows, Por favor ler [Documentação](~/windows_Requisitos.md)
+- **`npass-wclip`**: copia a senha ou um campo para o clipboard do windows, Por favor ler a [documentação](https://github.com/HGBits/npass-extensions/blob/master/docs/windows_Requisitos.md)
 
 ### npass-import: importar de outros gerenciadores
 

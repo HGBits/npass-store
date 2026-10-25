@@ -25,21 +25,16 @@ Este arquivo é o índice operacional do projeto. Use-o para localizar rapidamen
 | Ajuda (`help`, categorias, seções) | `lib/18-help.bash` | `tests/help.bats` (falha se um comando de `lib/00-main.bash` ou uma extensão ficar sem ajuda) |
 | Links `npass://` e `npass open` | `lib/17-open.bash`, `packaging/npass-open.desktop.in` | `install.sh` (instala o .desktop), `tests/open.bats`, `tests/install.bats` |
 | `show` renderizado com glow e navegação de backup | `lib/16-view.bash` | `lib/03-store.bash` (`cmd_show` cru interno), `lib/17-open.bash`, `tests/view.bats`, `tests/nav.bats` |
-| Listagem (`ls`, `--flat`) | `lib/15-ls.bash` | `extensions/npass-import` e `extensions/npass-audit` (usam `ls --flat`), `tests/ls.bats` |
-| Senhas de backup (`backup`, anexos cifrados) | `lib/13-backup.bash` | `lib/03-store.bash` (cascata em `rm`/`mv`), `lib/06-update.bash`, `extensions/npass-audit`, `tests/backup.bats` |
+| Listagem (`ls`, `--flat`) | `lib/15-ls.bash` | `npass-import` e `npass-audit` (repositório `npass-extensions`; usam `ls --flat`), `tests/ls.bats` |
+| Senhas de backup (`backup`, anexos cifrados) | `lib/13-backup.bash` | `lib/03-store.bash` (cascata em `rm`/`mv`), `lib/06-update.bash`, `npass-audit` (repositório `npass-extensions`), `tests/backup.bats` |
 | Assinatura de identidades/artefatos | `lib/10-signing.bash` | `tests/signing.bats` |
-| Sistema de extensões | `lib/11-extensions.bash` | `extensions/` (até sair deste repo: as extensões vão para `npass-extensions`), testes de extensão |
-| Importação de outros gerenciadores e de stores pass (o corpo do pass é convertido para md1) | `extensions/npass-import` | `tests/import*.bats`, `tests/import-convert.bats` |
-| Passkeys / WebAuthn (backend, índice, blobs) | `extensions/npass-passkey` | `tests/passkey.bats`, `npass-passkey-arquitetura.md` |
-| Daemon FIDO2/CTAP2/UHID (Rust) | `passkey/src/` | `passkey/tests/e2e.rs`, `passkey/Cargo.toml` |
-| Clipboard X11 | `extensions/npass-clip-x11.bash` | `tests/clip-ext.bats` |
-| Clipboard Windows | `extensions/npass-wclip.bash` | `windows_Requisitos.md`, `tests/clip-ext.bats` |
-| Instalação | `install.sh` | `tests/install.bats`, `lib/11-extensions.bash` |
+| Sistema de extensões (assinatura, contrato com o core) | `lib/11-extensions.bash` | `tests/extensions.bats`, `tests/batch-ext.bats` |
+| Extensões (import, passkey + daemon FIDO2, audit, clipboard X11/Windows) | repositório `npass-extensions`, ao lado deste (`../npass-extensions`; a pasta antiga `../npass_extensions` também vale) | cada uma tem testes e `AGENTS.md` lá; aqui ficam `install.sh` e os testes de instalação |
+| Instalação (e de onde vêm as extensões) | `install.sh` | `tests/install.bats`, `tests/install-ext.bats`, `tests/install-passkey.bats`, `lib/11-extensions.bash` |
 | Build do executável | `build.sh` | `lib/*.bash`, `tests/install.bats` |
 | Testes de uma funcionalidade | `tests/<funcionalidade>.bats` | implementação correspondente |
 | Empacotamento Arch | `packaging/PKGBUILD` | `install.sh`, `build.sh` |
 | Documentação pública | `README.md`, `man/npass.1` | implementação/testes somente para verificar fatos |
-| Requisitos Windows | `windows_Requisitos.md` | `extensions/npass-wclip` |
 
 ## Cadeia de dependência conceitual
 
@@ -67,7 +62,7 @@ lib/00-main.bash
    +--> 15-ls.bash
    +--> 14-entry.bash   (formato md1: usado por 03, 04, 05, 06, 08, 12)
              |
-             +--> extensions/*
+             +--> extensões (repositório npass-extensions)
              |
              +--> tests/*
 
@@ -77,7 +72,7 @@ build.sh ---> gera bin/npass a partir de lib/
 ## Regras para agentes
 
 1. `bin/npass` é artefato gerado. Não editar diretamente.
-2. Alterações de implementação devem partir de `lib/` ou de `extensions/`.
+2. Alterações de implementação devem partir de `lib/`. As extensões moram no repositório `npass-extensions` e têm o `AGENTS.md` delas; se uma mudança aqui altera um comando ou o md1 que elas usam, é mudança de contrato: ajuste lá também.
 3. Depois de alterar `lib/`, executar `./build.sh` antes de validar o executável.
 4. Ao alterar uma funcionalidade, localizar primeiro o teste correspondente em `tests/`.
 5. Não modificar fixtures GPG só para fazer um teste passar sem entender o motivo.

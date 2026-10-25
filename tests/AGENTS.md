@@ -10,12 +10,10 @@ Testes Bats do projeto. Use-os como índice de comportamento esperado antes de a
 |---|---|
 | `identity.bats` | identidades |
 | `install.bats` | instalação |
-| `install-ext.bats` | instalação de extensões |
+| `install-ext.bats` | instalação de extensões: de onde vêm (`--extensions-src`, `../npass-extensions`, clone com pergunta), assinatura, destino |
+| `install-passkey.bats` | instalação do `npass-passkey`: o cargo (de mentira) só roda se a extensão for escolhida; helper instalado, assinado e selado |
 | `extensions.bats` | execução/contrato de extensões |
 | `batch-ext.bats` | execução em lote de extensões |
-| `import.bats` | importação genérica |
-| `import-pass.bats` | importação de `pass` |
-| `import-pass-secrets.bats` | importação de `pass-secrets` |
 | `otp.bats` | OTP |
 | `readonly-store.bats` | leitura com o store somente leitura: `get`, `otp` (TOTP) e a falha do HOTP sem imprimir código (pulado como root) |
 | `pin.bats` | PIN (`--password`, `--field`) |
@@ -25,15 +23,12 @@ Testes Bats do projeto. Use-os como índice de comportamento esperado antes de a
 | `view.bats` | `show` renderizado: quando renderiza (TTY real via pty), o que o glow recebe, glow ausente/falhando, anexos |
 | `ls.bats` | `ls`: desenho, `--flat`, prefixo por componente, `[backup]`, erros e o aviso do `tree` antigo |
 | `entry-md1.bats` | formato md1 (contrato, preservação, recusa de entradas fora de md1 em todos os comandos), `get`, OTP e `audit` |
-| `import-convert.bats` | conversão do corpo de stores `pass` para md1 (regras, os dois parsers concordando, `verify_conversion`) e guarda contra o fluxo de migração removido |
-| `clip-ext.bats` | `npass-wclip` e `npass-clip-x11` (chamam `npass get`) |
 | `backup.bats` | `backup` e a cascata dos anexos em `rm`, `mv`, `update` e `audit` |
 | `signing.bats` | assinatura |
 | `update.bats` | atualização/rotação |
 | `store-extras.bats` | comportamentos extras do store |
 | `i18n.bats` | internacionalização |
 | `patch-m2.bats` | regressão/patch específico |
-| `passkey.bats` | `npass-passkey`: armazenamento, integridade, helper assinado, instalação, PIN/política/bloqueio, ciclo CTAP2 (usa `cargo test`) |
 | `diceware.bats` | `diceware`, `memorable`, lista de palavras, sorteio sem viés, instalação da lista |
 
 ## Fixtures GPG
@@ -55,3 +50,5 @@ teste que falhou
 ```
 
 Não comece lendo todos os módulos.
+
+Os testes das extensões (import, passkey, clipboard, audit) moram no repositório `npass-extensions`. Os testes daqui que precisam de uma extensão real usam `npass_test_ext_src` (helper): copiam `../npass-extensions` (ou `NPASS_TEST_EXT_REPO`) e são PULADOS se ele não existir.

@@ -83,10 +83,9 @@ npass_test_encr_keyid() {
 # npass_test_ext_src [ARQUIVO...] - prepara em $BATS_TEST_TMPDIR/extsrc uma COPIA do
 # repositorio de extensoes (npass-extensions: npass-* na raiz e passkey/) e exporta
 # NPASS_EXTENSIONS_SRC apontando para ela. Sem argumentos copia todas as npass-*; com
-# argumentos, so as pedidas. Origem, na ordem: $NPASS_TEST_EXT_REPO, ../npass-extensions
-# e ../npass_extensions (o nome antigo da pasta; irmaos deste repositorio) e, enquanto a
-# migracao nao terminou, extensions/ + passkey/ deste repositorio. Sem nenhuma, o teste
-# e PULADO (as extensoes nao sao deste repo).
+# argumentos, so as pedidas. Origem: $NPASS_TEST_EXT_REPO, ../npass-extensions ou
+# ../npass_extensions (o nome antigo da pasta; irmaos deste repositorio). Sem nenhuma, o
+# teste e PULADO (as extensoes nao sao deste repo).
 npass_test_ext_src() {
 	local root="$BATS_TEST_DIRNAME/.." dst="$BATS_TEST_TMPDIR/extsrc" repo n pk=""
 	mkdir -p "$dst"
@@ -98,9 +97,6 @@ npass_test_ext_src() {
 	fi
 	if [[ -d "$repo" ]] && compgen -G "$repo/npass-*" >/dev/null; then
 		[[ -d "$repo/passkey" ]] && pk="$repo/passkey"
-	elif [[ -d "$root/extensions" ]] && compgen -G "$root/extensions/npass-*" >/dev/null; then
-		repo="$root/extensions"
-		[[ -d "$root/passkey" ]] && pk="$root/passkey"
 	else
 		skip "repositorio npass-extensions nao encontrado (defina NPASS_TEST_EXT_REPO)"
 	fi
