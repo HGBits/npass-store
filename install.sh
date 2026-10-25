@@ -24,7 +24,7 @@
 # them after installing npass, one by one, with a short description, and
 # puts each accepted one straight into its final place (your extensions
 # directory) and signs it with your key. Nothing is asked when stdin is not
-# a terminal, when DESTDIR is set (packaging), or with --no-extensions.
+# a terminal, when DESTDIR is set (packaging), or with --no-extensions / --no-tui.
 #
 # Usage:
 #   sudo ./install.sh                  install under /usr (bin/npass), then offer extensions
@@ -93,7 +93,7 @@ desktop_target="$desktop_dir/npass-open.desktop"
 npass_final="${BINDIR:-$PREFIX/bin}/npass"
 
 if [[ -n "$DESTDIR" && ( "$ext_mode" == yes || "$tui_mode" == yes ) ]]; then
-	echo "install.sh: extensões moram no diretório do usuário e são assinadas por ele; não combinam com DESTDIR (empacotamento)." >&2
+	echo "install.sh: opções interativas de extensões/TUI não combinam com DESTDIR (empacotamento)." >&2
 	exit 1
 fi
 
