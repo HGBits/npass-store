@@ -24,7 +24,7 @@
 # them after installing npass, one by one, with a short description, and
 # puts each accepted one straight into its final place (your extensions
 # directory) and signs it with your key. Nothing is asked when stdin is not
-# a terminal, when DESTDIR is set (packaging), or with --no-extensions.
+# a terminal, when DESTDIR is set (packaging), or with --no-extensions / --no-tui.
 #
 # Usage:
 #   sudo ./install.sh                  install under /usr (bin/npass), then offer extensions
@@ -33,6 +33,8 @@
 #   sudo ./install.sh --uninstall      remove what a prior install put there
 #   ./install.sh --prefix=/usr/local [--uninstall]
 #   ./install.sh --no-extensions       never offer extensions
+#   ./install.sh --tui                  install npass-tui from HGBits/npass_tui
+#   ./install.sh --no-tui               do not offer or install npass-tui
 #   ./install.sh --extensions          offer extensions even if stdin is not a terminal
 #   ./install.sh --extensions-only     skip npass itself, only offer the extensions
 #                                      (for the AUR package, or to add one later)
@@ -47,6 +49,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 : "${DESTDIR:=}"
 uninstall=0
 ext_mode=auto # auto = ask only on a terminal | yes | no
+tui_mode=auto # auto = ask only on a terminal | yes | no
 ext_only=0
 sign_key=""
 
@@ -56,6 +59,8 @@ for arg in "$@"; do
 	--prefix=*) PREFIX="${arg#--prefix=}" ;;
 	--bindir=*) BINDIR="${arg#--bindir=}" ;;
 	--no-extensions) ext_mode=no ;;
+	--tui) tui_mode=yes ;;
+	--no-tui) tui_mode=no ;;
 	--extensions) ext_mode=yes ;;
 	--extensions-only) ext_mode=yes; ext_only=1 ;;
 	--sign-key=*) sign_key="${arg#--sign-key=}" ;;
@@ -73,6 +78,7 @@ done
 bindir="$DESTDIR${BINDIR:-$PREFIX/bin}"
 mandir="$DESTDIR$PREFIX/share/man/man1"
 bin_target="$bindir/npass"
+tui_target="$bindir/npass-tui"
 man_target="$mandir/npass.1"
 # The EFF wordlists for `npass diceware` / `npass memorable`. This is the shipped
 # TEMPLATE, found by npass relative to its own binary; on first use npass copies it
@@ -86,8 +92,8 @@ desktop_dir="$DESTDIR$PREFIX/share/applications"
 desktop_target="$desktop_dir/npass-open.desktop"
 npass_final="${BINDIR:-$PREFIX/bin}/npass"
 
-if [[ -n "$DESTDIR" && "$ext_mode" == yes ]]; then
-	echo "install.sh: extensões moram no diretório do usuário e são assinadas por ele; não combinam com DESTDIR (empacotamento)." >&2
+if [[ -n "$DESTDIR" && ( "$ext_mode" == yes || "$tui_mode" == yes ) ]]; then
+	echo "install.sh: opções interativas de extensões/TUI não combinam com DESTDIR (empacotamento)." >&2
 	exit 1
 fi
 
@@ -245,6 +251,49 @@ offer_extensions() {
 }
 
 # --------------------------------------------------------------------------
+# Optional npass-tui
+# --------------------------------------------------------------------------
+
+install_tui() {
+	local url="https://raw.githubusercontent.com/HGBits/npass_tui/master/npass-tui"
+	local tmp
+	if ! command -v curl >/dev/null 2>&1; then
+		echo "aviso: curl não encontrado; npass-tui não foi instalado." >&2
+		return 1
+	fi
+	tmp="$(mktemp)" || {
+		echo "aviso: não foi possível criar arquivo temporário para npass-tui." >&2
+		return 1
+	}
+	if ! curl -fsSL "$url" >"$tmp"; then
+		rm -f -- "$tmp"
+		echo "aviso: download de npass-tui falhou; a CLI continua instalada." >&2
+		return 1
+	fi
+	if [[ ! -s "$tmp" ]] || ! bash -n "$tmp"; then
+		rm -f -- "$tmp"
+		echo "aviso: o arquivo baixado para npass-tui está vazio ou tem sintaxe inválida; não instalado." >&2
+		return 1
+	fi
+	if ! install -m 755 -- "$tmp" "$tui_target"; then
+		rm -f -- "$tmp"
+		echo "aviso: não foi possível instalar npass-tui em $tui_target." >&2
+		return 1
+	fi
+	rm -f -- "$tmp"
+	echo "instalado: $tui_target (fonte: $url)"
+}
+
+offer_tui() {
+	[[ -z "$DESTDIR" && "$tui_mode" != no ]] || return 0
+	if [[ "$tui_mode" == yes ]]; then
+		install_tui || true
+	elif [[ -t 0 && -t 1 ]] && ask "Instalar também a interface de terminal opcional npass-tui?"; then
+		install_tui || true
+	fi
+}
+
+# --------------------------------------------------------------------------
 # --extensions-only: do not touch npass itself
 # --------------------------------------------------------------------------
 if [[ $ext_only -eq 1 ]]; then
@@ -263,7 +312,7 @@ fi
 
 if [[ $uninstall -eq 1 ]]; then
 	removed=0
-	for f in "$bin_target" "$man_target" "$words_target" "$desktop_target"; do
+	for f in "$bin_target" "$tui_target" "$man_target" "$words_target" "$desktop_target"; do
 		if [[ -e "$f" ]]; then
 			rm -f -- "$f"
 			echo "removido: $f"
@@ -346,6 +395,10 @@ esac
 
 # Optional extensions: only offered when a human can answer (terminal), never
 # while packaging (DESTDIR), and only if asked for or not disabled.
+if [[ -z "$DESTDIR" && "$tui_mode" != no ]]; then
+	offer_tui
+fi
+
 if [[ -z "$DESTDIR" && "$ext_mode" != no ]]; then
 	if [[ "$ext_mode" == yes || ( -t 0 && -t 1 ) ]]; then
 		offer_extensions "$bin_target"
