@@ -648,7 +648,7 @@ def read_source(path, o):
 
 
 def existing_paths(binp, ident):
-    r = subprocess.run([binp, "tree", "--flat", ident], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    r = subprocess.run([binp, "ls", "--flat", ident], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     if r.returncode != 0:
         die(t("id_ls", ident, (r.stderr or r.stdout).strip()))
     return {ln for ln in r.stdout.splitlines() if ln}

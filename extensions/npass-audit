@@ -41,7 +41,7 @@ def run_npass(args):
 
 
 def list_paths(identity, prefix):
-    output = run_npass(["tree", "--flat", identity, prefix] if prefix else ["tree", "--flat", identity])
+    output = run_npass(["ls", "--flat", identity, prefix] if prefix else ["ls", "--flat", identity])
     return sorted({line for line in output.splitlines() if line})
 
 

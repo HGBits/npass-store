@@ -23,7 +23,7 @@ npass_help_essential() {
 	cat <<'EOF'
 Essencial:
   init ID RECIPIENT...     cria uma identidade nova
-  tree [--flat] ID [DIR]   lista as entradas (árvore)
+  ls [--flat] ID [DIR]     lista as entradas (árvore)
   show ID DIR/PASS         mostra uma entrada (no terminal, renderizada pelo glow)
   clip [CAMPO] ID DIR/PASS copia a senha, ou um campo
   insert [-f] ID DIR/PASS  insere ou atualiza uma entrada
@@ -39,7 +39,7 @@ npass_help_data() {
 	cat <<'EOF'
 @cat entradas|Ver, escrever, mover e remover entradas
 @sub ver|Ver
-  tree [--flat] ID [DIR]   árvore dos caminhos lógicos de uma identidade (--flat: um por linha)
+  ls [--flat] ID [DIR]     árvore dos caminhos lógicos de uma identidade (--flat: um por linha)
   show [--raw|--render] ID DIR/PASS   mostra uma entrada (em terminal: markdown renderizado
                            pelo glow; em pipe: o documento md1 cru)
   clip [CAMPO] ID DIR/PASS copia a senha (padrão), 'all' ou um campo '- chave: valor'
@@ -88,7 +88,7 @@ npass_help_data() {
 @cat buscar|Procurar entradas
 @sub caminhos|Por caminho
   find ID PADRÃO           busca caminhos lógicos que casam PADRÃO
-  tree [--flat] ID [DIR]   árvore (ou, com --flat, a lista) dos caminhos sob DIR
+  ls [--flat] ID [DIR]     árvore (ou, com --flat, a lista) dos caminhos sob DIR
 @sub conteudo|Por conteúdo
   grep ID [OPÇÕES] PADRÃO  decifra e busca PADRÃO no conteúdo de cada entrada
 

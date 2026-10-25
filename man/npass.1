@@ -267,7 +267,7 @@ waits for Enter (or
 .B NPASS_OPEN_TIMEOUT
 seconds, default 60) and clears the screen and scrollback.
 .TP
-.BI "tree [\-\-flat] " ID " [" DIR ]
+.BI "ls [\-\-flat] " ID " [" DIR ]
 Draw the logical paths of an identity as a tree, optionally only those under
 .I DIR
 (a real prefix, by path component: "ban" does not match "banco"). It reads only
@@ -539,7 +539,7 @@ expects the complete document. An entry that is not in md1 (no marker on line 1,
 structure) is not read by
 .BR get ", " clip ", " otp ", " pin ", " "generate \-\-in\-place" ", " update " or " edit :
 the command stops with an error. There is no migration: npass only reads md1.
-.BR show ", " tree ", " grep ", " mv " and " rm
+.BR show ", " ls ", " grep ", " mv " and " rm
 still work on it.
 .SH ENVIRONMENT
 .TP

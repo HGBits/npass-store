@@ -27,7 +27,7 @@ fn() { NPASS_SRC="$NPASS" "$BASH" -c 'source <(sed "\$d" "$NPASS_SRC"); "$@"' _ 
 	[[ "$output" == *"Uso: npass COMANDO ID DIR/PASS"* ]]
 	[[ "$output" == *"Essencial:"* ]]
 	local c
-	for c in init tree show clip insert generate edit rm mv otp; do
+	for c in init ls show clip insert generate edit rm mv otp; do
 		[[ "$output" == *$'\n'"  $c "* ]]
 	done
 	for c in $CATS; do
@@ -67,7 +67,7 @@ fn() { NPASS_SRC="$NPASS" "$BASH" -c 'source <(sed "\$d" "$NPASS_SRC"); "$@"' _ 
 	local ess="$output"
 	run "$NPASS" help todos
 	local todos="$output" c
-	for c in init tree show clip insert generate edit rm mv otp; do
+	for c in init ls show clip insert generate edit rm mv otp; do
 		[[ "$todos" == *$'\n'"  $c "* ]]
 	done
 }
@@ -163,16 +163,16 @@ fn() { NPASS_SRC="$NPASS" "$BASH" -c 'source <(sed "\$d" "$NPASS_SRC"); "$@"' _ 
 	run "$NPASS" help todos
 	local todos="$output" cmd n=0
 	while IFS= read -r cmd; do
-		case "$cmd" in ls | migrate | "''") continue ;; esac   # ls/migrate: aviso do comando antigo; '': o proprio help
+		case "$cmd" in tree | migrate | "''") continue ;; esac   # tree/migrate: aviso do comando antigo; '': o proprio help
 		[[ "$todos" == *$'\n'"  $cmd "* || "$todos" == *$'\n'"  $cmd"$'\n'* ]] || { echo "sem ajuda: $cmd" >&3; false; }
 		n=$((n + 1))
 	done < <(awk '/^\t[a-z\x27][^)]*\)/ { sub(/^\t/, ""); sub(/\).*/, ""); split($0, a, / *\| */); print a[1] }' "$PROJECT_DIR/lib/00-main.bash")
 	[ "$n" -ge 20 ]
 }
 
-@test "comandos antigos (ls, list, migrate) nao aparecem como comando na ajuda" {
+@test "comandos antigos (tree, migrate) e o alias list nao aparecem como comando na ajuda" {
 	run "$NPASS" help todos
-	[[ "$output" != *$'\n'"  ls "* ]]
+	[[ "$output" != *$'\n'"  tree "* ]]
 	[[ "$output" != *$'\n'"  list "* ]]
 	[[ "$output" != *$'\n'"  migrate"* ]]
 }

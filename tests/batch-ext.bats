@@ -35,7 +35,7 @@ commits() { git -C "$NPASS_STORE" rev-list --count HEAD; }
 	run bash -c "printf 'a/antigo\0texto puro\nlogin: x\0b/novo\0%s\0' '$ok' | '$NPASS' insert --batch HG"
 	[ "$status" -ne 0 ]
 	[[ "$output" == *"a/antigo"* ]]
-	run "$NPASS" tree --flat HG
+	run "$NPASS" ls --flat HG
 	[[ "$output" != *"a/antigo"* ]]
 	[[ "$output" == *"b/novo"* ]]
 }
@@ -68,7 +68,7 @@ commits() { git -C "$NPASS_STORE" rev-list --count HEAD; }
 @test "insert --batch recusa caminho logico com .. e nao grava nada" {
 	run bash -c "printf '../fuga\0%s\0' '$(md1_doc x)' | '$NPASS' insert --batch HG"
 	[ "$status" -ne 0 ]
-	run "$NPASS" tree HG
+	run "$NPASS" ls HG
 	[[ "$output" == *"(vazio)"* ]]
 }
 
@@ -81,10 +81,10 @@ commits() { git -C "$NPASS_STORE" rev-list --count HEAD; }
 # --- regressao: mapa vazio nao vaza a linha magica como entrada -----------------
 
 @test "ls de identidade vazia e depois de um insert nao lista a linha magica do mapa" {
-	run "$NPASS" tree --flat HG
+	run "$NPASS" ls --flat HG
 	[[ "$output" != *"NPASS-MAP"* ]]
 	printf 'x\nx\n' | "$NPASS" insert HG um/dois >/dev/null
-	run "$NPASS" tree --flat HG
+	run "$NPASS" ls --flat HG
 	[[ "$output" != *"NPASS-MAP"* ]]
 	[[ "$output" == *"um/dois"* ]]
 }
@@ -92,7 +92,7 @@ commits() { git -C "$NPASS_STORE" rev-list --count HEAD; }
 @test "mapa ja contaminado pelo bug antigo e curado na leitura e na proxima escrita" {
 	printf 'NPASS-MAP-1\nNPASS-MAP-1\t\n' \
 		| gpg --batch --yes --trust-model always -r "$FPR" -e -o "$NPASS_STORE/HG/.map.gpg"
-	run "$NPASS" tree --flat HG
+	run "$NPASS" ls --flat HG
 	[[ "$output" != *"NPASS-MAP"* ]]
 	printf 'x\nx\n' | "$NPASS" insert HG novo >/dev/null
 	run gpg --batch -q -d "$NPASS_STORE/HG/.map.gpg"

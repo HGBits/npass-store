@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# npass tree [--flat] ID [DIR] - arvore dos caminhos logicos de uma identidade.
-# Substitui o antigo `npass ls`.
+# npass ls [--flat] ID [DIR] - arvore dos caminhos logicos de uma identidade.
+# (Ja se chamou `tree`; o nome voltou a ser `ls`, o comportamento e o mesmo.)
 #
-#   npass tree pessoal            arvore (├── └──), com [backup] nas entradas que tem
-#   npass tree pessoal email      so o que esta sob email/ (prefixo de verdade, por componente)
-#   npass tree --flat pessoal     UM caminho logico por linha, sem enfeite: e a interface
+#   npass ls pessoal              arvore (├── └──), com [backup] nas entradas que tem
+#   npass ls pessoal email        so o que esta sob email/ (prefixo de verdade, por componente)
+#   npass ls --flat pessoal       UM caminho logico por linha, sem enfeite: e a interface
 #                                 de maquina (npass-import e npass-audit usam esta)
 #
 # So le o mapa: nao decifra nada. O mapa e plano (logico -> blob), entao a
@@ -16,24 +16,24 @@
 # `npass backup` (Backup-X.md e Backup-X.dados.md) sem decifrar: a marca vem
 # so dos nomes, e os anexos continuam listados como filhos.
 
-cmd_tree_usage() {
-	printf '%s\n' "uso: npass tree [--flat] ID [DIR]" \
+cmd_ls_usage() {
+	printf '%s\n' "uso: npass ls [--flat] ID [DIR]" \
 		"  arvore dos caminhos logicos de ID (opcionalmente so o que esta sob DIR)" \
 		"  --flat   um caminho logico por linha, sem enfeite (para scripts)"
 }
 
-# npass_tree_paths DIR PREFIXO -> caminhos logicos sob PREFIXO (ou todos), na
+# npass_ls_paths DIR PREFIXO -> caminhos logicos sob PREFIXO (ou todos), na
 # ordem de arvore: "/" vira \001 so para ordenar, de modo que um pai vem
 # imediatamente antes dos seus filhos e antes de irmaos como "a.b" ou "a-b".
-npass_tree_paths() {
+npass_ls_paths() {
 	local dir="$1" prefix="$2"
 	npass_map_list "$dir" \
 		| LC_ALL=C awk -v p="$prefix" 'p == "" || $0 == p || index($0, p "/") == 1' \
 		| LC_ALL=C sed $'s#/#\001#g' | LC_ALL=C sort | LC_ALL=C sed $'s#\001#/#g'
 }
 
-# npass_tree_render ID PREFIXO < caminhos (ja em ordem de arvore)
-npass_tree_render() {
+# npass_ls_render ID PREFIXO < caminhos (ja em ordem de arvore)
+npass_ls_render() {
 	local id="$1" prefix="$2" utf=0 color=0
 	case "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" in
 	*[uU][tT][fF]-8* | *[uU][tT][fF]8*) utf=1 ;;
@@ -92,22 +92,22 @@ npass_tree_render() {
 	}'
 }
 
-cmd_tree() {
+cmd_ls() {
 	local flat=0
 	while [[ "$1" == -* ]]; do
 		case "$1" in
 		--flat) flat=1; shift ;;
-		-h | --help) cmd_tree_usage; return 0 ;;
+		-h | --help) cmd_ls_usage; return 0 ;;
 		--) shift; break ;;
 		*) npass_die "$(npass_t erro_opcao_desconhecida "$1")" ;;
 		esac
 	done
 	local id="$1" prefix="${2%/}"
-	[[ -z "$id" ]] && npass_die "uso: npass tree [--flat] ID [DIR]"
+	[[ -z "$id" ]] && npass_die "uso: npass ls [--flat] ID [DIR]"
 	local dir
 	dir="$(npass_identity_dir "$id")" || exit 1
 	local list
-	list="$(npass_tree_paths "$dir" "$prefix")"
+	list="$(npass_ls_paths "$dir" "$prefix")"
 	if ((flat)); then
 		[[ -n "$list" ]] && printf '%s\n' "$list"
 		return 0
@@ -116,5 +116,5 @@ cmd_tree() {
 		printf '%s: (vazio)\n' "$id"
 		return 0
 	fi
-	npass_tree_render "$id" "$prefix" <<<"$list"
+	npass_ls_render "$id" "$prefix" <<<"$list"
 }

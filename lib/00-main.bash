@@ -13,9 +13,9 @@ npass_main() {
 	insert | add) cmd_insert "$@" ;;
 	rm | remove | delete) cmd_rm "$@" ;;
 	mv | rename) cmd_mv "$@" ;;
-	tree) cmd_tree "$@" ;;
+	ls | list) cmd_ls "$@" ;;
 	open) cmd_open "$@" ;;
-	ls | list) npass_die "$(npass_t erro_ls_movido)" ;;
+	tree) npass_die "$(npass_t erro_tree_movido)" ;;
 	generate | gen) cmd_generate "$@" ;;
 	diceware) cmd_diceware "$@" ;;
 	memorable) cmd_memorable "$@" ;;

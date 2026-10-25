@@ -155,7 +155,7 @@ sys.exit(m.main(["pass", "HG", sys.argv[1]]))
 PY
 	[ "$status" -ne 0 ]
 	[[ "$output" == *"a/ruim"*"não passou na verificação"* ]]
-	run "$NPASS" tree --flat HG
+	run "$NPASS" ls --flat HG
 	[[ "$output" == *"a/boa"* ]]
 	[[ "$output" != *"a/ruim"* ]]
 	[ "$("$NPASS" get HG a/boa)" = "pw-boa" ]

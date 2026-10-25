@@ -177,9 +177,9 @@ npass generate pessoal email/gmail
 Listar entradas (árvore dos caminhos lógicos; só lê o mapa, não decifra nada):
 
 ```bash
-npass tree pessoal               # árvore inteira
-npass tree pessoal banco         # só o que está sob banco/ (prefixo por componente: "ban" não casa "banco")
-npass tree --flat pessoal        # um caminho por linha, sem enfeite: é o que os scripts e as extensões usam
+npass ls pessoal                 # árvore inteira
+npass ls pessoal banco           # só o que está sob banco/ (prefixo por componente: "ban" não casa "banco")
+npass ls --flat pessoal          # um caminho por linha, sem enfeite: é o que os scripts e as extensões usam
 ```
 
 ```text
@@ -198,7 +198,7 @@ pessoal
 
 Pasta (só aparece como prefixo) termina em `/`; entrada não. Uma entrada pode ser as duas coisas (`gmail` e `gmail/Backup-gmail.md`). `[backup]` marca a entrada que tem o par de anexos de `npass backup`, pelos nomes, sem decifrar; os anexos continuam listados. Sem UTF-8 no locale o desenho cai para ASCII, e a cor (pastas em negrito/azul) só aparece em terminal e sem `NO_COLOR`.
 
-> `npass ls` (e `list`) deixou de existir: rodar o comando antigo mostra o aviso para o `tree`. Quem usava a saída em script troca por `tree --flat`. Diferenças do `--flat` para o `ls`: sem a linha de cabeçalho com o ID e sem indentação de dois espaços; identidade inexistente agora é erro (antes só avisava e saía com 0); `DIR` agora é prefixo de verdade, por componente.
+> O comando já se chamou `tree`: esse nome agora só mostra um aviso apontando para o `ls`. Quem chamava `npass tree` em script (ou numa extensão própria) troca por `npass ls`; a saída e as opções (`--flat`, `DIR`) são as mesmas.
 
 Editar:
 
@@ -250,7 +250,7 @@ texto livre; sempre a última seção
 - `## Notas` vai até o fim do documento: tudo depois dela é nota, mesmo que pareça cabeçalho ou campo (e por isso nunca vira campo).
 - Linha não reconhecida dentro de Campos/OTP é mantida como está ao reescrever. Estrutura inválida (seção fora de ordem ou repetida, texto solto) é recusada, nunca "consertada" em silêncio.
 - **Só md1 entra:** `insert`, `generate`, `pin`, `diceware`, `otp insert` e os imports gravam md1; `insert --batch` e `edit` recusam qualquer outra coisa; `update -m` espera o documento completo. O único parser do formato é `lib/14-entry.bash`.
-- Uma entrada **fora de md1** (sem o marcador na 1ª linha, ou com estrutura inválida) **não é lida** por `get`, `clip`, `otp`, `pin`, `generate --in-place`, `update` nem `edit`: o comando para com `não está no formato md1`. `show`, `tree`, `grep`, `mv` e `rm` continuam funcionando com ela. O npass **só lê md1** e não tem fluxo de migração: o único conversor é o do import de stores `pass`, descrito em "Migração e importação".
+- Uma entrada **fora de md1** (sem o marcador na 1ª linha, ou com estrutura inválida) **não é lida** por `get`, `clip`, `otp`, `pin`, `generate --in-place`, `update` nem `edit`: o comando para com `não está no formato md1`. `show`, `ls`, `grep`, `mv` e `rm` continuam funcionando com ela. O npass **só lê md1** e não tem fluxo de migração: o único conversor é o do import de stores `pass`, descrito em "Migração e importação".
 
 ## PIN
 
@@ -293,7 +293,7 @@ npass show pessoal email/gmail/Backup-gmail.dados.md
 - **Navegação contextual (só na exibição renderizada):** `npass show` de uma entrada com backup ganha, logo abaixo do título, `Backup: [Asyx](npass://pessoal/QWAP/Asyx/Backup-Asyx.dados.md)`; o arquivo de dados e o ponteiro ganham `Entrada: [Asyx](npass://pessoal/QWAP/Asyx)` de volta, e o campo `arquivo` do ponteiro liga ao arquivo de dados. Os links são **calculados na hora, nunca gravados**: `show --raw`, `get`, `clip` e as extensões não os veem, e um `mv`, `rm` ou renomeação nunca deixa um link velho. Só conta um par completo de anexos (`Backup-X.md` **e** `Backup-X.dados.md`, filhos diretos da entrada), decidido pelos nomes, sem decifrar; o texto do link é o nome do anexo (depois de renomear a entrada continua `Backup-gmail`). Clicar chama `npass open` (veja "Links `npass://`"), que pergunta antes de mostrar as senhas de backup.
 - Os anexos acompanham a entrada: `rm` remove os dois (com aviso antes de perguntar), `mv` os leva para o novo caminho (também entre identidades) e `update` e `audit` os ignoram, para não rotacionar nem auditar um arquivo de backup como se fosse senha de login.
 - Um arquivo só é tratado como anexo quando o **nome** (`Backup-*.md`, filho direto da entrada) **e** o marcador na primeira linha (`<!-- npass:backup-index v1 -->` ou `...backup-data v1 -->`) batem. Uma entrada sua chamada `Backup-x.md` nunca é arrastada por `rm`/`mv`.
-- Como as senhas ficam em `show`/`tree` como qualquer outra entrada, quem tem a chave do `.gpg-id` lê tudo: o anexo separa o backup da entrada principal (`show` e `clip all` da entrada não o despejam), não cria um segundo nível de proteção.
+- Como as senhas ficam em `show`/`ls` como qualquer outra entrada, quem tem a chave do `.gpg-id` lê tudo: o anexo separa o backup da entrada principal (`show` e `clip all` da entrada não o despejam), não cria um segundo nível de proteção.
 
 ## OTP
 

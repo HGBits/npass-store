@@ -25,7 +25,7 @@ Este arquivo é o índice operacional do projeto. Use-o para localizar rapidamen
 | Ajuda (`help`, categorias, seções) | `lib/18-help.bash` | `tests/help.bats` (falha se um comando de `lib/00-main.bash` ou uma extensão ficar sem ajuda) |
 | Links `npass://` e `npass open` | `lib/17-open.bash`, `packaging/npass-open.desktop.in` | `install.sh` (instala o .desktop), `tests/open.bats`, `tests/install.bats` |
 | `show` renderizado com glow e navegação de backup | `lib/16-view.bash` | `lib/03-store.bash` (`cmd_show` cru interno), `lib/17-open.bash`, `tests/view.bats`, `tests/nav.bats` |
-| Listagem (`tree`, `--flat`) | `lib/15-tree.bash` | `extensions/npass-import` e `extensions/npass-audit` (usam `tree --flat`), `tests/tree.bats` |
+| Listagem (`ls`, `--flat`) | `lib/15-ls.bash` | `extensions/npass-import` e `extensions/npass-audit` (usam `ls --flat`), `tests/ls.bats` |
 | Senhas de backup (`backup`, anexos cifrados) | `lib/13-backup.bash` | `lib/03-store.bash` (cascata em `rm`/`mv`), `lib/06-update.bash`, `extensions/npass-audit`, `tests/backup.bats` |
 | Assinatura de identidades/artefatos | `lib/10-signing.bash` | `tests/signing.bats` |
 | Sistema de extensões | `lib/11-extensions.bash` | `extensions/`, testes de extensão |
@@ -64,7 +64,7 @@ lib/00-main.bash
    +--> 18-help.bash
    +--> 17-open.bash
    +--> 16-view.bash
-   +--> 15-tree.bash
+   +--> 15-ls.bash
    +--> 14-entry.bash   (formato md1: usado por 03, 04, 05, 06, 08, 12)
              |
              +--> extensions/*

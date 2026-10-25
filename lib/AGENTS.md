@@ -24,7 +24,7 @@ Este é o código-fonte principal do `npass`. O executável em `bin/npass` é ge
 | `18-help.bash` | `npass help`: essencial no menu principal; categorias e seções saem de um bloco único (`npass_help_data`, marcadores `@cat`/`@sub`); novo comando = linha numa seção |
 | `17-open.bash` | `npass open npass://ID/caminho` (handler do esquema), `npass_url_encode/_decode`, parser estrito, confirmação antes de decifrar, abre terminal (`NPASS_TERMINAL`) quando chamado sem tty |
 | `16-view.bash` | comando `show` (`cmd_view`): renderiza com glow em terminal, cru em pipe; monta o documento de exibição (senha/OTP/valores em código, nomes escapados) e a navegação de backup calculada (`npass_nav_*`: `Backup:` na entrada, `Entrada:` no anexo); `cmd_show` (03) segue sendo o decifrador cru interno |
-| `15-tree.bash` | comando `tree` (substitui o `ls`): árvore dos caminhos lógicos a partir do mapa, `--flat` para máquina, marca `[backup]` por nome |
+| `15-ls.bash` | comando `ls` (já se chamou `tree`): árvore dos caminhos lógicos a partir do mapa, `--flat` para máquina, marca `[backup]` por nome |
 | `14-entry.bash` | formato md1: `npass_entry_load/_render/_new/_with_password/_require`, campos (`_field_get/_set/_has`) e OTP (`_otp_uri/_otp_set`); estado em globais `NPASS_E_*` (chame direto, nunca em `$(...)`) |
 | `13-backup.bash` | comando `backup` e helpers de anexo (`npass_backup_attachments`, `npass_backup_is_attachment`, `npass_backup_drop`); `rm`/`mv`/`update` o chamam |
 
@@ -35,7 +35,7 @@ Este é o código-fonte principal do `npass`. O executável em `bin/npass` é ge
 - Problema de `help`, categorias, seções, comando sem ajuda -> `18-help.bash`
 - Problema de `open`, links `npass://`, handler do desktop, codificação de URL -> `17-open.bash`
 - Problema de `show` renderizado, glow, documento de exibição -> `16-view.bash`
-- Problema de `tree` (árvore, `--flat`, marca `[backup]`) -> `15-tree.bash`
+- Problema de `ls` (árvore, `--flat`, marca `[backup]`) -> `15-ls.bash`
 - Problema envolvendo `.map.gpg` ou nomes de blobs -> `03-store.bash`
 - Problema de clipboard padrão -> `04-clipboard.bash`
 - Problema de OTP -> `05-otp.bash`
