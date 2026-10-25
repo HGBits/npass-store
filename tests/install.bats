@@ -155,3 +155,53 @@ setup() {
 	[ "$(grep -o '%u' "$f" | wc -l)" -eq 1 ]
 	[ "$(grep -o '@NPASS@' "$f" | wc -l)" -eq 1 ]
 }
+
+@test "opção --tui baixa npass-tui do repositório correto e instala executável" {
+	local mockbin="$BATS_TEST_TMPDIR/mockbin"
+	local fixture="$BATS_TEST_TMPDIR/npass-tui.fixture"
+	local log="$BATS_TEST_TMPDIR/curl.log"
+	mkdir -p "$mockbin"
+	printf '#!/usr/bin/env bash\necho "$@" >"$CURL_LOG"\ncat "$TUI_FIXTURE"\n' > "$mockbin/curl"
+	chmod +x "$mockbin/curl"
+	printf '#!/usr/bin/env bash\necho tui-test\n' > "$fixture"
+	run env PREFIX="$PREFIX" PATH="$mockbin:$PATH" CURL_LOG="$log" TUI_FIXTURE="$fixture" "$PROJECT_DIR/install.sh" --tui
+	[ "$status" -eq 0 ]
+	[ -x "$PREFIX/bin/npass-tui" ]
+	run "$PREFIX/bin/npass-tui"
+	[ "$status" -eq 0 ]
+	[ "$output" = "tui-test" ]
+	grep -q 'https://raw.githubusercontent.com/HGBits/npass_tui/master/npass-tui' "$log"
+}
+
+@test "download com sintaxe inválida não instala npass-tui" {
+	local mockbin="$BATS_TEST_TMPDIR/mockbin"
+	local fixture="$BATS_TEST_TMPDIR/npass-tui.invalid"
+	mkdir -p "$mockbin"
+	printf '#!/usr/bin/env bash\ncat "$TUI_FIXTURE"\n' > "$mockbin/curl"
+	chmod +x "$mockbin/curl"
+	printf 'if then\n' > "$fixture"
+	run env PREFIX="$PREFIX" PATH="$mockbin:$PATH" TUI_FIXTURE="$fixture" "$PROJECT_DIR/install.sh" --tui
+	[ "$status" -eq 0 ]
+	[ ! -e "$PREFIX/bin/npass-tui" ]
+	[[ "$output" == *"sintaxe inválida"* ]]
+}
+
+@test "--no-tui não baixa nem instala a interface" {
+	run env PREFIX="$PREFIX" "$PROJECT_DIR/install.sh" --no-tui
+	[ "$status" -eq 0 ]
+	[ ! -e "$PREFIX/bin/npass-tui" ]
+}
+
+@test "--uninstall remove npass-tui quando instalado" {
+	local mockbin="$BATS_TEST_TMPDIR/mockbin"
+	local fixture="$BATS_TEST_TMPDIR/npass-tui.fixture"
+	mkdir -p "$mockbin"
+	printf '#!/usr/bin/env bash\ncat "$TUI_FIXTURE"\n' > "$mockbin/curl"
+	chmod +x "$mockbin/curl"
+	printf '#!/usr/bin/env bash\nexit 0\n' > "$fixture"
+	env PREFIX="$PREFIX" PATH="$mockbin:$PATH" TUI_FIXTURE="$fixture" "$PROJECT_DIR/install.sh" --tui >/dev/null
+	[ -x "$PREFIX/bin/npass-tui" ]
+	run env PREFIX="$PREFIX" "$PROJECT_DIR/install.sh" --uninstall
+	[ "$status" -eq 0 ]
+	[ ! -e "$PREFIX/bin/npass-tui" ]
+}
