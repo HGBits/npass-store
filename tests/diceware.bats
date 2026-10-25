@@ -505,6 +505,16 @@ public_word_of() { awk -F'\t' -v h="$1" '/^\[/{s=$0} s=="[large]" && $1==h {prin
 	[ ! -e "$stage/usr/share/npass" ]
 }
 
+@test "install.sh com umask restritivo (077): os diretorios criados ficam legiveis (755) e a lista e achada por quem nao e o dono" {
+	local prefix="$BATS_TEST_TMPDIR/prefix" d
+	( umask 077; "$PROJECT_DIR/install.sh" --prefix="$prefix" --no-extensions >/dev/null )
+	for d in "" bin share share/man share/man/man1 share/npass share/npass/encrypts_alternatives share/applications; do
+		[ "$(stat -c %a "$prefix/$d")" = "755" ] || { echo "modo errado em $prefix/$d: $(stat -c %a "$prefix/$d")"; return 1; }
+	done
+	[ "$(stat -c %a "$prefix/bin/npass")" = "755" ]
+	[ "$(stat -c %a "$prefix/share/npass/encrypts_alternatives/wordlist.txt")" = "644" ]
+}
+
 # --- entrada ilegivel: nunca sobrescrever dados que nao foram vistos -----------------------------------------
 
 corromper_blob() { printf 'lixo-nao-decifravel' >"$(ls "$NPASS_STORE"/HG/blobs/*.gpg | head -1)"; }

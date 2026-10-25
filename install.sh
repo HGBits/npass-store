@@ -297,6 +297,15 @@ fi
 echo "Reconstruindo bin/npass a partir de lib/*.bash..."
 bash build.sh
 
+# A instalacao no sistema e legivel por todos de proposito. Com um umask
+# restritivo (077 e comum em setups endurecidos, e o sudo mantem o mais
+# restritivo entre o seu e o dele) o mkdir abaixo criaria os diretorios novos
+# (share/npass, ...) como 0700: os arquivos seriam 644, mas so o root chegaria
+# neles, e o npass de um usuario comum nao acharia a lista de palavras. O umask
+# volta ao que era antes das etapas por usuario (extensoes).
+old_umask="$(umask)"
+umask 022
+
 mkdir -p "$bindir" "$mandir" "$words_dir" "$desktop_dir"
 install -m 755 bin/npass "$bin_target"
 install -m 644 man/npass.1 "$man_target"
@@ -311,6 +320,7 @@ echo "instalado: $desktop_target"
 if [[ -z "$DESTDIR" ]] && command -v update-desktop-database >/dev/null 2>&1; then
 	update-desktop-database "$desktop_dir" 2>/dev/null || true
 fi
+umask "$old_umask"
 
 # Soft dependency check - informational only. Packaging (the AUR
 # PKGBUILD's depends=()) is what actually enforces this; a manual
