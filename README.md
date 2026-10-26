@@ -419,16 +419,20 @@ export NPASS_ENABLE_EXTENSIONS=1
 
 Extensões precisam ser arquivos regulares, possuir permissões restritivas e uma assinatura GPG válida, feita por uma chave **sua** (`npass extension sign ARQUIVO`; confira com `npass extension list`). A extensão recebe `NPASS_STORE`, `NPASS_GPG`, `NPASS_LANG` e `NPASS_BIN` (o `npass` exato que a executou).
 
-### Instalando as extensões que acompanham o repositório
+### Instalando as extensões (repositório `npass_extensions`)
 
-O `install.sh` **não instala nenhuma extensão por padrão**. Rodando num terminal, depois de instalar o npass ele oferece cada extensão de `extensions/`, uma por uma e com uma descrição curta; as que você aceitar já vão direto para o destino final (`~/.local/share/npass/extensions`) e são assinadas com a sua chave. Instalar É o ato de confiar: leia antes.
+O `install.sh` **não instala nenhuma extensão por padrão**. Rodando num terminal, depois de instalar o npass ele oferece cada extensão do repositório [`npass_extensions`](https://github.com/HGBits/npass_extensions), uma por uma e com uma descrição curta; as que você aceitar já vão direto para o destino final (`~/.local/share/npass/extensions`) e são assinadas com a sua chave. Instalar É o ato de confiar: leia antes.
 
 ```bash
 sudo ./install.sh                  # instala o npass e, num terminal, oferece as extensões
 ./install.sh --extensions-only     # só as extensões (ex.: você usa o pacote do AUR)
 ./install.sh --no-extensions       # nunca oferece
 ./install.sh --sign-key=KEYID      # chave usada para assinar (padrão: a padrão do gpg)
+./install.sh --extensions-src=DIR  # usa este checkout do npass_extensions
+./install.sh --extensions-ref=REF  # branch ou tag a baixar, se for baixar
 ```
+
+**De onde vêm:** de `--extensions-src=DIR` (ou `$NPASS_EXTENSIONS_SRC`); senão de `../npass_extensions`, ao lado do clone do npass; senão o instalador avisa e **pergunta antes de baixar** (`git clone --depth 1` de `$NPASS_EXTENSIONS_REPO`, por padrão `https://github.com/HGBits/npass_extensions.git`, feito como o seu usuário num diretório temporário que some ao final). Uma origem passada à mão que não tem extensões é erro: o instalador nunca troca por rede escondido. O commit baixado (e se ele é assinado) é mostrado, porque o que você aceita é assinado com a SUA chave e depois roda com acesso aos seus segredos: leia antes, e prefira um `--extensions-ref` fixo (tag).
 
 - Sob `sudo`, o destino e a assinatura são do usuário que chamou o `sudo` (`SUDO_USER`), não do root.
 - Nada é perguntado quando a entrada não é um terminal nem com `DESTDIR` (empacotamento). O PKGBUILD usa `--no-extensions`.
@@ -493,7 +497,7 @@ npass passkey serve ID                  # valida o helper e sobe o autenticador 
 - Cada passkey é um blob opaco `ID/Fido/<hex>.gpg`: cabeçalho público (`rp_id`, `login`,
   hash do payload, assinatura GPG) + payload cifrado. `Fido/.map` (0600, com lock) só ajuda a
   achar candidatos; **nunca é autoridade**. Vários blobs podem ter o mesmo RP/login.
-- O `install.sh` só compila o daemon (`cargo build --release --locked` em `passkey/`) se você
+- O `install.sh` só compila o daemon (`cargo build --release --locked` em `passkey/`, no repositório `npass_extensions`) se você
   escolher `npass-passkey`; as demais extensões não precisam de Rust. O helper vai para
   `~/.local/share/npass/helpers/` e é assinado junto com um selo que o amarra a esta versão da extensão.
 - Requer `/dev/uhid` acessível ao seu usuário (`modprobe uhid` + regra udev). A presença do

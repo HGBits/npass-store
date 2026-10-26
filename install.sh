@@ -19,12 +19,25 @@
 # On Arch /usr/sbin is a symlink to /usr/bin, so /usr/bin/npass is
 # reachable as /usr/sbin/npass too.
 #
-# Extensions (extensions/npass-*) are OPTIONAL and nothing about them is
-# installed unless you say yes. Run from a terminal, the installer offers
-# them after installing npass, one by one, with a short description, and
-# puts each accepted one straight into its final place (your extensions
-# directory) and signs it with your key. Nothing is asked when stdin is not
-# a terminal, when DESTDIR is set (packaging), or with --no-extensions / --no-tui.
+# Extensions are OPTIONAL and nothing about them is installed unless you say
+# yes. They live in their own repository (npass_extensions), not in this one.
+# Run from a terminal, the installer offers them after installing npass, one
+# by one, with a short description, and puts each accepted one straight into
+# its final place (your extensions directory) and signs it with your key.
+# Nothing is asked when stdin is not a terminal, when DESTDIR is set
+# (packaging), or with --no-extensions / --no-tui.
+#
+# Where the extensions come from, in this order:
+#   1. --extensions-src=DIR (or $NPASS_EXTENSIONS_SRC): a checkout of
+#      npass_extensions. If it is given and has no npass-* files, that is an
+#      error: the installer never falls back to the network behind your back.
+#   2. ../npass_extensions, next to this repository, if it exists.
+#   3. Otherwise it says so and ASKS before downloading: git clone --depth 1
+#      of $NPASS_EXTENSIONS_REPO (default https://github.com/HGBits/npass_extensions.git),
+#      as your user, into a temporary directory removed on exit. Pin a branch
+#      or tag with --extensions-ref=REF. The commit it got (and whether it is
+#      signed) is printed, because what you accept here is signed with YOUR key
+#      and then runs with access to your secrets: read it first.
 #
 # Usage:
 #   sudo ./install.sh                  install under /usr (bin/npass), then offer extensions
@@ -38,6 +51,8 @@
 #   ./install.sh --extensions          offer extensions even if stdin is not a terminal
 #   ./install.sh --extensions-only     skip npass itself, only offer the extensions
 #                                      (for the AUR package, or to add one later)
+#   ./install.sh --extensions-src=DIR  take the extensions from this checkout
+#   ./install.sh --extensions-ref=REF  branch or tag to clone when downloading
 #   ./install.sh --sign-key=KEYID      key used to sign accepted extensions
 #                                      (default: gpg's default key)
 
@@ -52,6 +67,10 @@ ext_mode=auto # auto = ask only on a terminal | yes | no
 tui_mode=auto # auto = ask only on a terminal | yes | no
 ext_only=0
 sign_key=""
+ext_src="${NPASS_EXTENSIONS_SRC:-}"
+ext_ref=""
+ext_repo="${NPASS_EXTENSIONS_REPO:-https://github.com/HGBits/npass_extensions.git}"
+ext_tmp=""
 
 for arg in "$@"; do
 	case "$arg" in
@@ -64,6 +83,8 @@ for arg in "$@"; do
 	--extensions) ext_mode=yes ;;
 	--extensions-only) ext_mode=yes; ext_only=1 ;;
 	--sign-key=*) sign_key="${arg#--sign-key=}" ;;
+	--extensions-src=*) ext_src="${arg#--extensions-src=}" ;;
+	--extensions-ref=*) ext_ref="${arg#--extensions-ref=}" ;;
 	-h | --help)
 		awk 'NR>1 && /^#/ {sub(/^# ?/, ""); print; next} NR>1 {exit}' "$0"
 		exit 0
@@ -115,14 +136,41 @@ ask() {
 	[[ "${a,,}" =~ ^(s|sim|y|yes)$ ]]
 }
 
+# A directory counts as an extensions checkout if it holds at least one npass-* file.
+ext_valid_src() {
+	local f
+	for f in "$1"/npass-*; do
+		[[ -f "$f" ]] && return 0
+	done
+	return 1
+}
+
+# Local source only (no network). Prints the ABSOLUTE path. Returns 1 for an
+# explicit source that is unusable (hard error), 2 when there is no local copy.
+find_ext_src() {
+	local cand
+	if [[ -n "$ext_src" ]]; then
+		if [[ -d "$ext_src" ]] && ext_valid_src "$ext_src"; then
+			(cd "$ext_src" && pwd)
+			return 0
+		fi
+		echo "install.sh: sem extensões (arquivos npass-*) em: $ext_src" >&2
+		return 1
+	fi
+	cand="$(cd .. && pwd)/npass_extensions"
+	if [[ -d "$cand" ]] && ext_valid_src "$cand"; then
+		printf '%s\n' "$cand"
+		return 0
+	fi
+	return 2
+}
+
 offer_extensions() {
 	local signer="$1"
 	local -a candidates=()
-	local f
-	for f in extensions/npass-*; do
-		[[ -f "$f" ]] && candidates+=("$f")
-	done
-	[[ ${#candidates[@]} -gt 0 ]] || return 0
+	local f src rc=0
+	src="$(find_ext_src)" || rc=$?
+	((rc == 1)) && return 1
 
 	echo
 	echo "Extensões opcionais:"
@@ -162,8 +210,44 @@ offer_extensions() {
 		fi
 	}
 
+	if ((rc == 2)); then
+		echo
+		echo "  As extensões moram em outro repositório e não achei uma cópia local"
+		echo "  (procurei em $(cd .. && pwd)/npass_extensions; --extensions-src=DIR aponta outra)."
+		echo "  Repositório: $ext_repo${ext_ref:+ (ref: $ext_ref)}"
+		ask "  Baixar agora (git clone --depth 1, como $ext_user, em diretório temporário)?" || return 0
+		command -v git >/dev/null 2>&1 || {
+			echo "install.sh: git não encontrado; não dá para baixar as extensões." >&2
+			return 1
+		}
+		ext_tmp="$(as_user mktemp -d "${TMPDIR:-/tmp}/npass-ext.XXXXXX")" || return 1
+		trap 'rm -rf -- "$ext_tmp"' EXIT
+		src="$ext_tmp/src"
+		if ! as_user git clone --quiet --depth 1 ${ext_ref:+--branch "$ext_ref"} -- "$ext_repo" "$src"; then
+			echo "install.sh: falha ao baixar $ext_repo${ext_ref:+ (ref: $ext_ref)}." >&2
+			return 1
+		fi
+		local sig
+		sig="$(as_user git -C "$src" log -1 --format='%G?' 2>/dev/null || true)"
+		case "$sig" in
+		G | U) sig="commit assinado (assinatura confere)" ;;
+		N | "") sig="commit SEM assinatura" ;;
+		*) sig="assinatura do commit NÃO verificada ($sig)" ;;
+		esac
+		echo "  Baixado: $(as_user git -C "$src" log -1 --format='%h %s' 2>/dev/null) - $sig"
+		ext_valid_src "$src" || {
+			echo "install.sh: o repositório baixado não tem extensões (npass-*)." >&2
+			return 1
+		}
+	fi
+	for f in "$src"/npass-*; do
+		[[ -f "$f" ]] && candidates+=("$f")
+	done
+	[[ ${#candidates[@]} -gt 0 ]] || return 0
+
+	echo "Origem: $src"
 	echo "Destino: $extdir (usuário: $ext_user)"
-	local installed=0 name desc needs n dest keyargs tty_dev cargo_spec manifest helper_name built helper_built hdir
+	local installed=0 name desc needs n dest keyargs tty_dev cargo_spec manifest helper_name built helper_built hdir qsrc qman
 	tty_dev="$(tty 2>/dev/null || true)"
 	[[ "$tty_dev" == /dev/* ]] || tty_dev=""
 	for f in "${candidates[@]}"; do
@@ -186,6 +270,7 @@ offer_extensions() {
 		helper_built=""
 		if [[ -n "$cargo_spec" ]]; then
 			read -r manifest helper_name <<<"$cargo_spec"
+			manifest="$src/$manifest" # o caminho do cabeçalho é relativo à raiz do repo de extensões
 			if ! as_user_sh 'command -v cargo' >/dev/null 2>&1; then
 				echo "    erro: $name precisa do cargo (Rust) no ambiente de $ext_user, e ele não foi encontrado. Não instalada." >&2
 				continue
@@ -194,7 +279,9 @@ offer_extensions() {
 			# nunca reaproveita binário antigo: apaga o que houver e exige um novo
 			rm -f -- "$built" "bin/$helper_name"
 			echo "    compilando $helper_name (cargo build --release --locked)..."
-			if ! as_user_sh "cd '$PWD' && cargo build --release --locked --manifest-path '$manifest'" >&2 || [[ ! -x "$built" ]]; then
+			printf -v qsrc '%q' "$src"
+			printf -v qman '%q' "$manifest"
+			if ! as_user_sh "cd $qsrc && cargo build --release --locked --manifest-path $qman" >&2 || [[ ! -x "$built" ]]; then
 				echo "    erro: a compilação de $helper_name falhou. $name não instalada." >&2
 				continue
 			fi

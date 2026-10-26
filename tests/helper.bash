@@ -80,12 +80,42 @@ npass_test_encr_keyid() {
 		| awk -F: '$1=="sub" && $12 ~ /e/ {print toupper($5); exit}'
 }
 
-# npass_test_install_ext ARQUIVO - instala extensions/ARQUIVO (sem o sufixo .bash,
+# npass_test_ext_src [ARQUIVO...] - prepara em $BATS_TEST_TMPDIR/extsrc uma COPIA do
+# repositorio de extensoes (npass_extensions: npass-* na raiz e passkey/) e exporta
+# NPASS_EXTENSIONS_SRC apontando para ela. Sem argumentos copia todas as npass-*; com
+# argumentos, so as pedidas. Origem, na ordem: $NPASS_TEST_EXT_REPO, ../npass_extensions
+# (irmao deste repositorio) e, enquanto a migracao nao terminou, extensions/ + passkey/
+# deste repositorio. Sem nenhuma, o teste e PULADO (as extensoes nao sao deste repo).
+npass_test_ext_src() {
+	local root="$BATS_TEST_DIRNAME/.." dst="$BATS_TEST_TMPDIR/extsrc" repo n pk=""
+	mkdir -p "$dst"
+	repo="${NPASS_TEST_EXT_REPO:-$root/../npass_extensions}"
+	if [[ -d "$repo" ]] && compgen -G "$repo/npass-*" >/dev/null; then
+		[[ -d "$repo/passkey" ]] && pk="$repo/passkey"
+	elif [[ -d "$root/extensions" ]] && compgen -G "$root/extensions/npass-*" >/dev/null; then
+		repo="$root/extensions"
+		[[ -d "$root/passkey" ]] && pk="$root/passkey"
+	else
+		skip "repositorio npass_extensions nao encontrado (defina NPASS_TEST_EXT_REPO)"
+	fi
+	if (($#)); then
+		for n in "$@"; do cp -a -- "$repo/$n" "$dst/" || return 1; done
+	else
+		cp -a -- "$repo"/npass-* "$dst/" || return 1
+	fi
+	if [[ -n "$pk" && ! -e "$dst/passkey" ]]; then
+		cp -a -- "$pk" "$dst/passkey" && rm -rf "$dst/passkey/target"
+	fi
+	export NPASS_EXTENSIONS_SRC="$dst"
+}
+
+# npass_test_install_ext ARQUIVO - instala a extensao ARQUIVO (sem o sufixo .bash,
 # que o comando nao usa) em $NPASS_EXTENSIONS_DIR, assina com a chave de teste e liga
 # as extensoes. Faz o que o install.sh faz quando voce aceita a extensao, sem prompt.
 # Requer NPASS, FPR e NPASS_EXTENSIONS_DIR ja definidos (e GNUPGHOME).
 npass_test_install_ext() {
-	local src="$BATS_TEST_DIRNAME/../extensions/$1" name="${1%.bash}" dest
+	npass_test_ext_src "$1" || return 1
+	local src="$NPASS_EXTENSIONS_SRC/$1" name="${1%.bash}" dest
 	dest="$NPASS_EXTENSIONS_DIR/$name"
 	mkdir -p "$NPASS_EXTENSIONS_DIR"
 	install -m 755 "$src" "$dest"

@@ -298,7 +298,8 @@ count_blobs() { find "$NPASS_STORE/HG/blobs" -name '*.gpg' | wc -l; }
 @test "audit nao conta os anexos de backup como senhas" {
 	command -v python3 >/dev/null || skip "python3 ausente"
 	bk 2 HG email/gmail >/dev/null
-	NPASS_BIN="$NPASS" run python3 "$PROJECT_DIR/extensions/npass-audit" HG --offline
+	npass_test_ext_src npass-audit
+	NPASS_BIN="$NPASS" run python3 "$NPASS_EXTENSIONS_SRC/npass-audit" HG --offline
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"Resumo: 1 senha(s)"* ]]
 }

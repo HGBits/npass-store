@@ -777,10 +777,16 @@ that launched them) in the environment.
 .PP
 .B install.sh
 installs no extension by default. Run from a terminal it offers each bundled
-extension (from
-.IR extensions/ )
-one by one with a short description, moves each accepted one straight to the
-user's extensions directory and signs it with the user's key; see
+extension of the
+.B npass_extensions
+repository one by one with a short description, moves each accepted one straight to the
+user's extensions directory and signs it with the user's key. The source is
+.B \-\-extensions\-src=DIR
+(or $NPASS_EXTENSIONS_SRC), else
+.IR ../npass_extensions ,
+else the installer says so and asks before cloning $NPASS_EXTENSIONS_REPO
+(\fB\-\-extensions\-ref\fR picks a branch or tag); an explicit source with no
+extensions is an error, never a silent fallback to the network. See
 .B ./install.sh \-\-help
 (\fB\-\-extensions\-only\fR, \fB\-\-no\-extensions\fR, \fB\-\-sign\-key\fR).
 .PP

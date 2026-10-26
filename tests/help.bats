@@ -177,11 +177,12 @@ fn() { NPASS_SRC="$NPASS" "$BASH" -c 'source <(sed "\$d" "$NPASS_SRC"); "$@"' _ 
 	[[ "$output" != *$'\n'"  migrate"* ]]
 }
 
-@test "toda extensao do repositorio esta listada em 'extensoes disponiveis'" {
+@test "toda extensao do repositorio de extensoes esta listada em 'extensoes disponiveis'" {
+	npass_test_ext_src
 	run "$NPASS" help extensoes disponiveis
 	[ "$status" -eq 0 ]
 	local out="$output" f name n=0
-	for f in "$PROJECT_DIR"/extensions/npass-*; do
+	for f in "$NPASS_EXTENSIONS_SRC"/npass-*; do
 		[ -f "$f" ] || continue
 		name="$(basename "$f")"; name="${name#npass-}"; name="${name%.bash}"
 		[[ "$out" == *$'\n'"  $name "* ]] || { echo "extensao sem ajuda: $name" >&3; false; }

@@ -281,7 +281,8 @@ put() { printf '%s\0%s\0' "$1" "$2" | "$NPASS" insert --batch -f HG >/dev/null; 
 	put a/um "$(md1_doc 'Mesma-Senha-123!' 'login: x')"
 	put a/dois "$(md1_doc 'Mesma-Senha-123!')"
 	put a/tres "$(md1_doc 'outra-bem-diferente-9#')"
-	NPASS_BIN="$NPASS" run python3 "$PROJECT_DIR/extensions/npass-audit" HG --offline
+	npass_test_ext_src npass-audit
+	NPASS_BIN="$NPASS" run python3 "$NPASS_EXTENSIONS_SRC/npass-audit" HG --offline
 	[ "$status" -eq 1 ]   # 1 = achou problema (reuso)
 	[[ "$output" == *"REUTILIZADA: a/dois, a/um"* ]]
 	[[ "$output" == *"Resumo: 3 senha(s)"* ]]
@@ -292,7 +293,8 @@ put() { printf '%s\0%s\0' "$1" "$2" | "$NPASS" insert --batch -f HG >/dev/null; 
 	command -v python3 >/dev/null || skip "python3 ausente"
 	put a/ok "$(md1_doc 'uma-senha-qualquer-1!')"
 	npass_test_raw HG a/velha 'senha-velha'
-	NPASS_BIN="$NPASS" run python3 "$PROJECT_DIR/extensions/npass-audit" HG --offline
+	npass_test_ext_src npass-audit
+	NPASS_BIN="$NPASS" run python3 "$NPASS_EXTENSIONS_SRC/npass-audit" HG --offline
 	[[ "$output" == *"a/velha"* ]]
 	[[ "$output" == *"não está em md1"* ]]
 	[[ "$output" != *"npass import"* ]]

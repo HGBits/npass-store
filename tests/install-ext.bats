@@ -9,7 +9,11 @@ setup() {
 	export PROJECT_DIR="$BATS_TEST_DIRNAME/.."
 	export PREFIX="$BATS_TEST_TMPDIR/prefix"
 	export NPASS_EXTENSIONS_DIR="$BATS_TEST_TMPDIR/ext"
-	unset NPASS_STORE NPASS_GPG NPASS_LANG DESTDIR SUDO_USER NPASS_ENABLE_EXTENSIONS 2>/dev/null || true
+	unset NPASS_STORE NPASS_GPG NPASS_LANG DESTDIR SUDO_USER NPASS_ENABLE_EXTENSIONS NPASS_EXTENSIONS_REPO 2>/dev/null || true
+	# a origem das extensoes: so as duas que os testes de prompt conhecem, nessa ordem
+	# (clip-x11, import), para as respostas por posicao nao dependerem de quantas
+	# extensoes o repositorio de extensoes tem hoje
+	npass_test_ext_src npass-clip-x11.bash npass-import
 }
 
 inst() { "$PROJECT_DIR/install.sh" --prefix="$PREFIX" "$@"; }
@@ -99,7 +103,7 @@ inst() { "$PROJECT_DIR/install.sh" --prefix="$PREFIX" "$@"; }
 	printf 's\nn\ns\n' | inst --extensions --sign-key="$FPR" >/dev/null
 	printf '\n# adulterado\n' >>"$NPASS_EXTENSIONS_DIR/npass-import"
 	printf 's\nn\ns\n' | inst --extensions --sign-key="$FPR" >/dev/null
-	cmp "$PROJECT_DIR/extensions/npass-import" "$NPASS_EXTENSIONS_DIR/npass-import"
+	cmp "$NPASS_EXTENSIONS_SRC/npass-import" "$NPASS_EXTENSIONS_DIR/npass-import"
 	NPASS_ENABLE_EXTENSIONS=1 run "$PREFIX/bin/npass" extension list
 	[[ "$output" == *"import: ok"* ]]
 }
@@ -145,4 +149,94 @@ inst() { "$PROJECT_DIR/install.sh" --prefix="$PREFIX" "$@"; }
 	run inst --uninstall
 	[ ! -e "$PREFIX/bin/npass" ]
 	[ -x "$NPASS_EXTENSIONS_DIR/npass-import" ]
+}
+
+# --- de onde vem as extensoes ----------------------------------------------------------
+
+# copia minima do core (o install.sh faz cd para o proprio diretorio e procura
+# ../npass_extensions), para testar a origem "irma" sem depender de onde o repo esta
+core_copy() {
+	local d="$BATS_TEST_TMPDIR/core/npass-store"
+	mkdir -p "$d"
+	cp -a "$PROJECT_DIR"/{install.sh,build.sh,lib,man,packaging,encrypts_alternatives} "$d/"
+	printf '%s\n' "$d"
+}
+
+@test "--extensions-src sem extensoes (npass-*): erro e nada instalado, sem cair para a rede" {
+	mkdir -p "$BATS_TEST_TMPDIR/vazio"
+	run bash -c "printf 's\ns\ns\n' | NPASS_EXTENSIONS_REPO=file:///nao/existe '$PROJECT_DIR/install.sh' --prefix='$PREFIX' --extensions --extensions-src='$BATS_TEST_TMPDIR/vazio'"
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"sem extensões (arquivos npass-*) em: $BATS_TEST_TMPDIR/vazio"* ]]
+	[[ "$output" != *"Baixar agora"* ]]
+	[ ! -e "$NPASS_EXTENSIONS_DIR" ]
+}
+
+@test "--extensions-src manda sobre NPASS_EXTENSIONS_SRC e mostra a origem" {
+	mkdir -p "$BATS_TEST_TMPDIR/outra"
+	cp -a "$NPASS_EXTENSIONS_SRC/npass-import" "$BATS_TEST_TMPDIR/outra/"
+	run bash -c "printf 's\ns\n' | '$PROJECT_DIR/install.sh' --prefix='$PREFIX' --extensions --sign-key='$FPR' --extensions-src='$BATS_TEST_TMPDIR/outra'"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Origem: $BATS_TEST_TMPDIR/outra"* ]]
+	[[ "$output" != *"npass-clip-x11"* ]]
+	[ -x "$NPASS_EXTENSIONS_DIR/npass-import" ]
+}
+
+@test "sem flag nem variavel: usa ../npass_extensions, irma do repositorio do npass" {
+	local core; core="$(core_copy)"
+	cp -a "$NPASS_EXTENSIONS_SRC" "$BATS_TEST_TMPDIR/core/npass_extensions"
+	unset NPASS_EXTENSIONS_SRC
+	run bash -c "printf 's\nn\ns\n' | NPASS_EXTENSIONS_REPO=file:///nao/existe '$core/install.sh' --prefix='$PREFIX' --extensions --sign-key='$FPR'"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Origem: $BATS_TEST_TMPDIR/core/npass_extensions"* ]]
+	[[ "$output" != *"Baixar agora"* ]]
+	[ -x "$NPASS_EXTENSIONS_DIR/npass-import" ]
+}
+
+@test "sem copia local: avisa, mostra o repositorio e so baixa se voce disser que sim" {
+	local core; core="$(core_copy)"
+	unset NPASS_EXTENSIONS_SRC
+	export TMPDIR="$BATS_TEST_TMPDIR/tmp"; mkdir -p "$TMPDIR"
+	run bash -c "printf 's\nn\n' | NPASS_EXTENSIONS_REPO=file:///nao/existe '$core/install.sh' --prefix='$PREFIX' --extensions"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"As extensões moram em outro repositório"* ]]
+	[[ "$output" == *"Repositório: file:///nao/existe"* ]]
+	[[ "$output" == *"Baixar agora"* ]]
+	[ ! -e "$NPASS_EXTENSIONS_DIR" ]
+	[ -z "$(ls -A "$TMPDIR")" ]
+}
+
+@test "baixar: clona so o ref pedido, mostra o commit e se e assinado, instala assinado e apaga o temporario" {
+	local core; core="$(core_copy)" repo="$BATS_TEST_TMPDIR/origem"
+	unset NPASS_EXTENSIONS_SRC
+	export TMPDIR="$BATS_TEST_TMPDIR/tmp"; mkdir -p "$TMPDIR"
+	mkdir -p "$repo"
+	cp -a "$BATS_TEST_TMPDIR/extsrc"/. "$repo/"
+	git -C "$repo" init -q -b main
+	git -C "$repo" add -A
+	git -C "$repo" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m "extensoes v1"
+	git -C "$repo" tag v1
+	run bash -c "printf 's\ns\nn\ns\n' | NPASS_EXTENSIONS_REPO='file://$repo' '$core/install.sh' --prefix='$PREFIX' --extensions --extensions-ref=v1 --sign-key='$FPR'"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Repositório: file://$repo (ref: v1)"* ]]
+	[[ "$output" == *"Baixado:"*"extensoes v1"*"commit SEM assinatura"* ]]
+	[ -x "$NPASS_EXTENSIONS_DIR/npass-import" ]
+	[ -f "$NPASS_EXTENSIONS_DIR/npass-import.sig" ]
+	[ ! -e "$NPASS_EXTENSIONS_DIR/npass-clip-x11" ]
+	# o clone temporario some quando o instalador termina
+	[ -z "$(ls -A "$TMPDIR")" ]
+}
+
+@test "baixar: ref inexistente ou repositorio sem extensoes falham com erro claro e nada e instalado" {
+	local core; core="$(core_copy)" repo="$BATS_TEST_TMPDIR/origem"
+	unset NPASS_EXTENSIONS_SRC
+	mkdir -p "$repo" && echo x >"$repo/LEIAME"
+	git -C "$repo" init -q -b main && git -C "$repo" add -A
+	git -C "$repo" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m vazio
+	run bash -c "printf 's\ns\n' | NPASS_EXTENSIONS_REPO='file://$repo' '$core/install.sh' --prefix='$PREFIX' --extensions --extensions-ref=naoexiste"
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"falha ao baixar"* ]]
+	run bash -c "printf 's\ns\n' | NPASS_EXTENSIONS_REPO='file://$repo' '$core/install.sh' --prefix='$PREFIX' --extensions"
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"não tem extensões"* ]]
+	[ ! -e "$NPASS_EXTENSIONS_DIR" ]
 }
