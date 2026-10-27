@@ -10,6 +10,11 @@ setup() {
 	export PREFIX="$BATS_TEST_TMPDIR/prefix"
 	export NPASS_EXTENSIONS_DIR="$BATS_TEST_TMPDIR/ext"
 	unset NPASS_STORE NPASS_GPG NPASS_LANG DESTDIR SUDO_USER NPASS_ENABLE_EXTENSIONS NPASS_EXTENSIONS_REPO 2>/dev/null || true
+	# o git dos testes (repositorios de mentira, o clone do instalador) nao pode herdar a
+	# configuracao de quem roda: tag.gpgSign/commit.gpgsign pedem chave e editor, e um
+	# editor aberto trava o bats. GIT_EDITOR=true e GIT_TERMINAL_PROMPT=0 nunca deixam
+	# nada interativo.
+	export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null GIT_EDITOR=true GIT_TERMINAL_PROMPT=0
 	# a origem das extensoes: so as duas que os testes de prompt conhecem, nessa ordem
 	# (clip-x11, import), para as respostas por posicao nao dependerem de quantas
 	# extensoes o repositorio de extensoes tem hoje

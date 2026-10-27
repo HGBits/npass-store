@@ -15,6 +15,7 @@ setup() {
 	export NPASS_HELPERS_DIR="$BATS_TEST_TMPDIR/helpers"
 	export NPASS_PASSKEY_GIT=0 NPASS_ENABLE_EXTENSIONS=1
 	unset NPASS_GPG NPASS_BIN NPASS_EXTENSIONS_REPO
+	export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null GIT_EDITOR=true GIT_TERMINAL_PROMPT=0
 	npass_test_ext_src npass-import npass-passkey || return 1
 	[ -f "$NPASS_EXTENSIONS_SRC/passkey/Cargo.toml" ] || skip "passkey/Cargo.toml ausente na origem das extensoes"
 	"$NPASS" init pessoal "$FPR" >/dev/null
