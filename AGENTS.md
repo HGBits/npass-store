@@ -28,7 +28,7 @@ Este arquivo é o índice operacional do projeto. Use-o para localizar rapidamen
 | Listagem (`ls`, `--flat`) | `lib/15-ls.bash` | `extensions/npass-import` e `extensions/npass-audit` (usam `ls --flat`), `tests/ls.bats` |
 | Senhas de backup (`backup`, anexos cifrados) | `lib/13-backup.bash` | `lib/03-store.bash` (cascata em `rm`/`mv`), `lib/06-update.bash`, `extensions/npass-audit`, `tests/backup.bats` |
 | Assinatura de identidades/artefatos | `lib/10-signing.bash` | `tests/signing.bats` |
-| Sistema de extensões | `lib/11-extensions.bash` | `extensions/` (até sair deste repo: as extensões vão para `npass_extensions`), testes de extensão |
+| Sistema de extensões | `lib/11-extensions.bash` | `extensions/` (até sair deste repo: as extensões vão para `npass-extensions`), testes de extensão |
 | Importação de outros gerenciadores e de stores pass (o corpo do pass é convertido para md1) | `extensions/npass-import` | `tests/import*.bats`, `tests/import-convert.bats` |
 | Passkeys / WebAuthn (backend, índice, blobs) | `extensions/npass-passkey` | `tests/passkey.bats`, `npass-passkey-arquitetura.md` |
 | Daemon FIDO2/CTAP2/UHID (Rust) | `passkey/src/` | `passkey/tests/e2e.rs`, `passkey/Cargo.toml` |

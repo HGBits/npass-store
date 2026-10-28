@@ -20,7 +20,7 @@
 # reachable as /usr/sbin/npass too.
 #
 # Extensions are OPTIONAL and nothing about them is installed unless you say
-# yes. They live in their own repository (npass_extensions), not in this one.
+# yes. They live in their own repository (npass-extensions), not in this one.
 # Run from a terminal, the installer offers them after installing npass, one
 # by one, with a short description, and puts each accepted one straight into
 # its final place (your extensions directory) and signs it with your key.
@@ -29,11 +29,12 @@
 #
 # Where the extensions come from, in this order:
 #   1. --extensions-src=DIR (or $NPASS_EXTENSIONS_SRC): a checkout of
-#      npass_extensions. If it is given and has no npass-* files, that is an
+#      npass-extensions. If it is given and has no npass-* files, that is an
 #      error: the installer never falls back to the network behind your back.
-#   2. ../npass_extensions, next to this repository, if it exists.
+#   2. ../npass-extensions, next to this repository, if it exists (the older
+#      folder name ../npass_extensions is accepted too).
 #   3. Otherwise it says so and ASKS before downloading: git clone --depth 1
-#      of $NPASS_EXTENSIONS_REPO (default https://github.com/HGBits/npass_extensions.git),
+#      of $NPASS_EXTENSIONS_REPO (default https://github.com/HGBits/npass-extensions.git),
 #      as your user, into a temporary directory removed on exit. Pin a branch
 #      or tag with --extensions-ref=REF. The commit it got (and whether it is
 #      signed) is printed, because what you accept here is signed with YOUR key
@@ -157,11 +158,14 @@ find_ext_src() {
 		echo "install.sh: sem extensões (arquivos npass-*) em: $ext_src" >&2
 		return 1
 	fi
-	cand="$(cd .. && pwd)/npass_extensions"
-	if [[ -d "$cand" ]] && ext_valid_src "$cand"; then
-		printf '%s\n' "$cand"
-		return 0
-	fi
+	local base
+	base="$(cd .. && pwd)"
+	for cand in "$base/npass-extensions" "$base/npass_extensions"; do
+		if [[ -d "$cand" ]] && ext_valid_src "$cand"; then
+			printf '%s\n' "$cand"
+			return 0
+		fi
+	done
 	return 2
 }
 
@@ -213,7 +217,7 @@ offer_extensions() {
 	if ((rc == 2)); then
 		echo
 		echo "  As extensões moram em outro repositório e não achei uma cópia local"
-		echo "  (procurei em $(cd .. && pwd)/npass_extensions; --extensions-src=DIR aponta outra)."
+		echo "  (procurei em $(cd .. && pwd)/npass-extensions e npass_extensions; --extensions-src=DIR aponta outra)."
 		echo "  Repositório: $ext_repo${ext_ref:+ (ref: $ext_ref)}"
 		ask "  Baixar agora (git clone --depth 1, como $ext_user, em diretório temporário)?" || return 0
 		command -v git >/dev/null 2>&1 || {

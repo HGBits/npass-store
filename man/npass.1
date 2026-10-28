@@ -778,12 +778,12 @@ that launched them) in the environment.
 .B install.sh
 installs no extension by default. Run from a terminal it offers each bundled
 extension of the
-.B npass_extensions
+.B npass-extensions
 repository one by one with a short description, moves each accepted one straight to the
 user's extensions directory and signs it with the user's key. The source is
 .B \-\-extensions\-src=DIR
 (or $NPASS_EXTENSIONS_SRC), else
-.IR ../npass_extensions ,
+.IR ../npass-extensions ,
 else the installer says so and asks before cloning $NPASS_EXTENSIONS_REPO
 (\fB\-\-extensions\-ref\fR picks a branch or tag); an explicit source with no
 extensions is an error, never a silent fallback to the network. See

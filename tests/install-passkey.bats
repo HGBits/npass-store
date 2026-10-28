@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 # install.sh + npass-passkey: o helper nativo (Rust) so e compilado, instalado e selado
 # quando a extensao e escolhida. O cargo e de mentira (registra a chamada e produz um
-# "helper"); a origem das extensoes e uma copia do repositorio npass_extensions com so
+# "helper"); a origem das extensoes e uma copia do repositorio npass-extensions com so
 # npass-import e npass-passkey (as respostas por posicao nao dependem do resto).
 
 setup() {

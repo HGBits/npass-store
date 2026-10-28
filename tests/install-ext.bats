@@ -159,7 +159,7 @@ inst() { "$PROJECT_DIR/install.sh" --prefix="$PREFIX" "$@"; }
 # --- de onde vem as extensoes ----------------------------------------------------------
 
 # copia minima do core (o install.sh faz cd para o proprio diretorio e procura
-# ../npass_extensions), para testar a origem "irma" sem depender de onde o repo esta
+# ../npass-extensions), para testar a origem "irma" sem depender de onde o repo esta
 core_copy() {
 	local d="$BATS_TEST_TMPDIR/core/npass-store"
 	mkdir -p "$d"
@@ -186,15 +186,32 @@ core_copy() {
 	[ -x "$NPASS_EXTENSIONS_DIR/npass-import" ]
 }
 
-@test "sem flag nem variavel: usa ../npass_extensions, irma do repositorio do npass" {
+@test "sem flag nem variavel: usa ../npass-extensions, irma do repositorio do npass" {
+	local core; core="$(core_copy)"
+	cp -a "$NPASS_EXTENSIONS_SRC" "$BATS_TEST_TMPDIR/core/npass-extensions"
+	unset NPASS_EXTENSIONS_SRC
+	run bash -c "printf 's\nn\ns\n' | NPASS_EXTENSIONS_REPO=file:///nao/existe '$core/install.sh' --prefix='$PREFIX' --extensions --sign-key='$FPR'"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Origem: $BATS_TEST_TMPDIR/core/npass-extensions"* ]]
+	[[ "$output" != *"Baixar agora"* ]]
+	[ -x "$NPASS_EXTENSIONS_DIR/npass-import" ]
+}
+
+@test "o nome antigo da pasta irma (../npass_extensions) tambem e aceito; o novo tem prioridade" {
 	local core; core="$(core_copy)"
 	cp -a "$NPASS_EXTENSIONS_SRC" "$BATS_TEST_TMPDIR/core/npass_extensions"
 	unset NPASS_EXTENSIONS_SRC
 	run bash -c "printf 's\nn\ns\n' | NPASS_EXTENSIONS_REPO=file:///nao/existe '$core/install.sh' --prefix='$PREFIX' --extensions --sign-key='$FPR'"
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"Origem: $BATS_TEST_TMPDIR/core/npass_extensions"* ]]
-	[[ "$output" != *"Baixar agora"* ]]
 	[ -x "$NPASS_EXTENSIONS_DIR/npass-import" ]
+	# com as duas, vale a de nome novo
+	rm -rf "$NPASS_EXTENSIONS_DIR"
+	mkdir -p "$BATS_TEST_TMPDIR/core/npass-extensions"
+	cp -a "$BATS_TEST_TMPDIR/core/npass_extensions"/. "$BATS_TEST_TMPDIR/core/npass-extensions/"
+	run bash -c "printf 's\nn\ns\n' | NPASS_EXTENSIONS_REPO=file:///nao/existe '$core/install.sh' --prefix='$PREFIX' --extensions --sign-key='$FPR'"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Origem: $BATS_TEST_TMPDIR/core/npass-extensions"* ]]
 }
 
 @test "sem copia local: avisa, mostra o repositorio e so baixa se voce disser que sim" {
@@ -206,6 +223,7 @@ core_copy() {
 	[[ "$output" == *"As extensões moram em outro repositório"* ]]
 	[[ "$output" == *"Repositório: file:///nao/existe"* ]]
 	[[ "$output" == *"Baixar agora"* ]]
+	[[ "$output" == *"procurei em"*"npass-extensions e npass_extensions"* ]]
 	[ ! -e "$NPASS_EXTENSIONS_DIR" ]
 	[ -z "$(ls -A "$TMPDIR")" ]
 }
