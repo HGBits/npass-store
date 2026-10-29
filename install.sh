@@ -46,7 +46,7 @@
 #   sudo ./install.sh --uninstall      remove what a prior install put there
 #   ./install.sh --prefix=/usr/local [--uninstall]
 #   ./install.sh --no-extensions       never offer extensions
-#   ./install.sh --tui                  install npass-tui from HGBits/npass_tui
+#   ./install.sh --tui                  install npass-tui from HGBits/npass-tui
 #   ./install.sh --no-tui               do not offer or install npass-tui
 #   ./install.sh --extensions          offer extensions even if stdin is not a terminal
 #   ./install.sh --extensions-only     skip npass itself, only offer the extensions
@@ -69,7 +69,7 @@ ext_only=0
 sign_key=""
 ext_src="${NPASS_EXTENSIONS_SRC:-}"
 ext_ref=""
-ext_repo="${NPASS_EXTENSIONS_REPO:-https://github.com/HGBits/npass_extensions.git}"
+ext_repo="${NPASS_EXTENSIONS_REPO:-https://github.com/HGBits/npass-extensions.git}"
 ext_tmp=""
 
 for arg in "$@"; do
@@ -342,7 +342,7 @@ offer_extensions() {
 # --------------------------------------------------------------------------
 
 install_tui() {
-	local url="https://raw.githubusercontent.com/HGBits/npass_tui/master/npass-tui"
+	local url="https://raw.githubusercontent.com/HGBits/npass-tui/master/npass-tui"
 	local tmp
 	if ! command -v curl >/dev/null 2>&1; then
 		echo "aviso: curl não encontrado; npass-tui não foi instalado." >&2

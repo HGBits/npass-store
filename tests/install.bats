@@ -170,7 +170,7 @@ setup() {
 	run "$PREFIX/bin/npass-tui"
 	[ "$status" -eq 0 ]
 	[ "$output" = "tui-test" ]
-	grep -q 'https://raw.githubusercontent.com/HGBits/npass_tui/master/npass-tui' "$log"
+	grep -q 'https://raw.githubusercontent.com/HGBits/npass-tui/master/npass-tui' "$log"
 }
 
 @test "download com sintaxe inválida não instala npass-tui" {
