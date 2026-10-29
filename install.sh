@@ -345,33 +345,34 @@ offer_extensions() {
 # --------------------------------------------------------------------------
 
 install_tui() {
-	local url="https://raw.githubusercontent.com/HGBits/npass-tui/master/npass-tui"
-	local tmp
-	if ! command -v curl >/dev/null 2>&1; then
-		echo "aviso: curl não encontrado; npass-tui não foi instalado." >&2
+	local repo="https://github.com/HGBits/npass-tui.git"
+	local tmpdir src
+	if ! command -v git >/dev/null 2>&1; then
+		echo "aviso: git não encontrado; npass-tui não foi instalado." >&2
 		return 1
 	fi
-	tmp="$(mktemp)" || {
-		echo "aviso: não foi possível criar arquivo temporário para npass-tui." >&2
+	tmpdir="$(mktemp -d)" || {
+		echo "aviso: não foi possível criar diretório temporário para npass-tui." >&2
 		return 1
 	}
-	if ! curl -fsSL "$url" >"$tmp"; then
-		rm -f -- "$tmp"
-		echo "aviso: download de npass-tui falhou; a CLI continua instalada." >&2
+	src="$tmpdir/src"
+	if ! git clone --quiet --depth 1 -- "$repo" "$src"; then
+		rm -rf -- "$tmpdir"
+		echo "aviso: clone de npass-tui falhou; a CLI continua instalada." >&2
 		return 1
 	fi
-	if [[ ! -s "$tmp" ]] || ! bash -n "$tmp"; then
-		rm -f -- "$tmp"
-		echo "aviso: o arquivo baixado para npass-tui está vazio ou tem sintaxe inválida; não instalado." >&2
+	if ! bash "$src/build.sh" || [[ ! -s "$src/bin/npass-tui" ]] || ! bash -n "$src/bin/npass-tui"; then
+		rm -rf -- "$tmpdir"
+		echo "aviso: não foi possível construir npass-tui; não instalado." >&2
 		return 1
 	fi
-	if ! install -m 755 -- "$tmp" "$tui_target"; then
-		rm -f -- "$tmp"
+	if ! install -m 755 -- "$src/bin/npass-tui" "$tui_target"; then
+		rm -rf -- "$tmpdir"
 		echo "aviso: não foi possível instalar npass-tui em $tui_target." >&2
 		return 1
 	fi
-	rm -f -- "$tmp"
-	echo "instalado: $tui_target (fonte: $url)"
+	rm -rf -- "$tmpdir"
+	echo "instalado: $tui_target (fonte: $repo; compilado com build.sh)"
 }
 
 offer_tui() {
