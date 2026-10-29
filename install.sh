@@ -216,7 +216,7 @@ offer_extensions() {
 	if ((rc == 2)); then
 		echo
 		echo "  As extensões moram em outro repositório e não achei uma cópia local"
-		echo "  (procurei em $(cd .. && pwd)/npass-extensions e npass_extensions; --extensions-src=DIR aponta outra)."
+		echo "  (procurei em $(cd .. && pwd)/npass-extensions; --extensions-src=DIR aponta outra)."
 		echo "  Repositório: $ext_repo${ext_ref:+ (ref: $ext_ref)}"
 		ask "  Baixar agora (git clone --depth 1, como $ext_user, em diretório temporário)?" || return 0
 		command -v git >/dev/null 2>&1 || {
