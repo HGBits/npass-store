@@ -31,8 +31,7 @@
 #   1. --extensions-src=DIR (or $NPASS_EXTENSIONS_SRC): a checkout of
 #      npass-extensions. If it is given and has no npass-* files, that is an
 #      error: the installer never falls back to the network behind your back.
-#   2. ../npass-extensions, next to this repository, if it exists (the older
-#      folder name ../npass_extensions is accepted too).
+#   2. ../npass-extensions, next to this repository, if it exists.
 #   3. Otherwise it says so and ASKS before downloading: git clone --depth 1
 #      of $NPASS_EXTENSIONS_REPO (default https://github.com/HGBits/npass-extensions.git),
 #      as your user, into a temporary directory removed on exit. Pin a branch
@@ -160,7 +159,7 @@ find_ext_src() {
 	fi
 	local base
 	base="$(cd .. && pwd)"
-	for cand in "$base/npass-extensions" "$base/npass_extensions"; do
+	for cand in "$base/npass-extensions"; do
 		if [[ -d "$cand" ]] && ext_valid_src "$cand"; then
 			printf '%s\n' "$cand"
 			return 0
@@ -217,7 +216,7 @@ offer_extensions() {
 	if ((rc == 2)); then
 		echo
 		echo "  As extensões moram em outro repositório e não achei uma cópia local"
-		echo "  (procurei em $(cd .. && pwd)/npass-extensions e npass_extensions; --extensions-src=DIR aponta outra)."
+		echo "  (procurei em $(cd .. && pwd)/npass-extensions; --extensions-src=DIR aponta outra)."
 		echo "  Repositório: $ext_repo${ext_ref:+ (ref: $ext_ref)}"
 		ask "  Baixar agora (git clone --depth 1, como $ext_user, em diretório temporário)?" || return 0
 		command -v git >/dev/null 2>&1 || {
