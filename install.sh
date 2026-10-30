@@ -50,6 +50,7 @@
 #   sudo ./install.sh                  download, verify and install official core under /usr
 #   sudo ./install.sh --core-ref=TAG   install core from a specific release
 #   ./install.sh --build-local         build from this checkout (development/manual source install)
+#   ./install.sh --core-key=FILE       use a separately verified release public key
 #   sudo ./install.sh --bindir=/usr/sbin   put the binary in /usr/sbin instead
 #   ./install.sh --prefix=$HOME/.local     per-user install, no root
 #   sudo ./install.sh --uninstall      remove what a prior install put there
@@ -772,9 +773,11 @@ else
 		echo "install.sh: não foi possível criar diretório temporário para o release." >&2
 		exit 1
 	}
+	trap 'if [[ -n "${core_work:-}" && -d "$core_work" ]]; then GNUPGHOME="$core_work/gnupg" gpgconf --kill all 2>/dev/null || true; rm -rf -- "$core_work"; fi' EXIT
 	if ! core_bin="$(core_fetch_verify "$core_work")"; then
 		GNUPGHOME="$core_work/gnupg" gpgconf --kill all 2>/dev/null || true
 		rm -rf -- "$core_work"
+		core_work=""
 		exit 1
 	fi
 fi
@@ -800,6 +803,8 @@ install -m 755 -- "$core_bin" "$bin_target"
 if [[ -n "$core_work" ]]; then
 	GNUPGHOME="$core_work/gnupg" gpgconf --kill all 2>/dev/null || true
 	rm -rf -- "$core_work"
+	core_work=""
+	trap - EXIT
 fi
 install -m 644 man/npass.1 "$man_target"
 install -m 644 encrypts_alternatives/wordlist.txt "$words_target"
