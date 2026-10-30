@@ -56,7 +56,8 @@
 #   ./install.sh --extensions-only     skip npass itself, only offer the extensions
 #                                      (for the AUR package, or to add one later)
 #   ./install.sh --extensions-src=DIR  take extensions from a checkout or extracted signed bundle
-#   ./install.sh --extensions-ref=REF  branch or tag to clone when downloading
+#   ./install.sh --extensions-ref=TAG  release tag to download (default: latest)
+#   ./install.sh --extensions-target=TRIPLE  Rust target (auto-detected on common Linux hosts)
 
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
@@ -71,7 +72,8 @@ ext_only=0
 ext_src="${NPASS_EXTENSIONS_SRC:-}"
 ext_helper_src=""
 ext_ref=""
-ext_repo="${NPASS_EXTENSIONS_REPO:-https://github.com/HGBits/npass-extensions.git}"
+ext_target="${NPASS_EXTENSIONS_TARGET:-}"
+ext_release_base="${NPASS_EXTENSIONS_RELEASES:-https://github.com/HGBits/npass-extensions/releases}"
 ext_tmp=""
 tui_ref=""
 tui_key="${NPASS_TUI_KEY:-}"
@@ -92,6 +94,7 @@ for arg in "$@"; do
 	--extensions-only) ext_mode=yes; ext_only=1 ;;
 	--extensions-src=*) ext_src="${arg#--extensions-src=}" ;;
 	--extensions-ref=*) ext_ref="${arg#--extensions-ref=}" ;;
+	--extensions-target=*) ext_target="${arg#--extensions-target=}" ;;
 	-h | --help)
 		awk 'NR>1 && /^#/ {sub(/^# ?/, ""); print; next} NR>1 {exit}' "$0"
 		exit 0
@@ -221,7 +224,6 @@ offer_extensions() {
 	local PATH=/usr/bin:/bin:/usr/sbin:/sbin
 	local -a candidates=()
 	local f src rc=0
-	local -a clone_args=()
 	src="$(find_ext_src)" || rc=$?
 	((rc == 1)) && return 1
 
@@ -232,32 +234,68 @@ offer_extensions() {
 	ask "Verificar e instalar extensões oficiais agora?" || return 0
 
 	if ((rc == 2)); then
-		echo "  Não achei um checkout local de npass-extensions."
-		echo "  Repositório: $ext_repo${ext_ref:+ (ref: $ext_ref)}"
-		ask "  Baixar a origem para verificar os artefatos?" || return 0
-		command -v git >/dev/null 2>&1 || { echo "install.sh: git não encontrado." >&2; return 1; }
-		ext_tmp="$(mktemp -d "${TMPDIR:-/tmp}/npass-ext-src.XXXXXX")" || return 1
-		trap 'rm -rf -- "$ext_tmp"' EXIT
-		src="$ext_tmp/src"
-		local ext_user="${SUDO_USER:-$(id -un)}" ext_home
-		ext_home="$(getent passwd "$ext_user" 2>/dev/null | cut -d: -f6)"
-		[[ -n "$ext_home" ]] || ext_home="$HOME"
-		if [[ $EUID -eq 0 && "$ext_user" != root ]]; then chown "$ext_user" "$ext_tmp"; fi
-		clone_args=(--quiet --depth 1)
-		[[ -n "$ext_ref" ]] && clone_args+=(--branch "$ext_ref")
-		if [[ $EUID -eq 0 && "$ext_user" != root ]] && command -v runuser >/dev/null 2>&1; then
-			if ! runuser -u "$ext_user" -- env HOME="$ext_home" GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null GIT_TERMINAL_PROMPT=0 git clone "${clone_args[@]}" -- "$ext_repo" "$src"; then
-				echo "install.sh: falha ao baixar $ext_repo${ext_ref:+ (ref: $ext_ref)}." >&2
-				return 1
-			fi
-		else
-			if ! GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null GIT_TERMINAL_PROMPT=0 git clone "${clone_args[@]}" -- "$ext_repo" "$src"; then
-				echo "install.sh: falha ao baixar $ext_repo${ext_ref:+ (ref: $ext_ref)}." >&2
-				return 1
-			fi
+		echo "  Não achei um checkout local nem um pacote de release extraído."
+		ask "  Baixar o pacote oficial assinado de extensões?" || return 0
+		command -v curl >/dev/null 2>&1 || { echo "install.sh: curl não encontrado." >&2; return 1; }
+		command -v tar >/dev/null 2>&1 || { echo "install.sh: tar não encontrado." >&2; return 1; }
+		if [[ -z "$ext_target" ]]; then
+			case "$(uname -m)" in
+				x86_64) ext_target="x86_64-unknown-linux-gnu" ;;
+				aarch64|arm64) ext_target="aarch64-unknown-linux-gnu" ;;
+				*) echo "install.sh: informe --extensions-target=TRIPLE para esta arquitetura." >&2; return 1 ;;
+			esac
 		fi
-		ext_valid_src "$src" || { echo "install.sh: o repositório baixado não contém extensões npass-*." >&2; return 1; }
-		echo "  Commit de origem: $(git -C "$src" rev-parse --short HEAD)"
+		[[ "$ext_target" =~ ^[A-Za-z0-9_.-]+$ ]] || { echo "install.sh: target inválido: $ext_target" >&2; return 1; }
+		ext_tmp="$(mktemp -d "${TMPDIR:-/tmp}/npass-ext-release.XXXXXX")" || return 1
+		trap 'rm -rf -- "$ext_tmp"' EXIT
+		local bundle="$ext_tmp/npass-extensions-$ext_target.tar.gz" bundle_sig="$ext_tmp/npass-extensions-$ext_target.tar.gz.sig"
+		local release_url="$ext_release_base/latest/download"
+		[[ -n "$ext_ref" ]] && release_url="$ext_release_base/download/$ext_ref"
+		if ! curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --max-time 180 --max-filesize 67108864 -o "$bundle" -- "$release_url/npass-extensions-$ext_target.tar.gz" ||
+			! curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --max-time 120 --max-filesize 1048576 -o "$bundle_sig" -- "$release_url/npass-extensions-$ext_target.tar.gz.sig"; then
+			echo "install.sh: não foi possível baixar o pacote oficial para $ext_target." >&2
+			return 1
+		fi
+		local bundle_gh="$ext_tmp/gnupg" bundle_fpr bundle_status bundle_line
+		local -a bundle_fields=()
+		local bundle_gpg
+		bundle_gpg="$(command -v gpg)" || { echo "install.sh: gpg não encontrado." >&2; return 1; }
+		mkdir -m 700 "$bundle_gh"
+		if ! GNUPGHOME="$bundle_gh" "$bundle_gpg" --batch --quiet --import "$PWD/packaging/npass-release.asc" 2>/dev/null; then
+			echo "install.sh: não foi possível importar a chave pública oficial." >&2
+			return 1
+		fi
+		[[ "$(GNUPGHOME="$bundle_gh" "$bundle_gpg" --batch --with-colons --list-keys 2>/dev/null | grep -c '^pub:' || true)" == 1 ]] || {
+			echo "install.sh: chave pública oficial inválida." >&2; return 1;
+		}
+		bundle_fpr="$(GNUPGHOME="$bundle_gh" "$bundle_gpg" --batch --with-colons --list-keys 2>/dev/null | awk -F: '$1=="fpr"{print $10; exit}')"
+		bundle_status="$(GNUPGHOME="$bundle_gh" "$bundle_gpg" --batch --no-auto-key-retrieve --status-fd=1 --verify "$bundle_sig" "$bundle" 2>/dev/null)" || {
+			echo "install.sh: assinatura do pacote de extensões inválida." >&2; return 1;
+		}
+		bundle_line="$(grep '^\[GNUPG:\] VALIDSIG ' <<<"$bundle_status" | head -n1)"
+		read -r -a bundle_fields <<<"$bundle_line"
+		[[ "${bundle_fields[11]:-${bundle_fields[2]:-}}" == "$bundle_fpr" ]] || {
+			echo "install.sh: pacote não assinado pela chave oficial." >&2; return 1;
+		}
+		if grep -qE '^\[GNUPG:\] (BADSIG|ERRSIG|EXPKEYSIG|EXPSIG|REVKEYSIG|KEYREVOKED)' <<<"$bundle_status"; then
+			echo "install.sh: assinatura do pacote não é válida e vigente." >&2; return 1
+		fi
+		while IFS= read -r entry; do
+			case "$entry" in
+				extensions/|helpers/|extensions/*|helpers/*) ;;
+				*) echo "install.sh: caminho inesperado no pacote: $entry" >&2; return 1 ;;
+			esac
+			[[ "$entry" != /* && "$entry" != *"/../"* && "$entry" != ../* && "$entry" != *"//"* ]] || {
+				echo "install.sh: caminho inseguro no pacote: $entry" >&2; return 1;
+			}
+		done < <(tar -tzf "$bundle")
+		mkdir -p "$ext_tmp/bundle"
+		tar -xzf "$bundle" -C "$ext_tmp/bundle"
+		src="$ext_tmp/bundle/extensions"
+		ext_helper_src="$ext_tmp/bundle/helpers"
+		ext_valid_src "$src" || { echo "install.sh: pacote oficial não contém extensões." >&2; return 1; }
+		GNUPGHOME="$bundle_gh" gpgconf --kill all 2>/dev/null || true
+		echo "  Release oficial: ${ext_ref:-latest} ($ext_target)"
 	fi
 
 	if [[ -z "$DESTDIR" && $EUID -ne 0 ]]; then
