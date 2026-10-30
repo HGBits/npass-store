@@ -156,6 +156,20 @@ ext_valid_src() {
 	return 1
 }
 
+detect_extensions_target() {
+	if [[ -z "$ext_target" ]]; then
+		local arch libc=gnu
+		case "$(uname -m)" in
+			x86_64) arch=x86_64 ;;
+			aarch64|arm64) arch=aarch64 ;;
+			*) return 1 ;;
+		esac
+		if command -v ldd >/dev/null 2>&1 && ldd --version 2>&1 | grep -qi musl; then libc=musl; fi
+		ext_target="$arch-unknown-linux-$libc"
+	fi
+	[[ "$ext_target" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]]
+}
+
 # Local source only (no network). Prints the ABSOLUTE path. Returns 1 for an
 # explicit source that is unusable (hard error), 2 when there is no local copy.
 find_ext_src() {
@@ -169,7 +183,13 @@ find_ext_src() {
 		fi
 		if [[ -d "$ext_src" ]] && ext_valid_src "$ext_src"; then
 			selected=""
+			if detect_extensions_target && [[ -d "$ext_src/dist/$ext_target/extensions" && -d "$ext_src/dist/$ext_target/helpers" ]] &&
+				ext_valid_src "$ext_src/dist/$ext_target/extensions"; then
+				selected="$ext_src/dist/$ext_target"
+				ext_helper_src="$selected/helpers"
+			fi
 			for bundle in "$ext_src"/dist/*; do
+				[[ -z "$selected" ]] || break
 				[[ -d "$bundle/helpers" && -d "$bundle/extensions" ]] || continue
 				if ext_valid_src "$bundle/extensions"; then
 					if [[ -n "$selected" ]]; then
@@ -196,7 +216,13 @@ find_ext_src() {
 	for cand in "$base/npass-extensions"; do
 		if [[ -d "$cand" ]] && ext_valid_src "$cand"; then
 			selected=""
+			if detect_extensions_target && [[ -d "$cand/dist/$ext_target/extensions" && -d "$cand/dist/$ext_target/helpers" ]] &&
+				ext_valid_src "$cand/dist/$ext_target/extensions"; then
+				selected="$cand/dist/$ext_target"
+				ext_helper_src="$selected/helpers"
+			fi
 			for bundle in "$cand"/dist/*; do
+				[[ -z "$selected" ]] || break
 				[[ -d "$bundle/helpers" && -d "$bundle/extensions" ]] || continue
 				if ext_valid_src "$bundle/extensions"; then
 					if [[ -n "$selected" ]]; then
@@ -251,17 +277,7 @@ offer_extensions() {
 		ask "  Baixar o pacote oficial assinado de extensões?" || return 0
 		command -v curl >/dev/null 2>&1 || { echo "install.sh: curl não encontrado." >&2; return 1; }
 		command -v tar >/dev/null 2>&1 || { echo "install.sh: tar não encontrado." >&2; return 1; }
-		if [[ -z "$ext_target" ]]; then
-			local arch libc=gnu
-			case "$(uname -m)" in
-				x86_64) arch=x86_64 ;;
-				aarch64|arm64) arch=aarch64 ;;
-				*) echo "install.sh: informe --extensions-target=TRIPLE para esta arquitetura." >&2; return 1 ;;
-			esac
-			if command -v ldd >/dev/null 2>&1 && ldd --version 2>&1 | grep -qi musl; then libc=musl; fi
-			ext_target="$arch-unknown-linux-$libc"
-		fi
-		[[ "$ext_target" =~ ^[A-Za-z0-9_.-]+$ ]] || { echo "install.sh: target inválido: $ext_target" >&2; return 1; }
+		detect_extensions_target || { echo "install.sh: informe --extensions-target=TRIPLE para esta arquitetura/target." >&2; return 1; }
 		ext_tmp="$(mktemp -d "${TMPDIR:-/tmp}/npass-ext-release.XXXXXX")" || return 1
 		trap 'GNUPGHOME="$ext_tmp/gnupg" gpgconf --kill all 2>/dev/null || true; rm -rf -- "$ext_tmp"' EXIT
 		local bundle="$ext_tmp/npass-extensions-$ext_target.tar.gz" bundle_sig="$ext_tmp/npass-extensions-$ext_target.tar.gz.sig"
