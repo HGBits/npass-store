@@ -71,6 +71,7 @@ tui_mode=auto # auto = ask only on a terminal | yes | no
 ext_only=0
 ext_src="${NPASS_EXTENSIONS_SRC:-}"
 ext_helper_src=""
+ext_selected_src=""
 ext_ref=""
 ext_target="${NPASS_EXTENSIONS_TARGET:-}"
 ext_release_base="${NPASS_EXTENSIONS_RELEASES:-https://github.com/HGBits/npass-extensions/releases}"
@@ -175,35 +176,43 @@ detect_extensions_target() {
 find_ext_src() {
 	local cand selected
 	ext_helper_src=""
+	ext_selected_src=""
+
 	if [[ -n "$ext_src" ]]; then
 		if [[ -d "$ext_src/extensions" ]] && ext_valid_src "$ext_src/extensions"; then
 			ext_helper_src="$ext_src/helpers"
-			(cd "$ext_src/extensions" && pwd)
+			ext_selected_src="$(cd "$ext_src/extensions" && pwd)"
 			return 0
 		fi
 		if [[ -d "$ext_src" ]] && ext_valid_src "$ext_src"; then
-			if detect_extensions_target && [[ -d "$ext_src/dist/$ext_target/extensions" &&
-				-d "$ext_src/dist/$ext_target/helpers" ]] && ext_valid_src "$ext_src/dist/$ext_target/extensions"; then
+			if detect_extensions_target &&
+				[[ -d "$ext_src/dist/$ext_target/extensions" &&
+				   -d "$ext_src/dist/$ext_target/helpers" ]] &&
+				ext_valid_src "$ext_src/dist/$ext_target/extensions"; then
 				selected="$ext_src/dist/$ext_target"
 				ext_helper_src="$selected/helpers"
-				(cd "$selected/extensions" && pwd)
+				ext_selected_src="$(cd "$selected/extensions" && pwd)"
 			else
-				(cd "$ext_src" && pwd)
+				ext_selected_src="$(cd "$ext_src" && pwd)"
 			fi
 			return 0
 		fi
 		echo "install.sh: sem extensões ou pacote de release válido em: $ext_src" >&2
 		return 1
 	fi
+
 	local base
 	base="$(cd .. && pwd)"
 	for cand in "$base/npass-extensions"; do
-		if [[ -d "$cand" ]] && ext_valid_src "$cand" &&
-			detect_extensions_target && [[ -d "$cand/dist/$ext_target/extensions" &&
-			-d "$cand/dist/$ext_target/helpers" ]] && ext_valid_src "$cand/dist/$ext_target/extensions"; then
+		if [[ -d "$cand" ]] &&
+			ext_valid_src "$cand" &&
+			detect_extensions_target &&
+			[[ -d "$cand/dist/$ext_target/extensions" &&
+			   -d "$cand/dist/$ext_target/helpers" ]] &&
+			ext_valid_src "$cand/dist/$ext_target/extensions"; then
 			selected="$cand/dist/$ext_target"
 			ext_helper_src="$selected/helpers"
-			(cd "$selected/extensions" && pwd)
+			ext_selected_src="$(cd "$selected/extensions" && pwd)"
 			return 0
 		fi
 	done
@@ -228,7 +237,8 @@ offer_extensions() {
 	local PATH=/usr/bin:/bin:/usr/sbin:/sbin
 	local -a candidates=()
 	local f src rc=0
-	src="$(find_ext_src)" || rc=$?
+	find_ext_src || rc=$?
+	src="$ext_selected_src"
 	((rc == 1)) && return 1
 
 	echo
