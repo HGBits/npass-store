@@ -198,15 +198,12 @@ find_ext_src() {
 	local base
 	base="$(cd .. && pwd)"
 	for cand in "$base/npass-extensions"; do
-		if [[ -d "$cand" ]] && ext_valid_src "$cand"; then
-			if detect_extensions_target && [[ -d "$cand/dist/$ext_target/extensions" &&
-				-d "$cand/dist/$ext_target/helpers" ]] && ext_valid_src "$cand/dist/$ext_target/extensions"; then
-				selected="$cand/dist/$ext_target"
-				ext_helper_src="$selected/helpers"
-				(cd "$selected/extensions" && pwd)
-			else
-				printf '%s\n' "$cand"
-			fi
+		if [[ -d "$cand" ]] && ext_valid_src "$cand" &&
+			detect_extensions_target && [[ -d "$cand/dist/$ext_target/extensions" &&
+			-d "$cand/dist/$ext_target/helpers" ]] && ext_valid_src "$cand/dist/$ext_target/extensions"; then
+			selected="$cand/dist/$ext_target"
+			ext_helper_src="$selected/helpers"
+			(cd "$selected/extensions" && pwd)
 			return 0
 		fi
 	done
