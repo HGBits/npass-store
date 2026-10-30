@@ -27,7 +27,7 @@
 #   1. --extensions-src=DIR (or $NPASS_EXTENSIONS_SRC): a checkout of
 #      npass-extensions or an extracted signed release bundle. A bundle root
 #      contains extensions/ and helpers/; passkey is skipped without its signed helper.
-#   2. ../npass-extensions, next to this repository, if it exists.
+#   2. ../npass-extensions, next to this repository, if it has a signed bundle for this target.
 #   3. Otherwise it asks before downloading a signed release bundle from GitHub.
 #      The bundle and each individual artifact are verified against the packaged
 #      release key before anything is installed.
