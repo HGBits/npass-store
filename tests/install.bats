@@ -5,10 +5,17 @@ setup() {
 	export PREFIX="$BATS_TEST_TMPDIR/prefix"
 	export DESTDIR=""
 	unset NPASS_STORE NPASS_GPG NPASS_LANG 2>/dev/null || true
+	case "$BATS_TEST_NAME" in
+		"instala binario e man page em PREFIX/bin e PREFIX/share/man/man1") |\n		"binario instalado executa e responde ao help") |\n		"permissoes: binario 755, man page 644") |\n		"instalar duas vezes seguidas nao falha (idempotente)") |\n		"--uninstall remove exatamente o que foi instalado") |\n		"--prefix=PATH funciona igual a variavel de ambiente PREFIX") |\n		"DESTDIR + PREFIX (empacotamento) instala dentro do staging, nao no sistema real") |\n		"aviso quando PREFIX/bin nao esta no PATH") |\n		"sem aviso de PATH quando PREFIX/bin ja esta no PATH") |\n		"PREFIX padrao e /usr (mesmo destino do PKGBUILD)") |\n		"--bindir=/usr/sbin coloca o binario em sbin e --uninstall o remove") |\n		"instala o .desktop do handler npass:// com o caminho ABSOLUTO do binario no Exec") |\n		"o Exec do .desktop acompanha --bindir e nao deixa o marcador @NPASS@") |\n		"com DESTDIR (empacotamento) o Exec NAO leva o DESTDIR, e o arquivo cai dentro dele") |\n		"--uninstall remove o .desktop tambem")
+			core_release
+			export PATH="$MOCKBIN:$PATH" CURL_LOG CORE_RELEASE_DIR
+			export NPASS_CORE_KEY="$CORE_KEY" NPASS_CORE_BASE_URL="https://example.invalid/npass/releases"
+			;;
+	esac
 }
 
 @test "instala binario e man page em PREFIX/bin e PREFIX/share/man/man1" {
-	run env PREFIX="$PREFIX" "$PROJECT_DIR/install.sh" --build-local
+	run env PREFIX="$PREFIX" "$PROJECT_DIR/install.sh" --no-extensions --no-tui
 	[ "$status" -eq 0 ]
 	[ -x "$PREFIX/bin/npass" ]
 	[ -f "$PREFIX/share/man/man1/npass.1" ]
@@ -74,23 +81,25 @@ setup() {
 	[ "$before" = "$after" ]
 }
 
-@test "binario instalado e reconstruido a partir do lib atual, nao um bin/npass velho esquecido" {
-	# Marca o bin/npass do repo com um lixo que nao existe no source, para
-	# provar que install.sh de fato reconstroi em vez de so copiar.
-	echo "# MARCA_DE_ARQUIVO_VELHO_QUE_NAO_DEVE_SOBREVIVER" >> "$PROJECT_DIR/bin/npass"
-	env PREFIX="$PREFIX" "$PROJECT_DIR/install.sh" --build-local >/dev/null
-	run grep -c "MARCA_DE_ARQUIVO_VELHO_QUE_NAO_DEVE_SOBREVIVER" "$PREFIX/bin/npass"
+@test "instalador não aceita --build-local nem compila código" {
+	core_release
+	run env PREFIX="$PREFIX" PATH="$MOCKBIN:$PATH" CURL_LOG="$CURL_LOG" CORE_RELEASE_DIR="$CORE_RELEASE_DIR" \
+		NPASS_CORE_KEY="$CORE_KEY" NPASS_CORE_BASE_URL="https://example.invalid/npass/releases" \
+		"$PROJECT_DIR/install.sh" --build-local --no-extensions --no-tui
 	[ "$status" -ne 0 ]
+	[[ "$output" == *"opção desconhecida"* ]]
+	[ ! -e "$PREFIX/bin/npass" ]
 }
 
+
 @test "aviso quando PREFIX/bin nao esta no PATH" {
-	run env PREFIX="$PREFIX" PATH="/usr/bin:/bin" "$PROJECT_DIR/install.sh" --build-local
+	run env PREFIX="$PREFIX" PATH="$MOCKBIN:/usr/bin:/bin" "$PROJECT_DIR/install.sh" --build-local
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"não está no seu"*"PATH"* ]]
 }
 
 @test "sem aviso de PATH quando PREFIX/bin ja esta no PATH" {
-	run env PREFIX="$PREFIX" PATH="$PREFIX/bin:/usr/bin:/bin" "$PROJECT_DIR/install.sh" --build-local
+	run env PREFIX="$PREFIX" PATH="$MOCKBIN:$PREFIX/bin:/usr/bin:/bin" "$PROJECT_DIR/install.sh" --build-local
 	[ "$status" -eq 0 ]
 	[[ "$output" != *"não está no seu"*"PATH"* ]]
 }
