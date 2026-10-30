@@ -25,8 +25,8 @@
 #
 # Where the extensions come from, in this order:
 #   1. --extensions-src=DIR (or $NPASS_EXTENSIONS_SRC): a checkout of
-#      npass-extensions. If it is given and has no npass-* files, that is an
-#      error: the installer never falls back to the network behind your back.
+#      npass-extensions or an extracted signed release bundle. A bundle root
+#      contains extensions/ and helpers/; passkey is skipped without its signed helper.
 #   2. ../npass-extensions, next to this repository, if it exists.
 #   3. Otherwise it asks before downloading the official source repository.
 #      Every candidate must already carry a detached signature from the
@@ -55,7 +55,7 @@
 #   ./install.sh --extensions          offer extensions even if stdin is not a terminal
 #   ./install.sh --extensions-only     skip npass itself, only offer the extensions
 #                                      (for the AUR package, or to add one later)
-#   ./install.sh --extensions-src=DIR  take the extensions from this checkout
+#   ./install.sh --extensions-src=DIR  take extensions from a checkout or extracted signed bundle
 #   ./install.sh --extensions-ref=REF  branch or tag to clone when downloading
 
 set -euo pipefail
@@ -602,7 +602,7 @@ if [[ $uninstall -eq 1 ]]; then
 			removed=1
 		fi
 	done
-	rm -rf -- "$DESTDIR$PREFIX/share/npass/extensions"
+	rm -rf -- "$DESTDIR$PREFIX/share/npass/extensions" "$DESTDIR$PREFIX/share/npass/helpers"
 	rmdir -- "$words_dir" "$DESTDIR$PREFIX/share/npass" 2>/dev/null || true
 	[[ $removed -eq 0 ]] && echo "nada instalado em ${BINDIR:-$PREFIX/bin} (DESTDIR=${DESTDIR:-<vazio>}) para remover."
 	exit 0
