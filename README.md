@@ -444,14 +444,15 @@ Para executar, o executável, sua assinatura `.sig`, a chave e os diretórios da
 
 O instalador **não assina código**. Quando solicitado, oferece os artefatos encontrados no repositório [`npass-extensions`](https://github.com/HGBits/npass-extensions), mas instala somente os que já possuem uma assinatura válida da chave oficial:
 
-A origem pode ser definida por `--extensions-src=DIR` (ou `NPASS_EXTENSIONS_SRC`); sem isso, o instalador procura `../npass-extensions` e, se não encontrar, pergunta antes de clonar `NPASS_EXTENSIONS_REPO` (padrão: `https://github.com/HGBits/npass-extensions.git`). `--extensions-ref=REF` fixa branch ou tag. O commit Git é apenas origem do download: a autorização vem exclusivamente da assinatura individual do artefato.
+A origem pode ser definida por `--extensions-src=DIR` (ou `NPASS_EXTENSIONS_SRC`): aceite um checkout de `npass-extensions` com `dist/<target>/` gerado pelo mantenedor, ou a raiz de um pacote de release extraído (com `extensions/` e `helpers/`). Sem origem local, o instalador pergunta antes de baixar o pacote assinado da release mais recente. `--extensions-ref=TAG` fixa uma release; `--extensions-target=TRIPLE` seleciona o target Rust (autodetecta x86_64/aarch64 Linux GNU). A assinatura do pacote e as assinaturas individuais são verificadas antes da instalação. O daemon passkey é ignorado se seu artefato oficial para o target não estiver disponível.
 
 ```bash
 sudo ./install.sh                  # instala npass e oferece extensões oficiais no terminal
 sudo ./install.sh --extensions-only # instala somente extensões oficiais
 sudo ./install.sh --no-extensions   # não oferece extensões
-sudo ./install.sh --extensions-src=DIR  # usa este checkout como origem
-sudo ./install.sh --extensions-ref=REF   # branch/tag a baixar
+sudo ./install.sh --extensions-src=DIR  # checkout com dist/ ou pacote de release extraído
+sudo ./install.sh --extensions-ref=TAG   # release específica (padrão: latest)
+sudo ./install.sh --extensions-target=TRIPLE  # target Rust, se não autodetectado
 npass extension list               # lista e verifica extensões instaladas
 ```
 
@@ -508,9 +509,8 @@ npass passkey serve ID                  # valida o helper e sobe o autenticador 
 - Cada passkey é um blob opaco `ID/Fido/<hex>.gpg`: cabeçalho público (`rp_id`, `login`,
   hash do payload, assinatura GPG) + payload cifrado. `Fido/.map` (0600, com lock) só ajuda a
   achar candidatos; **nunca é autoridade**. Vários blobs podem ter o mesmo RP/login.
-- O `install.sh` só compila o daemon (`cargo build --release --locked` em `passkey/`, no repositório `npass-extensions`) se você
-  escolher `npass-passkey`; as demais extensões não precisam de Rust. O helper vai para
-  `~/.local/share/npass/helpers/` e é assinado junto com um selo que o amarra a esta versão da extensão.
+- O daemon é compilado e assinado pelo mantenedor durante o release (Cargo >= 1.91). O pacote oficial contém o binário e o selo, ambos assinados pela chave de release; o instalador verifica e coloca os arquivos em
+  `$PREFIX/share/npass/helpers/`. O diretório é compartilhado entre contas e root-owned. O instalador não compila nem assina o helper na máquina do usuário.
 - Requer `/dev/uhid` acessível ao seu usuário (`modprobe uhid` + regra udev). A presença do
   usuário é pedida por `zenity`/`kdialog`, pelo terminal ou por `--confirm-cmd`; sem nenhum, nega.
   Não existe modo "aprovar tudo".
