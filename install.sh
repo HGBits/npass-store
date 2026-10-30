@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # npass - install.sh
 #
-# Manual (git-clone) install for people not using the AUR package.
-# Always rebuilds bin/npass fresh from lib/*.bash first - this script
-# never installs a stale artifact that happens to be lying around.
+# Manual install for people not using the AUR package.
+# By default, installs the signed core binary from the official GitHub Release.
+# --build-local explicitly builds from lib/*.bash for development/source installs.
+# DESTDIR packaging also builds locally, so package builds never need network access.
 #
 # Respects the DESTDIR + PREFIX convention packaging tools expect
 # (the AUR PKGBUILD calls this same script with DESTDIR="$pkgdir"
@@ -32,6 +33,11 @@
 #      The bundle and each individual artifact are verified against the packaged
 #      release key before anything is installed.
 #
+# The core npass binary is a signed release artifact (npass + npass.asc) published
+# by HGBits/npass-store. The installer verifies it against packaging/npass-release.asc
+# in a temporary GnuPG home before installing. --build-local bypasses release download
+# only when explicitly requested; DESTDIR packaging always builds locally.
+#
 # npass-tui is NOT built here. It is a signed binary published as a release of
 # HGBits/npass-tui (files npass-tui and npass-tui.asc). The installer downloads
 # both over https, verifies the detached signature in a throwaway GnuPG home that
@@ -41,7 +47,9 @@
 # makes install.sh exit non-zero at the end.
 #
 # Usage:
-#   sudo ./install.sh                  install under /usr (bin/npass), then offer extensions
+#   sudo ./install.sh                  download, verify and install official core under /usr
+#   sudo ./install.sh --core-ref=TAG   install core from a specific release
+#   ./install.sh --build-local         build from this checkout (development/manual source install)
 #   sudo ./install.sh --bindir=/usr/sbin   put the binary in /usr/sbin instead
 #   ./install.sh --prefix=$HOME/.local     per-user install, no root
 #   sudo ./install.sh --uninstall      remove what a prior install put there
@@ -80,6 +88,10 @@ tui_ref=""
 tui_key="${NPASS_TUI_KEY:-}"
 tui_base="${NPASS_TUI_BASE_URL:-https://github.com/HGBits/npass-tui/releases}"
 tui_failed=0
+core_ref="${NPASS_CORE_REF:-}"
+core_base="${NPASS_CORE_BASE_URL:-https://github.com/HGBits/npass-store/releases}"
+core_key="${NPASS_CORE_KEY:-}"
+core_local=0
 
 for arg in "$@"; do
 	case "$arg" in
@@ -87,6 +99,9 @@ for arg in "$@"; do
 	--prefix=*) PREFIX="${arg#--prefix=}" ;;
 	--bindir=*) BINDIR="${arg#--bindir=}" ;;
 	--no-extensions) ext_mode=no ;;
+	--core-ref=*) core_ref="${arg#--core-ref=}" ;;
+	--core-key=*) core_key="${arg#--core-key=}" ;;
+	--build-local) core_local=1 ;;
 	--tui) tui_mode=yes ;;
 	--no-tui) tui_mode=no ;;
 	--tui-ref=*) tui_ref="${arg#--tui-ref=}" ;;
@@ -124,6 +139,10 @@ trust_key_target="$DESTDIR$PREFIX/share/npass/extension-signing-key.asc"
 desktop_dir="$DESTDIR$PREFIX/share/applications"
 desktop_target="$desktop_dir/npass-open.desktop"
 npass_final="${BINDIR:-$PREFIX/bin}/npass"
+
+if [[ -n "$DESTDIR" ]]; then
+	core_local=1
+fi
 
 if [[ -n "$DESTDIR" && ( "$ext_mode" == yes || "$tui_mode" == yes ) ]]; then
 	echo "install.sh: opções interativas de extensões/TUI não combinam com DESTDIR (empacotamento)." >&2
@@ -641,6 +660,62 @@ offer_tui() {
 }
 
 # --------------------------------------------------------------------------
+# Core release: download and verify the signed npass artifact before install
+# --------------------------------------------------------------------------
+
+core_fetch_verify() {
+	local work="$1" gh="$1/gnupg" gpg_bin fpr nprim url bin asc status_out line
+	local -a fields=()
+	command -v curl >/dev/null 2>&1 || { echo "install.sh: curl não encontrado." >&2; return 1; }
+	gpg_bin="$(command -v gpg)" || { echo "install.sh: gpg não encontrado." >&2; return 1; }
+	[[ -n "$core_key" ]] || core_key="$PWD/packaging/npass-release.asc"
+	[[ -s "$core_key" && ! -L "$core_key" ]] || {
+		echo "install.sh: chave pública de release ausente ou inválida: $core_key" >&2; return 1;
+	}
+	mkdir -m 700 "$gh"
+	if ! GNUPGHOME="$gh" "$gpg_bin" --batch --quiet --import "$core_key" 2>/dev/null; then
+		echo "install.sh: não foi possível importar a chave pública de release." >&2; return 1
+	fi
+	nprim="$(GNUPGHOME="$gh" "$gpg_bin" --batch --with-colons --list-keys 2>/dev/null | grep -c '^pub:' || true)"
+	[[ "$nprim" == 1 ]] || {
+		echo "install.sh: a chave pública de release deve conter exatamente uma chave primária." >&2; return 1;
+	}
+	fpr="$(GNUPGHOME="$gh" "$gpg_bin" --batch --with-colons --list-keys 2>/dev/null | awk -F: '$1=="fpr"{print $10; exit}')"
+	[[ "$fpr" =~ ^[A-Fa-f0-9]{40,64}$ ]] || {
+		echo "install.sh: fingerprint da chave de release inválida." >&2; return 1;
+	}
+	if [[ -n "$core_ref" ]]; then url="$core_base/download/$core_ref"; else url="$core_base/latest/download"; fi
+	bin="$work/npass"
+	asc="$work/npass.asc"
+	for f in "npass:$bin" "npass.asc:$asc"; do
+		if ! curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
+			--max-time 120 --max-filesize 67108864 -o "${f#*:}" -- "$url/${f%%:*}"; then
+			echo "install.sh: falha ao baixar ${f%%:*} de $url." >&2; return 1
+		fi
+	done
+	[[ -s "$bin" && -s "$asc" && ! -L "$bin" && ! -L "$asc" ]] || {
+		echo "install.sh: release core vazia ou inválida; nada instalado." >&2; return 1;
+	}
+	if ! status_out="$(GNUPGHOME="$gh" "$gpg_bin" --batch --no-auto-key-retrieve --status-fd=1 --verify "$asc" "$bin" 2>/dev/null)"; then
+		echo "install.sh: assinatura do npass INVÁLIDA; nada instalado." >&2; return 1
+	fi
+	if grep -qE '^\[GNUPG:\] (BADSIG|ERRSIG|EXPKEYSIG|EXPSIG|REVKEYSIG|KEYREVOKED)' <<<"$status_out" ||
+		! grep -q '^\[GNUPG:\] GOODSIG ' <<<"$status_out"; then
+		echo "install.sh: assinatura do npass não é válida e vigente; nada instalado." >&2; return 1
+	fi
+	line="$(grep '^\[GNUPG:\] VALIDSIG ' <<<"$status_out" | head -n1)"
+	read -r -a fields <<<"$line"
+	[[ -n "$line" && "${fields[11]:-${fields[2]:-}}" == "$fpr" ]] || {
+		echo "install.sh: npass não foi assinado pela chave de release esperada ($fpr)." >&2; return 1;
+	}
+	if ! bash -n "$bin" 2>/dev/null; then
+		echo "install.sh: binário assinado do npass tem sintaxe inválida; nada instalado." >&2; return 1
+	fi
+	printf '%s\n' "$bin"
+	echo "release core verificada: $url (chave $fpr)" >&2
+}
+
+# --------------------------------------------------------------------------
 # --extensions-only: do not touch npass itself
 # --------------------------------------------------------------------------
 if [[ $ext_only -eq 1 ]]; then
@@ -686,8 +761,23 @@ if [[ -z "$DESTDIR" && $EUID -ne 0 ]]; then
 	fi
 fi
 
-echo "Reconstruindo bin/npass a partir de lib/*.bash..."
-bash build.sh
+core_work=""
+core_bin=""
+if ((core_local)); then
+	echo "Construindo npass localmente a partir de lib/*.bash..."
+	bash build.sh
+	core_bin="$PWD/bin/npass"
+else
+	core_work="$(mktemp -d "${TMPDIR:-/tmp}/npass-core-release.XXXXXX")" || {
+		echo "install.sh: não foi possível criar diretório temporário para o release." >&2
+		exit 1
+	}
+	if ! core_bin="$(core_fetch_verify "$core_work")"; then
+		GNUPGHOME="$core_work/gnupg" gpgconf --kill all 2>/dev/null || true
+		rm -rf -- "$core_work"
+		exit 1
+	fi
+fi
 
 # A instalacao no sistema e legivel por todos de proposito. Com um umask
 # restritivo (077 e comum em setups endurecidos, e o sudo mantem o mais
@@ -706,7 +796,11 @@ fi
 key_tmp="$(mktemp "$DESTDIR$PREFIX/share/npass/.extension-key.XXXXXX")"
 install -m 644 packaging/npass-release.asc "$key_tmp"
 mv -f -- "$key_tmp" "$trust_key_target"
-install -m 755 bin/npass "$bin_target"
+install -m 755 -- "$core_bin" "$bin_target"
+if [[ -n "$core_work" ]]; then
+	GNUPGHOME="$core_work/gnupg" gpgconf --kill all 2>/dev/null || true
+	rm -rf -- "$core_work"
+fi
 install -m 644 man/npass.1 "$man_target"
 install -m 644 encrypts_alternatives/wordlist.txt "$words_target"
 sed "s#@NPASS@#$npass_final#" packaging/npass-open.desktop.in >"$desktop_target"
