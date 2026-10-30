@@ -66,6 +66,7 @@ Isso permite alterar o nome lógico sem modificar o ciphertext do segredo.
 * `glow` para `npass show` renderizado no terminal (sem ele, o `show` avisa e imprime o texto cru)
 * `oathtool` ou `otptool` para OTP
 * `qrencode` para QR Code
+* `curl` e `gpg` para instalar o `npass-tui` (opcional; ver abaixo)
 
 O clipboard atualmente utiliza **Wayland**.
 
@@ -406,6 +407,25 @@ O corpo de um `.gpg` do `pass` é texto puro. O import de `pass` e de `pass-secr
 - **Cada conversão é verificada** antes de gravar: relê o md1 gerado e confere que a senha e as linhas `otpauth://` são idênticas e que toda linha não vazia do original aparece no resultado (como campo ou nota) o mesmo número de vezes. Se não passar, a entrada é ignorada e entra na contagem de falhas (saída ≠ 0).
 
 Para importar de **outros gerenciadores** (Bitwarden, KeePassXC, Firefox, Chrome, LastPass, 1Password, Aegis, andOTP, CSV genérico), é a mesma extensão: seção abaixo.
+
+## Interface de terminal (npass-tui)
+
+O [`npass-tui`](https://github.com/HGBits/npass-tui) é opcional. O instalador **não o compila**: baixa o binário já pronto e assinado do release e só instala se a assinatura conferir.
+
+```bash
+./install.sh --tui                 # baixa, verifica e instala (último release)
+./install.sh --tui-ref=v1.0        # release de uma tag específica
+./install.sh --no-tui              # nunca oferece
+```
+
+O que ele faz, nesta ordem:
+
+1. Baixa `npass-tui` e `npass-tui.asc` de `https://github.com/HGBits/npass-tui/releases` (só https).
+2. Importa a chave pública de release (`packaging/npass-release.asc`) num `GNUPGHOME` descartável: o seu chaveiro não é usado nem alterado. O arquivo precisa ter exatamente uma chave pública.
+3. Exige uma assinatura boa e vigente cuja chave primária seja essa chave. Assinatura inválida, de outra chave, expirada ou revogada recusa.
+4. Só então confere a sintaxe e instala (`npass-tui` em `$PREFIX/bin`). O fingerprint usado aparece na saída: compare com o publicado pelo autor.
+
+Qualquer falha não instala nada; com `--tui` o `install.sh` termina com status diferente de zero (o `npass` continua instalado). `--tui-key=ARQUIVO` (ou `$NPASS_TUI_KEY`) troca a chave de confiança: só use com uma chave que você mesmo verificou.
 
 ## Extensões
 

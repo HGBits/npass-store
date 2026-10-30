@@ -9,7 +9,7 @@ Testes Bats do projeto. Use-os como índice de comportamento esperado antes de a
 | Teste | Área |
 |---|---|
 | `identity.bats` | identidades |
-| `install.bats` | instalação |
+| `install.bats` | instalação (inclui `npass-tui`: release assinado de mentira, verificação GPG, adulteração, chave errada/dupla/ausente) |
 | `install-ext.bats` | instalação de extensões: de onde vêm (`--extensions-src`, `../npass-extensions`, clone com pergunta), assinatura, destino |
 | `install-passkey.bats` | instalação do `npass-passkey`: o cargo (de mentira) só roda se a extensão for escolhida; helper instalado, assinado e selado |
 | `extensions.bats` | execução/contrato de extensões |
