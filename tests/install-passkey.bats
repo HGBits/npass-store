@@ -9,7 +9,8 @@ setup() {
 	export PROJECT_DIR="$BATS_TEST_DIRNAME/.."
 	export PREFIX="$BATS_TEST_TMPDIR/prefix"
 	export SOURCE="$BATS_TEST_TMPDIR/source"
-		cat >"$SOURCE/npass-passkey" <<'EOF'
+	mkdir -p "$SOURCE"
+	cat >"$SOURCE/npass-passkey" <<'EOF'
 #!/usr/bin/env bash
 echo passkey-nao-deve-rodar
 EOF
