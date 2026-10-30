@@ -95,7 +95,7 @@ setup() {
 	[ "$before" = "$after" ]
 }
 
-@test "instalador não aceita --no-extensions --no-tui nem compila código" {
+@test "instalador não aceita --build-local nem compila código" {
 	core_release
 	run env PREFIX="$PREFIX" PATH="$MOCKBIN:$PATH" CURL_LOG="$CURL_LOG" CORE_RELEASE_DIR="$CORE_RELEASE_DIR" \
 		NPASS_CORE_KEY="$CORE_KEY" NPASS_CORE_BASE_URL="https://example.invalid/npass/releases" \
@@ -202,7 +202,7 @@ core_release() {
 	CORE_FPR="$(GNUPGHOME="$gh" gpg --batch --with-colons --list-keys | awk -F: '/^fpr:/ {print $10; exit}')"
 	stage="$BATS_TEST_TMPDIR/core-stage"
 	mkdir -p "$stage/bin" "$stage/share/man/man1" "$stage/share/npass/encrypts_alternatives" "$stage/share/applications"
-	printf '#!/usr/bin/env bash\necho core-release-test\n' >"$stage/bin/npass"
+	printf '#!/usr/bin/env bash\nif [[ "${1:-}" == help ]]; then echo npass; else echo core-release-test; fi\n' >"$stage/bin/npass"
 	chmod 755 "$stage/bin/npass"
 	printf '.TH NPASS 1\n' >"$stage/share/man/man1/npass.1"
 	printf '[large]\n11111\tabacus\n' >"$stage/share/npass/encrypts_alternatives/wordlist.txt"
