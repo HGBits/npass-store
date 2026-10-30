@@ -723,11 +723,11 @@ core_fetch_verify() {
 	if ! status_out="$(GNUPGHOME="$gh" "$gpg_bin" --batch --no-auto-key-retrieve --status-fd=1 --verify "$bundle_sig" "$bundle" 2>/dev/null)"; then
 		echo "install.sh: assinatura do pacote core INVÁLIDA; nada instalado." >&2; return 1
 	fi
-	if grep -qE '^\\[GNUPG:\\] (BADSIG|ERRSIG|EXPKEYSIG|EXPSIG|REVKEYSIG|KEYREVOKED)' <<<"$status_out" ||
-		! grep -q '^\\[GNUPG:\\] GOODSIG ' <<<"$status_out"; then
+	if grep -qE '^\[GNUPG:\\] (BADSIG|ERRSIG|EXPKEYSIG|EXPSIG|REVKEYSIG|KEYREVOKED)' <<<"$status_out" ||
+		! grep -q '^\[GNUPG:\\] GOODSIG ' <<<"$status_out"; then
 		echo "install.sh: assinatura do pacote core não é válida e vigente; nada instalado." >&2; return 1
 	fi
-	line="$(grep '^\\[GNUPG:\\] VALIDSIG ' <<<"$status_out" | head -n1)"
+	line="$(grep '^\[GNUPG:\\] VALIDSIG ' <<<"$status_out" | head -n1)"
 	read -r -a fields <<<"$line"
 	[[ -n "$line" && "${fields[11]:-${fields[2]:-}}" == "$fpr" ]] || { echo "install.sh: pacote core não foi assinado pela chave de release esperada ($fpr)." >&2; return 1; }
 
