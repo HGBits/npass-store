@@ -8,7 +8,7 @@ setup() {
 }
 
 @test "instala binario e man page em PREFIX/bin e PREFIX/share/man/man1" {
-	run env PREFIX="$PREFIX" "$PROJECT_DIR/install.sh --build-local"
+	run env PREFIX="$PREFIX" "$PROJECT_DIR/install.sh" --build-local
 	[ "$status" -eq 0 ]
 	[ -x "$PREFIX/bin/npass" ]
 	[ -f "$PREFIX/share/man/man1/npass.1" ]
@@ -16,14 +16,14 @@ setup() {
 }
 
 @test "binario instalado executa e responde ao help" {
-	env PREFIX="$PREFIX" "$PROJECT_DIR/install.sh --build-local" >/dev/null
+	env PREFIX="$PREFIX" "$PROJECT_DIR/install.sh" --build-local >/dev/null
 	run "$PREFIX/bin/npass" help
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"npass"* ]]
 }
 
 @test "permissoes: binario 755, man page 644" {
-	env PREFIX="$PREFIX" "$PROJECT_DIR/install.sh --build-local" >/dev/null
+	env PREFIX="$PREFIX" "$PROJECT_DIR/install.sh" --build-local >/dev/null
 	run stat -c '%a' "$PREFIX/bin/npass"
 	[ "$output" = "755" ]
 	run stat -c '%a' "$PREFIX/share/man/man1/npass.1"
@@ -33,15 +33,15 @@ setup() {
 }
 
 @test "instalar duas vezes seguidas nao falha (idempotente)" {
-	env PREFIX="$PREFIX" "$PROJECT_DIR/install.sh --build-local" >/dev/null
-	run env PREFIX="$PREFIX" "$PROJECT_DIR/install.sh --build-local"
+	env PREFIX="$PREFIX" "$PROJECT_DIR/install.sh" --build-local >/dev/null
+	run env PREFIX="$PREFIX" "$PROJECT_DIR/install.sh" --build-local
 	[ "$status" -eq 0 ]
 	[ -x "$PREFIX/bin/npass" ]
 }
 
 @test "--uninstall remove exatamente o que foi instalado" {
-	env PREFIX="$PREFIX" "$PROJECT_DIR/install.sh --build-local" >/dev/null
-	run env PREFIX="$PREFIX" "$PROJECT_DIR/install.sh --build-local" --uninstall
+	env PREFIX="$PREFIX" "$PROJECT_DIR/install.sh" --build-local >/dev/null
+	run env PREFIX="$PREFIX" "$PROJECT_DIR/install.sh" --build-local --uninstall
 	[ "$status" -eq 0 ]
 	[ ! -e "$PREFIX/bin/npass" ]
 	[ ! -e "$PREFIX/share/man/man1/npass.1" ]
@@ -49,13 +49,13 @@ setup() {
 }
 
 @test "--uninstall sem nada instalado nao falha, so avisa" {
-	run env PREFIX="$PREFIX" "$PROJECT_DIR/install.sh --build-local" --uninstall
+	run env PREFIX="$PREFIX" "$PROJECT_DIR/install.sh" --build-local --uninstall
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"nada instalado"* ]]
 }
 
 @test "--prefix=PATH funciona igual a variavel de ambiente PREFIX" {
-	run "$PROJECT_DIR/install.sh --build-local" "--prefix=$PREFIX"
+	run "$PROJECT_DIR/install.sh" --build-local "--prefix=$PREFIX"
 	[ "$status" -eq 0 ]
 	[ -x "$PREFIX/bin/npass" ]
 }
@@ -65,7 +65,7 @@ setup() {
 	# Quem roda os testes pode ja ter o npass instalado em /usr/bin. O que
 	# importa e que o DESTDIR nao o toque: compara inode, mtime e tamanho.
 	before="$(stat -c '%i %Y %s' /usr/bin/npass 2>/dev/null || echo ausente)"
-	run env DESTDIR="$destdir" PREFIX="/usr" "$PROJECT_DIR/install.sh --build-local"
+	run env DESTDIR="$destdir" PREFIX="/usr" "$PROJECT_DIR/install.sh" --build-local
 	[ "$status" -eq 0 ]
 	[ -x "$destdir/usr/bin/npass" ]
 	[ -f "$destdir/usr/share/man/man1/npass.1" ]
@@ -78,26 +78,26 @@ setup() {
 	# Marca o bin/npass do repo com um lixo que nao existe no source, para
 	# provar que install.sh de fato reconstroi em vez de so copiar.
 	echo "# MARCA_DE_ARQUIVO_VELHO_QUE_NAO_DEVE_SOBREVIVER" >> "$PROJECT_DIR/bin/npass"
-	env PREFIX="$PREFIX" "$PROJECT_DIR/install.sh --build-local" >/dev/null
+	env PREFIX="$PREFIX" "$PROJECT_DIR/install.sh" --build-local >/dev/null
 	run grep -c "MARCA_DE_ARQUIVO_VELHO_QUE_NAO_DEVE_SOBREVIVER" "$PREFIX/bin/npass"
 	[ "$status" -ne 0 ]
 }
 
 @test "aviso quando PREFIX/bin nao esta no PATH" {
-	run env PREFIX="$PREFIX" PATH="/usr/bin:/bin" "$PROJECT_DIR/install.sh --build-local"
+	run env PREFIX="$PREFIX" PATH="/usr/bin:/bin" "$PROJECT_DIR/install.sh" --build-local
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"não está no seu"*"PATH"* ]]
 }
 
 @test "sem aviso de PATH quando PREFIX/bin ja esta no PATH" {
-	run env PREFIX="$PREFIX" PATH="$PREFIX/bin:/usr/bin:/bin" "$PROJECT_DIR/install.sh --build-local"
+	run env PREFIX="$PREFIX" PATH="$PREFIX/bin:/usr/bin:/bin" "$PROJECT_DIR/install.sh" --build-local
 	[ "$status" -eq 0 ]
 	[[ "$output" != *"não está no seu"*"PATH"* ]]
 }
 
 @test "PREFIX padrao e /usr (mesmo destino do PKGBUILD)" {
 	local destdir="$BATS_TEST_TMPDIR/stage"
-	run env -u PREFIX DESTDIR="$destdir" "$PROJECT_DIR/install.sh --build-local"
+	run env -u PREFIX DESTDIR="$destdir" "$PROJECT_DIR/install.sh" --build-local
 	[ "$status" -eq 0 ]
 	[ -x "$destdir/usr/bin/npass" ]
 	[ -f "$destdir/usr/share/man/man1/npass.1" ]
@@ -105,17 +105,17 @@ setup() {
 
 @test "--bindir=/usr/sbin coloca o binario em sbin e --uninstall o remove" {
 	local destdir="$BATS_TEST_TMPDIR/stage"
-	run env -u PREFIX DESTDIR="$destdir" "$PROJECT_DIR/install.sh --build-local" --bindir=/usr/sbin
+	run env -u PREFIX DESTDIR="$destdir" "$PROJECT_DIR/install.sh" --build-local --bindir=/usr/sbin
 	[ "$status" -eq 0 ]
 	[ -x "$destdir/usr/sbin/npass" ]
-	run env -u PREFIX DESTDIR="$destdir" "$PROJECT_DIR/install.sh --build-local" --bindir=/usr/sbin --uninstall
+	run env -u PREFIX DESTDIR="$destdir" "$PROJECT_DIR/install.sh" --build-local --bindir=/usr/sbin --uninstall
 	[ ! -e "$destdir/usr/sbin/npass" ]
 }
 
 # --- handler do esquema npass:// (links do show renderizado -> npass open) -------------------------
 
 @test "instala o .desktop do handler npass:// com o caminho ABSOLUTO do binario no Exec" {
-	run env PREFIX="$PREFIX" "$PROJECT_DIR/install.sh --build-local"
+	run env PREFIX="$PREFIX" "$PROJECT_DIR/install.sh" --build-local
 	[ "$status" -eq 0 ]
 	local f="$PREFIX/share/applications/npass-open.desktop"
 	[ -f "$f" ]
@@ -129,7 +129,7 @@ setup() {
 }
 
 @test "o Exec do .desktop acompanha --bindir e nao deixa o marcador @NPASS@" {
-	env PREFIX="$PREFIX" BINDIR="$PREFIX/sbin" "$PROJECT_DIR/install.sh --build-local" >/dev/null
+	env PREFIX="$PREFIX" BINDIR="$PREFIX/sbin" "$PROJECT_DIR/install.sh" --build-local >/dev/null
 	local f="$PREFIX/share/applications/npass-open.desktop"
 	grep -qx "Exec=$PREFIX/sbin/npass open %u" "$f"
 	! grep -q '@NPASS@' "$f"
@@ -137,7 +137,7 @@ setup() {
 
 @test "com DESTDIR (empacotamento) o Exec NAO leva o DESTDIR, e o arquivo cai dentro dele" {
 	local stage="$BATS_TEST_TMPDIR/stage"
-	run env PREFIX=/usr DESTDIR="$stage" "$PROJECT_DIR/install.sh --build-local" --no-extensions
+	run env PREFIX=/usr DESTDIR="$stage" "$PROJECT_DIR/install.sh" --build-local --no-extensions
 	[ "$status" -eq 0 ]
 	local f="$stage/usr/share/applications/npass-open.desktop"
 	[ -f "$f" ]
@@ -145,9 +145,9 @@ setup() {
 }
 
 @test "--uninstall remove o .desktop tambem" {
-	env PREFIX="$PREFIX" "$PROJECT_DIR/install.sh --build-local" >/dev/null
+	env PREFIX="$PREFIX" "$PROJECT_DIR/install.sh" --build-local >/dev/null
 	[ -f "$PREFIX/share/applications/npass-open.desktop" ]
-	run env PREFIX="$PREFIX" "$PROJECT_DIR/install.sh --build-local" --uninstall
+	run env PREFIX="$PREFIX" "$PROJECT_DIR/install.sh" --build-local --uninstall
 	[ "$status" -eq 0 ]
 	[ ! -e "$PREFIX/share/applications/npass-open.desktop" ]
 }
@@ -291,7 +291,7 @@ teardown() { tui_cleanup; core_cleanup; }
 
 run_tui_install() {
 	run env PREFIX="$PREFIX" PATH="$MOCKBIN:$PATH" CURL_LOG="$CURL_LOG" TUI_DIR="$TUI_DIR" \
-		NPASS_TUI_KEY="$TUI_KEY" "$PROJECT_DIR/install.sh --build-local" --tui "$@"
+		NPASS_TUI_KEY="$TUI_KEY" "$PROJECT_DIR/install.sh" --build-local --tui "$@"
 }
 
 @test "--tui baixa binário e .asc do release, verifica a assinatura e instala" {
@@ -359,7 +359,7 @@ run_tui_install() {
 @test "sem chave pública de release recusa antes de baixar qualquer coisa" {
 	tui_release
 	run env PREFIX="$PREFIX" PATH="$MOCKBIN:$PATH" CURL_LOG="$CURL_LOG" TUI_DIR="$TUI_DIR" \
-		NPASS_TUI_KEY="$BATS_TEST_TMPDIR/nao-existe.asc" "$PROJECT_DIR/install.sh --build-local" --tui
+		NPASS_TUI_KEY="$BATS_TEST_TMPDIR/nao-existe.asc" "$PROJECT_DIR/install.sh" --build-local --tui
 	[ "$status" -ne 0 ]
 	[ ! -e "$PREFIX/bin/npass-tui" ]
 	[[ "$output" == *"chave pública de release não encontrada"* ]]
@@ -397,14 +397,14 @@ run_tui_install() {
 	local home_gpg="$BATS_TEST_TMPDIR/gnupg-usuario"
 	mkdir -m 700 "$home_gpg"
 	run env GNUPGHOME="$home_gpg" PREFIX="$PREFIX" PATH="$MOCKBIN:$PATH" CURL_LOG="$CURL_LOG" TUI_DIR="$TUI_DIR" \
-		NPASS_TUI_KEY="$TUI_KEY" "$PROJECT_DIR/install.sh --build-local" --tui
+		NPASS_TUI_KEY="$TUI_KEY" "$PROJECT_DIR/install.sh" --build-local --tui
 	[ "$status" -eq 0 ]
 	[ -z "$(ls -A "$home_gpg" | grep -v '^S\.\|^\.#\|^random_seed$' || true)" ]
 }
 
 @test "--no-tui não baixa nem instala a interface" {
 	tui_release
-	run env PREFIX="$PREFIX" PATH="$MOCKBIN:$PATH" CURL_LOG="$CURL_LOG" "$PROJECT_DIR/install.sh --build-local" --no-tui
+	run env PREFIX="$PREFIX" PATH="$MOCKBIN:$PATH" CURL_LOG="$CURL_LOG" "$PROJECT_DIR/install.sh" --build-local --no-tui
 	[ "$status" -eq 0 ]
 	[ ! -e "$PREFIX/bin/npass-tui" ]
 	[ ! -s "$CURL_LOG" ]
@@ -414,7 +414,7 @@ run_tui_install() {
 	tui_release
 	run_tui_install
 	[ -x "$PREFIX/bin/npass-tui" ]
-	run env PREFIX="$PREFIX" "$PROJECT_DIR/install.sh --build-local" --uninstall
+	run env PREFIX="$PREFIX" "$PROJECT_DIR/install.sh" --build-local --uninstall
 	[ "$status" -eq 0 ]
 	[ ! -e "$PREFIX/bin/npass-tui" ]
 }
