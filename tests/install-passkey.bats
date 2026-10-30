@@ -29,7 +29,7 @@ EOF
 	[ ! -e "$PREFIX/share/npass/extensions/npass-passkey" ]
 	}
 
-@test "instalador recusa assinatura de teste e nao compila helper" {
+@test "instalador nao aceita extensao passkey isolada sem pacote oficial do daemon" {
 	gpg --batch --yes --default-key "$FPR" --detach-sign -o "$SOURCE/npass-passkey.sig" "$SOURCE/npass-passkey"
 	run bash -c "printf 's\n' | '$PROJECT_DIR/install.sh' --prefix='$PREFIX' --no-tui --extensions --extensions-src='$SOURCE'"
 	[ "$status" -eq 0 ]
