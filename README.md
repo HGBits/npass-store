@@ -6,7 +6,7 @@ Gerenciador de senhas para Linux baseado em **Bash + GPG**, com armazenamento po
 
 **Versão:** `2.8`
 **Estado:** Pronto para uso
-| **Instalação:** curl -sSL https://raw.githubusercontent.com/HGBits/npass-store/refs/heads/master/install.sh | bash
+| **Instalação:** clone o repositório e execute `sudo ./install.sh`; o instalador baixa e verifica o binário assinado da Release.
 
 ## Principais características
 
@@ -66,7 +66,7 @@ Isso permite alterar o nome lógico sem modificar o ciphertext do segredo.
 * `glow` para `npass show` renderizado no terminal (sem ele, o `show` avisa e imprime o texto cru)
 * `oathtool` ou `otptool` para OTP
 * `qrencode` para QR Code
-* `curl` e `gpg` para instalar o `npass-tui` (opcional; ver abaixo)
+* `curl` e `gpg` para baixar e verificar o binário oficial assinado (e o `npass-tui`, opcional)
 
 O clipboard atualmente utiliza **Wayland**.
 
@@ -96,6 +96,45 @@ NPASS_WORDLIST_SRC
 NPASS_CLIP_TIME
 XDG_DATA_DIRS
 ```
+
+## Instalação
+
+A instalação normal **não compila código na máquina do usuário**. O instalador baixa
+`npass` e `npass.asc` da Release oficial mais recente, verifica a assinatura GPG
+com a chave pública `packaging/npass-release.asc` em um chaveiro temporário e só
+depois instala o executável. O chaveiro pessoal não é alterado.
+
+Clone o repositório (o instalador também precisa dos arquivos de dados e da manpage)
+e execute:
+
+```bash
+git clone https://github.com/HGBits/npass-store.git
+cd npass-store
+sudo ./install.sh                 # última Release, assinatura obrigatória
+sudo ./install.sh --core-ref=v2.8 # Release/tag específica
+./install.sh --prefix="$HOME/.local"
+```
+
+Para desenvolvimento ou instalação a partir do código-fonte, a compilação local
+precisa ser solicitada explicitamente:
+
+```bash
+./build.sh                        # gera bin/npass sem assinatura
+./build.sh --sign                 # gera bin/npass e bin/npass.asc
+sudo ./install.sh --build-local   # instala o build local
+```
+
+`build.sh --sign` usa a chave privada de release que já deve estar no chaveiro
+GPG do mantenedor. A chave privada **nunca** fica no repositório. Antes de concluir,
+o script verifica a assinatura gerada contra a chave pública empacotada.
+O `PKGBUILD` usa build local dentro do ambiente de empacotamento e não depende
+de rede nem da chave privada.
+
+A instalação normal requer `curl`, `gpg` e uma Release contendo os dois assets
+`npass` e `npass.asc`. O instalador também aceita `--core-key=ARQUIVO` (ou
+`NPASS_CORE_KEY`) para uma chave pública alternativa, mas isso substitui a raiz
+de confiança do projeto: use somente uma chave cuja fingerprint você verificou
+por um canal independente.
 
 ## Ajuda
 
