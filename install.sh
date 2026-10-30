@@ -2,7 +2,7 @@
 # npass - install.sh
 #
 # Manual install for people not using the AUR package.
-# By default, installs the signed core binary from the official GitHub Release.
+# By default, installs the signed core bundle from the official GitHub Release.
 # --build-local explicitly builds from lib/*.bash for development/source installs.
 # DESTDIR packaging also builds locally, so package builds never need network access.
 #
@@ -33,15 +33,15 @@
 #      The bundle and each individual artifact are verified against the packaged
 #      release key before anything is installed.
 #
-# The core npass binary is a signed release artifact (npass + npass.asc) published
-# by HGBits/npass-store. The installer verifies it against $release_key
-# in a temporary GnuPG home before installing. --build-local bypasses release download
+# The complete core bundle (binary, man page, wordlist, desktop template and trust key)
+# is signed as one release artifact. The installer verifies it before extraction.
+# --build-local bypasses release download
 # only when explicitly requested; DESTDIR packaging always builds locally.
 #
 # npass-tui is NOT built here. It is a signed binary published as a release of
 # HGBits/npass-tui (files npass-tui and npass-tui.asc). The installer downloads
 # both over https, verifies the detached signature in a throwaway GnuPG home that
-# holds ONLY the release public key ($release_key), requires the
+# holds ONLY the release public key (the installed release key), requires the
 # signing key to be exactly that key, and only then installs the binary. Any
 # failure (download, key, signature, syntax) installs nothing; with --tui it also
 # makes install.sh exit non-zero at the end.
@@ -81,7 +81,7 @@ else
 	remote_stdin=1
 	source_root="$PWD"
 fi
-release_key="$source_root/$release_key"
+release_key="$source_root/packaging/npass-release.asc"
 
 
 : "${PREFIX:=/usr}"
@@ -863,7 +863,7 @@ if [[ -L "$DESTDIR$PREFIX/share" || -L "$DESTDIR$PREFIX/share/npass" || -L "$tru
 	exit 1
 fi
 key_tmp="$(mktemp "$DESTDIR$PREFIX/share/npass/.extension-key.XXXXXX")"
-install -m 644 $release_key "$key_tmp"
+install -m 644 -- "$core_install_key" "$key_tmp"
 mv -f -- "$key_tmp" "$trust_key_target"
 install -m 755 -- "$core_bin" "$bin_target"
 install -m 644 "$core_man" "$man_target"
