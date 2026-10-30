@@ -128,7 +128,7 @@ No ambiente do mantenedor, com a chave privada correspondente à chave pública
 bash release.sh
 ```
 
-O script recompila o core, monta `dist/npass-core.tar.gz`, gera a assinatura
+O script gera o executável diretamente a partir de `lib/*.bash`, monta `dist/npass-core.tar.gz`, gera a assinatura
 destacada `dist/npass-core.tar.gz.asc` e copia `dist/npass-release.asc`.
 Anexe os três arquivos à mesma GitHub Release. A chave privada nunca é exportada
 nem armazenada no repositório. A assinatura é verificada antes de o script
@@ -140,15 +140,21 @@ artefatos da Release de forma coordenada. Não basta substituir o arquivo remoto
 
 ### Desenvolvimento e empacotamento
 
-Para desenvolvimento ou instalação a partir do código-fonte:
+O gerador do executável é `release.sh`. Para reconstruir somente `bin/npass`,
+sem assinar nem acessar a rede:
 
 ```bash
-./build.sh                        # gera bin/npass sem assinatura
-sudo ./install.sh --build-local   # instala o build local
+bash release.sh --build-only
 ```
 
-`--build-local` exige um checkout. O `PKGBUILD` continua usando build local via
-`DESTDIR`, sem rede e sem precisar da chave privada do mantenedor.
+O `install.sh` não compila código nem instala builds locais: ele aceita somente
+o pacote completo de uma GitHub Release após validar a assinatura. Para executar
+uma compilação de desenvolvimento, use `bin/npass` diretamente ou gere e
+publique uma Release assinada.
+
+O `PKGBUILD` chama `release.sh --build-only` na fase `build()` e instala os
+artefatos já gerados na fase `package()`. Assim, o empacotamento Arch continua
+offline e não depende da chave privada de release.
 
 ## Ajuda
 
@@ -604,7 +610,7 @@ Não edite diretamente o arquivo gerado.
 Após alterar os arquivos-fonte:
 
 ```bash
-./build.sh
+bash release.sh --build-only
 ```
 
 A estrutura do projeto separa as responsabilidades entre módulos de identidade, armazenamento, clipboard e OTP.
