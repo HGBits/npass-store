@@ -247,7 +247,7 @@ offer_extensions() {
 		fi
 		[[ "$ext_target" =~ ^[A-Za-z0-9_.-]+$ ]] || { echo "install.sh: target inválido: $ext_target" >&2; return 1; }
 		ext_tmp="$(mktemp -d "${TMPDIR:-/tmp}/npass-ext-release.XXXXXX")" || return 1
-		trap 'rm -rf -- "$ext_tmp"' EXIT
+		trap 'GNUPGHOME="$ext_tmp/gnupg" gpgconf --kill all 2>/dev/null || true; rm -rf -- "$ext_tmp"' EXIT
 		local bundle="$ext_tmp/npass-extensions-$ext_target.tar.gz" bundle_sig="$ext_tmp/npass-extensions-$ext_target.tar.gz.sig"
 		local release_url="$ext_release_base/latest/download"
 		[[ -n "$ext_ref" ]] && release_url="$ext_release_base/download/$ext_ref"
@@ -280,17 +280,21 @@ offer_extensions() {
 		if grep -qE '^\[GNUPG:\] (BADSIG|ERRSIG|EXPKEYSIG|EXPSIG|REVKEYSIG|KEYREVOKED)' <<<"$bundle_status"; then
 			echo "install.sh: assinatura do pacote não é válida e vigente." >&2; return 1
 		fi
+		if ! tar -tzf "$bundle" >"$ext_tmp/archive-entries"; then
+			echo "install.sh: pacote de extensões não é um tar.gz válido." >&2
+			return 1
+		fi
 		while IFS= read -r entry; do
 			case "$entry" in
 				extensions/|helpers/|extensions/*|helpers/*) ;;
 				*) echo "install.sh: caminho inesperado no pacote: $entry" >&2; return 1 ;;
 			esac
-			[[ "$entry" != /* && "$entry" != *"/../"* && "$entry" != ../* && "$entry" != *"//"* ]] || {
+			[[ "$entry" != /* && "$entry" != *"/../"* && "$entry" != ../* && "$entry" != */.. && "$entry" != *"//"* ]] || {
 				echo "install.sh: caminho inseguro no pacote: $entry" >&2; return 1;
 			}
-		done < <(tar -tzf "$bundle")
+		done <"$ext_tmp/archive-entries"
 		mkdir -p "$ext_tmp/bundle"
-		tar -xzf "$bundle" -C "$ext_tmp/bundle"
+		tar --no-same-owner --no-same-permissions -xzf "$bundle" -C "$ext_tmp/bundle"
 		src="$ext_tmp/bundle/extensions"
 		ext_helper_src="$ext_tmp/bundle/helpers"
 		ext_valid_src "$src" || { echo "install.sh: pacote oficial não contém extensões." >&2; return 1; }
