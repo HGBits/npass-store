@@ -6,21 +6,21 @@ setup() {
 	export DESTDIR=""
 	unset NPASS_STORE NPASS_GPG NPASS_LANG 2>/dev/null || true
 	case "$BATS_TEST_NAME" in
-		instala binario e man page em PREFIX/bin e PREFIX/share/man/man1|
-		binario instalado executa e responde ao help|
-		permissoes: binario 755, man page 644|
-		instalar duas vezes seguidas nao falha (idempotente)|
-		--uninstall remove exatamente o que foi instalado|
-		--prefix=PATH funciona igual a variavel de ambiente PREFIX|
-		DESTDIR + PREFIX (empacotamento) instala dentro do staging, nao no sistema real|
-		aviso quando PREFIX/bin nao esta no PATH|
-		sem aviso de PATH quando PREFIX/bin ja esta no PATH|
-		PREFIX padrao e /usr (mesmo destino do PKGBUILD)|
-		--bindir=/usr/sbin coloca o binario em sbin e --uninstall o remove|
-		instala o .desktop do handler npass:// com o caminho ABSOLUTO do binario no Exec|
-		o Exec do .desktop acompanha --bindir e nao deixa o marcador @NPASS@|
-		com DESTDIR (empacotamento) o Exec NAO leva o DESTDIR, e o arquivo cai dentro dele|
-		--uninstall remove o .desktop tambem)
+		"instala binario e man page em PREFIX/bin e PREFIX/share/man/man1"|
+		"binario instalado executa e responde ao help"|
+		"permissoes: binario 755, man page 644"|
+		"instalar duas vezes seguidas nao falha (idempotente)"|
+		"--uninstall remove exatamente o que foi instalado"|
+		"--prefix=PATH funciona igual a variavel de ambiente PREFIX"|
+		"DESTDIR + PREFIX (empacotamento) instala dentro do staging, nao no sistema real"|
+		"aviso quando PREFIX/bin nao esta no PATH"|
+		"sem aviso de PATH quando PREFIX/bin ja esta no PATH"|
+		"PREFIX padrao e /usr (mesmo destino do PKGBUILD)"|
+		"--bindir=/usr/sbin coloca o binario em sbin e --uninstall o remove"|
+		"instala o .desktop do handler npass:// com o caminho ABSOLUTO do binario no Exec"|
+		"o Exec do .desktop acompanha --bindir e nao deixa o marcador @NPASS@"|
+		"com DESTDIR (empacotamento) o Exec NAO leva o DESTDIR, e o arquivo cai dentro dele"|
+		"--uninstall remove o .desktop tambem")
 			core_release
 			export PATH="$MOCKBIN:$PATH" CURL_LOG CORE_RELEASE_DIR
 			export NPASS_CORE_KEY="$CORE_KEY" NPASS_CORE_BASE_URL="https://example.invalid/npass/releases"
