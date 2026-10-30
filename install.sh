@@ -279,7 +279,7 @@ offer_extensions() {
 		return 0
 	}
 
-	local work gh nprim fpr status_out line primary name desc sig stage installed=0 gpg_bin gpgconf_bin
+	local work gh nprim fpr status_out line primary name desc sig stage installed=0 gpg_bin gpgconf_bin helper_stage helper_ready=0 passkey_installed=0 helperdir helper_tmp artifact proto hsha esha
 	local -a status_fields=()
 	gpg_bin="$(PATH=/usr/bin:/bin command -v gpg)" || { echo "install.sh: gpg não encontrado." >&2; return 1; }
 	gpgconf_bin="$(PATH=/usr/bin:/bin command -v gpgconf)" || true
@@ -298,6 +298,53 @@ offer_extensions() {
 	fi
 	fpr="$(GNUPGHOME="$gh" "$gpg_bin" --batch --with-colons --list-keys 2>/dev/null | awk -F: '$1=="fpr"{print $10; exit}')"
 	[[ -n "$fpr" ]] || { rm -rf -- "$work"; return 1; }
+
+	# The passkey daemon is a separately built, separately signed release artifact.
+	# Copy first, then verify staged bytes; never build or sign it as the installing user.
+	helper_stage="$work/passkey-helper"
+	if [[ -n "$ext_helper_src" && -d "$ext_helper_src" ]]; then
+		mkdir -m 700 "$helper_stage"
+		helper_ready=1
+		for artifact in npass-passkeyd npass-passkeyd.stamp; do
+			if [[ -L "$ext_helper_src/$artifact" || ! -f "$ext_helper_src/$artifact" ||
+				-L "$ext_helper_src/$artifact.sig" || ! -f "$ext_helper_src/$artifact.sig" ]]; then
+				helper_ready=0
+				break
+			fi
+			if [[ "$artifact" == npass-passkeyd ]]; then
+				install -m 755 -- "$ext_helper_src/$artifact" "$helper_stage/$artifact" || helper_ready=0
+			else
+				install -m 644 -- "$ext_helper_src/$artifact" "$helper_stage/$artifact" || helper_ready=0
+			fi
+			install -m 644 -- "$ext_helper_src/$artifact.sig" "$helper_stage/$artifact.sig" || helper_ready=0
+			((helper_ready)) || break
+			status_out="$(GNUPGHOME="$gh" "$gpg_bin" --batch --no-auto-key-retrieve --status-fd=1 --verify "$helper_stage/$artifact.sig" "$helper_stage/$artifact" 2>/dev/null)" || {
+				helper_ready=0; break;
+			}
+			line="$(grep '^\[GNUPG:\] VALIDSIG ' <<<"$status_out" | head -n1)"
+			read -r -a status_fields <<<"$line"
+			primary="${status_fields[11]:-${status_fields[2]:-}}"
+			if [[ "$primary" != "$fpr" ]] || grep -qE '^\[GNUPG:\] (BADSIG|ERRSIG|EXPKEYSIG|EXPSIG|REVKEYSIG|KEYREVOKED)' <<<"$status_out"; then
+				helper_ready=0; break
+			fi
+		done
+		if ((helper_ready)); then
+			proto="$(sed -n 's/^proto  *//p' "$helper_stage/npass-passkeyd.stamp" | head -n1)"
+			hsha="$(sed -n 's/^helper-sha256  *//p' "$helper_stage/npass-passkeyd.stamp" | head -n1)"
+			esha="$(sed -n 's/^extension-sha256  *//p' "$helper_stage/npass-passkeyd.stamp" | head -n1)"
+			[[ "$(head -n1 "$helper_stage/npass-passkeyd.stamp")" == npass-passkeyd-stamp-v1 &&
+				"$proto" == 1 &&
+				"$hsha" == "$(sha256sum "$helper_stage/npass-passkeyd" | awk '{print $1}')" &&
+				"$esha" == "$(sha256sum "$src/npass-passkey" | awk '{print $1}')" &&
+				-x "$helper_stage/npass-passkeyd" ]] || helper_ready=0
+		fi
+		if ((!helper_ready)); then
+			echo "  aviso: pacote do daemon passkey ausente ou inválido; npass-passkey será ignorada."
+			rm -rf -- "$helper_stage"
+		fi
+	else
+		echo "  aviso: pacote do daemon passkey não encontrado; npass-passkey será ignorada."
+	fi
 
 	local share_dir="$DESTDIR$PREFIX/share" npass_dir="$DESTDIR$PREFIX/share/npass"
 	if ! extension_safe_parent_tree "$share_dir"; then
@@ -339,6 +386,10 @@ offer_extensions() {
 		fi
 		desc="$(ext_field "$f" desc)"
 		echo "  $name - ${desc:-(sem descrição)}"
+		if [[ "$name" == npass-passkey && "$helper_ready" -ne 1 ]]; then
+			echo "    ignorada: falta o daemon oficial assinado para este target."
+			continue
+		fi
 		if [[ -L "$f" || ! -f "$f" || -L "$sig" || ! -f "$sig" ]]; then
 			echo "    recusada: executável ou assinatura ausente/não regular."
 			continue
@@ -374,7 +425,46 @@ offer_extensions() {
 		rmdir -- "$stage"
 		echo "    instalada e verificada."
 		((++installed))
+		[[ "$name" == npass-passkey ]] && passkey_installed=1
 	done
+
+	if ((passkey_installed)); then
+		helperdir="$DESTDIR$PREFIX/share/npass/helpers"
+		if [[ -L "$helperdir" || ( -e "$helperdir" && ! -d "$helperdir" ) ]]; then
+			echo "install.sh: destino do helper não é um diretório regular; recusado." >&2
+			rm -f -- "$extdir/npass-passkey" "$extdir/npass-passkey.sig"
+			rm -rf -- "$work"; return 1
+		fi
+		mkdir -p "$helperdir"
+		if ! extension_safe_parent_tree "$helperdir"; then
+			echo "install.sh: árvore do helper compartilhado tem proprietário ou permissões inseguras." >&2
+			rm -f -- "$extdir/npass-passkey" "$extdir/npass-passkey.sig"
+			rm -rf -- "$work"; return 1
+		fi
+		chmod 755 "$helperdir"; chown root:root "$helperdir"
+		for artifact in npass-passkeyd npass-passkeyd.sig npass-passkeyd.stamp npass-passkeyd.stamp.sig; do
+			if [[ -L "$helperdir/$artifact" || ( -e "$helperdir/$artifact" && ! -f "$helperdir/$artifact" ) ]]; then
+				echo "install.sh: destino existente do helper não é arquivo regular: $artifact" >&2
+				rm -f -- "$extdir/npass-passkey" "$extdir/npass-passkey.sig"
+				rm -rf -- "$work"; return 1
+			fi
+		done
+		helper_tmp="$(mktemp -d "$helperdir/.stage.XXXXXX")" || {
+			rm -f -- "$extdir/npass-passkey" "$extdir/npass-passkey.sig"
+			rm -rf -- "$work"; return 1;
+		}
+		install -m 755 -- "$helper_stage/npass-passkeyd" "$helper_tmp/npass-passkeyd"
+		install -m 644 -- "$helper_stage/npass-passkeyd.sig" "$helper_tmp/npass-passkeyd.sig"
+		install -m 644 -- "$helper_stage/npass-passkeyd.stamp" "$helper_tmp/npass-passkeyd.stamp"
+		install -m 644 -- "$helper_stage/npass-passkeyd.stamp.sig" "$helper_tmp/npass-passkeyd.stamp.sig"
+		chown -R root:root "$helper_tmp"
+		mv -f -- "$helper_tmp/npass-passkeyd" "$helperdir/npass-passkeyd"
+		mv -f -- "$helper_tmp/npass-passkeyd.sig" "$helperdir/npass-passkeyd.sig"
+		mv -f -- "$helper_tmp/npass-passkeyd.stamp" "$helperdir/npass-passkeyd.stamp"
+		mv -f -- "$helper_tmp/npass-passkeyd.stamp.sig" "$helperdir/npass-passkeyd.stamp.sig"
+		rmdir -- "$helper_tmp"
+		echo "  daemon passkey instalado e verificado em $helperdir"
+	fi
 	if [[ -n "$gpgconf_bin" ]]; then GNUPGHOME="$gh" "$gpgconf_bin" --kill all 2>/dev/null || true; fi
 	rm -rf -- "$work"
 	echo "Extensões oficiais instaladas: $installed"
