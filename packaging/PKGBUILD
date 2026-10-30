@@ -39,7 +39,7 @@ optdepends=(
 makedepends=('git')
 provides=('npass')
 conflicts=('npass')
-source=("$pkgname::git+$url.git")
+source=("$pkgname::git+$url")
 sha256sums=('SKIP')
 
 pkgver() {
@@ -54,10 +54,16 @@ pkgver() {
 
 build() {
 	cd "$pkgname" || exit 1
-	bash build.sh
+	bash release.sh --build-only
 }
 
 package() {
 	cd "$pkgname" || exit 1
-	PREFIX=/usr DESTDIR="$pkgdir" ./install.sh --no-extensions
+
+	install -Dm755 bin/npass "$pkgdir/usr/bin/npass"
+	install -Dm644 man/npass.1 "$pkgdir/usr/share/man/man1/npass.1"
+	install -Dm644 encrypts_alternatives/wordlist.txt "$pkgdir/usr/share/npass/encrypts_alternatives/wordlist.txt"
+	install -Dm644 packaging/npass-release.asc "$pkgdir/usr/share/npass/extension-signing-key.asc"
+	sed 's#@NPASS@#/usr/bin/npass#' packaging/npass-open.desktop.in > "$srcdir/npass-open.desktop"
+	install -Dm644 "$srcdir/npass-open.desktop" "$pkgdir/usr/share/applications/npass-open.desktop"
 }

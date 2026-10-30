@@ -3,8 +3,6 @@
 #
 # Manual install for people not using the AUR package.
 # By default, installs the signed core bundle from the official GitHub Release.
-# --build-local explicitly builds from lib/*.bash for development/source installs.
-# DESTDIR packaging also builds locally, so package builds never need network access.
 #
 # Respects the DESTDIR + PREFIX convention packaging tools expect
 # (the AUR PKGBUILD calls this same script with DESTDIR="$pkgdir"
@@ -35,8 +33,6 @@
 #
 # The complete core bundle (binary, man page, wordlist, desktop template and trust key)
 # is signed as one release artifact. The installer verifies it before extraction.
-# --build-local bypasses release download
-# only when explicitly requested; DESTDIR packaging always builds locally.
 #
 # npass-tui is NOT built here. It is a signed binary published as a release of
 # HGBits/npass-tui (files npass-tui and npass-tui.asc). The installer downloads
@@ -49,7 +45,6 @@
 # Usage:
 #   sudo ./install.sh                  download, verify and install official core under /usr
 #   sudo ./install.sh --core-ref=TAG   install core from a specific release
-#   ./install.sh --build-local         build from this checkout (development/manual source install)
 #   ./install.sh --core-key=FILE       use a separately verified release public key
 #   sudo ./install.sh --bindir=/usr/sbin   put the binary in /usr/sbin instead
 #   ./install.sh --prefix=$HOME/.local     per-user install, no root
@@ -105,7 +100,6 @@ tui_failed=0
 core_ref="${NPASS_CORE_REF:-}"
 core_base="${NPASS_CORE_BASE_URL:-https://github.com/HGBits/npass-store/releases}"
 core_key="${NPASS_CORE_KEY:-}"
-core_local=0
 
 for arg in "$@"; do
 	case "$arg" in
@@ -115,7 +109,6 @@ for arg in "$@"; do
 	--no-extensions) ext_mode=no ;;
 	--core-ref=*) core_ref="${arg#--core-ref=}" ;;
 	--core-key=*) core_key="${arg#--core-key=}" ;;
-	--build-local) core_local=1 ;;
 	--tui) tui_mode=yes ;;
 	--no-tui) tui_mode=no ;;
 	--tui-ref=*) tui_ref="${arg#--tui-ref=}" ;;
@@ -158,10 +151,6 @@ trust_key_target="$DESTDIR$PREFIX/share/npass/extension-signing-key.asc"
 desktop_dir="$DESTDIR$PREFIX/share/applications"
 desktop_target="$desktop_dir/npass-open.desktop"
 npass_final="${BINDIR:-$PREFIX/bin}/npass"
-
-if [[ -n "$DESTDIR" ]]; then
-	core_local=1
-fi
 
 if [[ -n "$DESTDIR" && ( "$ext_mode" == yes || "$tui_mode" == yes ) ]]; then
 	echo "install.sh: opções interativas de extensões/TUI não combinam com DESTDIR (empacotamento)." >&2
@@ -825,33 +814,22 @@ core_man=""
 core_words=""
 core_desktop=""
 core_install_key=""
-if ((core_local)); then
-	if (( remote_stdin )); then echo "install.sh: --build-local exige um checkout local." >&2; exit 1; fi
-	echo "Construindo npass localmente a partir de lib/*.bash..."
-	bash build.sh
-	core_bin="$source_root/bin/npass"
-	core_man="$source_root/man/npass.1"
-	core_words="$source_root/encrypts_alternatives/wordlist.txt"
-	core_desktop="$source_root/packaging/npass-open.desktop.in"
-	core_install_key="$release_key"
-else
-	core_work="$(mktemp -d "${TMPDIR:-/tmp}/npass-core-release.XXXXXX")" || {
-		echo "install.sh: não foi possível criar diretório temporário para o release." >&2
-		exit 1
-	}
-	trap 'if [[ -n "${core_work:-}" && -d "$core_work" ]]; then GNUPGHOME="$core_work/gnupg" gpgconf --kill all 2>/dev/null || true; rm -rf -- "$core_work"; fi' EXIT
-	if ! core_bin="$(core_fetch_verify "$core_work")"; then
-		GNUPGHOME="$core_work/gnupg" gpgconf --kill all 2>/dev/null || true
-		rm -rf -- "$core_work"
-		core_work=""
-		exit 1
-	fi
-	core_payload_dir="$core_work/payload"
-	core_man="$core_payload_dir/share/man/man1/npass.1"
-	core_words="$core_payload_dir/share/npass/encrypts_alternatives/wordlist.txt"
-	core_desktop="$core_payload_dir/share/applications/npass-open.desktop.in"
-	core_install_key="$core_payload_dir/share/npass/extension-signing-key.asc"
+core_work="$(mktemp -d "${TMPDIR:-/tmp}/npass-core-release.XXXXXX")" || {
+	echo "install.sh: não foi possível criar diretório temporário para o release." >&2
+	exit 1
+}
+trap 'if [[ -n "${core_work:-}" && -d "$core_work" ]]; then GNUPGHOME="$core_work/gnupg" gpgconf --kill all 2>/dev/null || true; rm -rf -- "$core_work"; fi' EXIT
+if ! core_bin="$(core_fetch_verify "$core_work")"; then
+	GNUPGHOME="$core_work/gnupg" gpgconf --kill all 2>/dev/null || true
+	rm -rf -- "$core_work"
+	core_work=""
+	exit 1
 fi
+core_payload_dir="$core_work/payload"
+core_man="$core_payload_dir/share/man/man1/npass.1"
+core_words="$core_payload_dir/share/npass/encrypts_alternatives/wordlist.txt"
+core_desktop="$core_payload_dir/share/applications/npass-open.desktop.in"
+core_install_key="$core_payload_dir/share/npass/extension-signing-key.asc"
 
 # A instalacao no sistema e legivel por todos de proposito. Com um umask
 # restritivo (077 e comum em setups endurecidos, e o sudo mantem o mais
