@@ -125,7 +125,7 @@ No ambiente do mantenedor, com a chave privada correspondente à chave pública
 `packaging/npass-release.asc` disponível no chaveiro GPG:
 
 ```bash
-./release.sh
+bash release.sh
 ```
 
 O script recompila o core, monta `dist/npass-core.tar.gz`, gera a assinatura
