@@ -6,7 +6,7 @@ Gerenciador de senhas para Linux baseado em **Bash + GPG**, com armazenamento po
 
 **Versão:** `2.8`
 **Estado:** Pronto para uso
-| **Instalação:** clone o repositório e execute `sudo ./install.sh`; o instalador baixa e verifica o binário assinado da Release.
+| **Instalação:** `curl -fsSL https://raw.githubusercontent.com/HGBits/npass-store/master/install.sh | sudo bash`; o instalador verifica e instala o pacote completo assinado da Release.
 
 ## Principais características
 
@@ -66,7 +66,7 @@ Isso permite alterar o nome lógico sem modificar o ciphertext do segredo.
 * `glow` para `npass show` renderizado no terminal (sem ele, o `show` avisa e imprime o texto cru)
 * `oathtool` ou `otptool` para OTP
 * `qrencode` para QR Code
-* `curl` e `gpg` para baixar e verificar o binário oficial assinado (e o `npass-tui`, opcional)
+* `curl`, `gpg` e `sha256sum` para baixar e verificar o pacote oficial assinado (e o `npass-tui`, opcional)
 
 O clipboard atualmente utiliza **Wayland**.
 
