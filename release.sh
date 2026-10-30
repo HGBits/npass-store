@@ -4,10 +4,10 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 
 usage() {
 	cat <<'EOF'
-Uso: bash release.sh [DIRETORIO_DE_SAIDA]
+Uso: bash release.sh [--build-only | DIRETORIO_DE_SAIDA]
 
-Gera o pacote completo de release e o assina com a chave privada de release
-já presente no chaveiro GPG do mantenedor.
+Gera bin/npass a partir de lib/*.bash. Sem argumentos, também monta e assina
+o pacote completo de release com a chave privada já presente no chaveiro GPG.
 
 Saída padrão: dist/
 Assets para anexar à GitHub Release:
@@ -15,27 +15,57 @@ Assets para anexar à GitHub Release:
   npass-core.tar.gz.asc
   npass-release.asc
 
+  --build-only  gera somente bin/npass, sem chave GPG nem acesso à rede.
+
 A chave privada nunca é exportada nem gravada no repositório.
 EOF
 }
 
+mode=release
+out_dir=dist
 case "${1:-}" in
 	-h|--help) usage; exit 0 ;;
+	--build-only)
+		[[ $# -eq 1 ]] || { usage >&2; exit 2; }
+		mode=build
+		;;
 	"") ;;
-	*) [[ $# -eq 1 ]] || { usage >&2; exit 2; } ;;
+	*)
+		[[ $# -eq 1 ]] || { usage >&2; exit 2; }
+		out_dir="$1"
+		;;
 esac
 
-out_dir="${1:-dist}"
+build_core() {
+	local out="bin/npass"
+	mkdir -p "$(dirname "$out")"
+	{
+		echo '#!/usr/bin/env bash'
+		echo '# GENERATED FILE - built by release.sh from lib/*.bash. Do not edit directly.'
+		for f in lib/*.bash; do
+			[[ "$f" == "lib/00-main.bash" ]] && continue
+			tail -n +2 "$f"
+			echo
+		done
+		tail -n +2 lib/00-main.bash
+	} >"$out"
+	chmod 755 "$out"
+	bash -n "$out"
+	echo "built: $out"
+}
+
+build_core
+if [[ "$mode" == build ]]; then
+	exit 0
+fi
+
 key="packaging/npass-release.asc"
 command -v gpg >/dev/null 2>&1 || { echo "release.sh: gpg não encontrado." >&2; exit 1; }
 command -v tar >/dev/null 2>&1 || { echo "release.sh: tar não encontrado." >&2; exit 1; }
 command -v gzip >/dev/null 2>&1 || { echo "release.sh: gzip não encontrado." >&2; exit 1; }
 [[ -s "$key" && ! -L "$key" ]] || { echo "release.sh: chave pública ausente ou inválida: $key" >&2; exit 1; }
 
-# The package always uses a fresh build; no stale bin/npass can leak into a release.
-bash build.sh
-[[ -x bin/npass ]] || { echo "release.sh: build.sh não gerou bin/npass executável." >&2; exit 1; }
-bash -n bin/npass
+[[ -x bin/npass ]] || { echo "release.sh: não foi possível gerar bin/npass." >&2; exit 1; }
 for f in man/npass.1 encrypts_alternatives/wordlist.txt packaging/npass-open.desktop.in; do
 	[[ -s "$f" && ! -L "$f" ]] || { echo "release.sh: arquivo obrigatório ausente ou inválido: $f" >&2; exit 1; }
 done
