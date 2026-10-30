@@ -127,8 +127,8 @@ for arg in "$@"; do
 	--extensions-target=*) ext_target="${arg#--extensions-target=}" ;;
 	-h | --help)
 		if (( remote_stdin )); then
-			printf '%s\\n' "Uso: install.sh [--core-ref=TAG] [--prefix=PATH] [--no-extensions] [--no-tui]"
-			printf '%s\\n' "Instala o pacote core completo de uma GitHub Release assinada, sem clone."
+			printf '%s\n' "Uso: install.sh [--core-ref=TAG] [--prefix=PATH] [--no-extensions] [--no-tui]"
+			printf '%s\n' "Instala o pacote core completo de uma GitHub Release assinada, sem clone."
 		else
 			awk 'NR>1 && /^#/ {sub(/^# ?/, ""); print; next} NR>1 {exit}' "$0"
 		fi
