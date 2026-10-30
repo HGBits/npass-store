@@ -28,9 +28,9 @@
 #      npass-extensions or an extracted signed release bundle. A bundle root
 #      contains extensions/ and helpers/; passkey is skipped without its signed helper.
 #   2. ../npass-extensions, next to this repository, if it exists.
-#   3. Otherwise it asks before downloading the official source repository.
-#      Every candidate must already carry a detached signature from the
-#      packaged release key; unsigned and third-party artifacts are refused.
+#   3. Otherwise it asks before downloading a signed release bundle from GitHub.
+#      The bundle and each individual artifact are verified against the packaged
+#      release key before anything is installed.
 #
 # npass-tui is NOT built here. It is a signed binary published as a release of
 # HGBits/npass-tui (files npass-tui and npass-tui.asc). The installer downloads
@@ -239,11 +239,14 @@ offer_extensions() {
 		command -v curl >/dev/null 2>&1 || { echo "install.sh: curl não encontrado." >&2; return 1; }
 		command -v tar >/dev/null 2>&1 || { echo "install.sh: tar não encontrado." >&2; return 1; }
 		if [[ -z "$ext_target" ]]; then
+			local arch libc=gnu
 			case "$(uname -m)" in
-				x86_64) ext_target="x86_64-unknown-linux-gnu" ;;
-				aarch64|arm64) ext_target="aarch64-unknown-linux-gnu" ;;
+				x86_64) arch=x86_64 ;;
+				aarch64|arm64) arch=aarch64 ;;
 				*) echo "install.sh: informe --extensions-target=TRIPLE para esta arquitetura." >&2; return 1 ;;
 			esac
+			if command -v ldd >/dev/null 2>&1 && ldd --version 2>&1 | grep -qi musl; then libc=musl; fi
+			ext_target="$arch-unknown-linux-$libc"
 		fi
 		[[ "$ext_target" =~ ^[A-Za-z0-9_.-]+$ ]] || { echo "install.sh: target inválido: $ext_target" >&2; return 1; }
 		ext_tmp="$(mktemp -d "${TMPDIR:-/tmp}/npass-ext-release.XXXXXX")" || return 1
