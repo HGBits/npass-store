@@ -309,6 +309,16 @@ offer_extensions() {
 				echo "install.sh: caminho inseguro no pacote: $entry" >&2; return 1;
 			}
 		done <"$ext_tmp/archive-entries"
+		if ! tar -tvzf "$bundle" >"$ext_tmp/archive-details"; then
+			echo "install.sh: não foi possível inspecionar os tipos de arquivo do pacote." >&2
+			return 1
+		fi
+		while IFS= read -r entry; do
+			case "${entry:0:1}" in
+				-|d) ;;
+				*) echo "install.sh: links e arquivos especiais não são permitidos no pacote." >&2; return 1 ;;
+			esac
+		done <"$ext_tmp/archive-details"
 		mkdir -p "$ext_tmp/bundle"
 		tar --no-same-owner --no-same-permissions -xzf "$bundle" -C "$ext_tmp/bundle"
 		src="$ext_tmp/bundle/extensions"
