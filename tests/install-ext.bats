@@ -57,10 +57,12 @@ inst() { "$PROJECT_DIR/install.sh" --prefix="$PREFIX" --no-tui "$@"; }
 
 @test "uninstall remove chave e extensoes compartilhadas" {
 	run inst --no-extensions
-	mkdir -p "$PREFIX/share/npass/extensions"
+	mkdir -p "$PREFIX/share/npass/extensions" "$PREFIX/share/npass/helpers"
 	printf 'x\n' >"$PREFIX/share/npass/extensions/npass-stale"
+	printf 'x\n' >"$PREFIX/share/npass/helpers/npass-passkeyd"
 	run env PREFIX="$PREFIX" "$PROJECT_DIR/install.sh" --uninstall
 	[ "$status" -eq 0 ]
 	[ ! -e "$PREFIX/share/npass/extension-signing-key.asc" ]
 	[ ! -e "$PREFIX/share/npass/extensions" ]
+	[ ! -e "$PREFIX/share/npass/helpers" ]
 }
