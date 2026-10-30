@@ -685,7 +685,14 @@ core_fetch_verify() {
 	[[ "$fpr" =~ ^[A-Fa-f0-9]{40,64}$ ]] || {
 		echo "install.sh: fingerprint da chave de release inválida." >&2; return 1;
 	}
-	if [[ -n "$core_ref" ]]; then url="$core_base/download/$core_ref"; else url="$core_base/latest/download"; fi
+	if [[ -n "$core_ref" ]]; then
+		[[ "$core_ref" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || {
+			echo "install.sh: tag de release inválida: $core_ref" >&2; return 1;
+		}
+		url="$core_base/download/$core_ref"
+	else
+		url="$core_base/latest/download"
+	fi
 	bin="$work/npass"
 	asc="$work/npass.asc"
 	for f in "npass:$bin" "npass.asc:$asc"; do
