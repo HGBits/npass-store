@@ -156,50 +156,180 @@ setup() {
 	[ "$(grep -o '@NPASS@' "$f" | wc -l)" -eq 1 ]
 }
 
-@test "opção --tui baixa npass-tui do repositório correto e instala executável" {
-	local mockbin="$BATS_TEST_TMPDIR/mockbin"
-	local fixture="$BATS_TEST_TMPDIR/npass-tui.fixture"
-	local log="$BATS_TEST_TMPDIR/curl.log"
-	mkdir -p "$mockbin"
-	printf '#!/usr/bin/env bash\necho "$@" >"$CURL_LOG"\ncat "$TUI_FIXTURE"\n' > "$mockbin/curl"
-	chmod +x "$mockbin/curl"
-	printf '#!/usr/bin/env bash\necho tui-test\n' > "$fixture"
-	run env PREFIX="$PREFIX" PATH="$mockbin:$PATH" CURL_LOG="$log" TUI_FIXTURE="$fixture" "$PROJECT_DIR/install.sh" --tui
-	[ "$status" -eq 0 ]
-	[ -x "$PREFIX/bin/npass-tui" ]
-	run "$PREFIX/bin/npass-tui"
-	[ "$status" -eq 0 ]
-	[ "$output" = "tui-test" ]
-	grep -q 'https://raw.githubusercontent.com/HGBits/npass-tui/master/npass-tui' "$log"
+# --------------------------------------------------------------------------
+# npass-tui: release assinado, baixado e VERIFICADO antes de instalar
+# --------------------------------------------------------------------------
+
+# Cria, em $TUI_DIR, um "release" de mentira: npass-tui + npass-tui.asc assinado
+# por uma chave descartável cuja parte pública fica em $TUI_KEY. O curl é um mock
+# que serve esses arquivos pelo nome e registra as URLs pedidas.
+tui_release() {
+	export TUI_DIR="$BATS_TEST_TMPDIR/release" TUI_KEY="$BATS_TEST_TMPDIR/release-key.asc"
+	export MOCKBIN="$BATS_TEST_TMPDIR/mockbin" CURL_LOG="$BATS_TEST_TMPDIR/curl.log"
+	local gh
+	gh="$(mktemp -d /tmp/npass-tui-gpg.XXXXXX)"
+	chmod 700 "$gh"
+	mkdir -p "$TUI_DIR" "$MOCKBIN"
+	: >"$CURL_LOG"
+	GNUPGHOME="$gh" gpg --batch --quiet --passphrase '' --quick-generate-key 'Release Teste <rel@example.invalid>' ed25519 sign never 2>/dev/null
+	GNUPGHOME="$gh" gpg --batch --armor --export >"$TUI_KEY"
+	TUI_FPR="$(GNUPGHOME="$gh" gpg --batch --with-colons --list-keys | awk -F: '/^fpr:/ {print $10; exit}')"
+	printf '#!/usr/bin/env bash\necho tui-test\n' >"$TUI_DIR/npass-tui"
+	GNUPGHOME="$gh" gpg --batch --yes --armor --detach-sign --output "$TUI_DIR/npass-tui.asc" "$TUI_DIR/npass-tui"
+	TUI_GH="$gh"
+	cat >"$MOCKBIN/curl" <<'MOCK'
+#!/usr/bin/env bash
+out="" url=""
+while [ $# -gt 0 ]; do
+	case "$1" in
+	-o) out="$2"; shift ;;
+	--) shift; url="$1"; break ;;
+	esac
+	shift
+done
+printf '%s\n' "$url" >>"$CURL_LOG"
+src="$TUI_DIR/${url##*/}"
+[ -f "$src" ] || exit 22
+cp "$src" "$out"
+MOCK
+	chmod +x "$MOCKBIN/curl"
+	# o instalador nunca deve clonar nem compilar o npass-tui
+	printf '#!/usr/bin/env bash\necho git >>"$CURL_LOG"\nexit 99\n' >"$MOCKBIN/git"
+	chmod +x "$MOCKBIN/git"
 }
 
-@test "download com sintaxe inválida não instala npass-tui" {
-	local mockbin="$BATS_TEST_TMPDIR/mockbin"
-	local fixture="$BATS_TEST_TMPDIR/npass-tui.invalid"
-	mkdir -p "$mockbin"
-	printf '#!/usr/bin/env bash\ncat "$TUI_FIXTURE"\n' > "$mockbin/curl"
-	chmod +x "$mockbin/curl"
-	printf 'if then\n' > "$fixture"
-	run env PREFIX="$PREFIX" PATH="$mockbin:$PATH" TUI_FIXTURE="$fixture" "$PROJECT_DIR/install.sh" --tui
+tui_cleanup() {
+	[[ -n ${TUI_GH:-} ]] || return 0
+	GNUPGHOME="$TUI_GH" gpgconf --kill gpg-agent 2>/dev/null || true
+	rm -rf -- "$TUI_GH"
+}
+
+teardown() { tui_cleanup; }
+
+run_tui_install() {
+	run env PREFIX="$PREFIX" PATH="$MOCKBIN:$PATH" CURL_LOG="$CURL_LOG" TUI_DIR="$TUI_DIR" \
+		NPASS_TUI_KEY="$TUI_KEY" "$PROJECT_DIR/install.sh" --tui "$@"
+}
+
+@test "--tui baixa binário e .asc do release, verifica a assinatura e instala" {
+	tui_release
+	run_tui_install
 	[ "$status" -eq 0 ]
+	[ -x "$PREFIX/bin/npass-tui" ]
+	[[ "$output" == *"assinatura verificada"* ]]
+	[[ "$output" == *"$TUI_FPR"* ]]
+	run "$PREFIX/bin/npass-tui"
+	[ "$output" = "tui-test" ]
+	grep -qxF 'https://github.com/HGBits/npass-tui/releases/latest/download/npass-tui' "$CURL_LOG"
+	grep -qxF 'https://github.com/HGBits/npass-tui/releases/latest/download/npass-tui.asc' "$CURL_LOG"
+}
+
+@test "--tui-ref=TAG baixa o release daquela tag" {
+	tui_release
+	run_tui_install --tui-ref=v1.2
+	[ "$status" -eq 0 ]
+	grep -qxF 'https://github.com/HGBits/npass-tui/releases/download/v1.2/npass-tui' "$CURL_LOG"
+}
+
+@test "o instalador não clona nem compila o npass-tui" {
+	tui_release
+	run_tui_install
+	[ "$status" -eq 0 ]
+	! grep -qx git "$CURL_LOG"
+}
+
+@test "binário adulterado depois de assinado não é instalado e o install.sh sai com erro" {
+	tui_release
+	printf '#!/usr/bin/env bash\necho adulterado\n' >"$TUI_DIR/npass-tui"
+	run_tui_install
+	[ "$status" -ne 0 ]
+	[ ! -e "$PREFIX/bin/npass-tui" ]
+	[[ "$output" == *"INVÁLIDA"* ]]
+	# a CLI em si continua instalada
+	[ -x "$PREFIX/bin/npass" ]
+}
+
+@test "assinatura de OUTRA chave (mesmo válida) é recusada" {
+	tui_release
+	local gh2
+	gh2="$(mktemp -d /tmp/npass-tui-gpg2.XXXXXX)"
+	chmod 700 "$gh2"
+	GNUPGHOME="$gh2" gpg --batch --quiet --passphrase '' --quick-generate-key 'Atacante <x@example.invalid>' ed25519 sign never 2>/dev/null
+	rm -f "$TUI_DIR/npass-tui.asc"
+	GNUPGHOME="$gh2" gpg --batch --armor --detach-sign --output "$TUI_DIR/npass-tui.asc" "$TUI_DIR/npass-tui"
+	GNUPGHOME="$gh2" gpgconf --kill gpg-agent 2>/dev/null || true
+	rm -rf -- "$gh2"
+	run_tui_install
+	[ "$status" -ne 0 ]
+	[ ! -e "$PREFIX/bin/npass-tui" ]
+}
+
+@test "release sem .asc não instala o npass-tui" {
+	tui_release
+	rm -f "$TUI_DIR/npass-tui.asc"
+	run_tui_install
+	[ "$status" -ne 0 ]
+	[ ! -e "$PREFIX/bin/npass-tui" ]
+	[[ "$output" == *"falha ao baixar"* ]]
+}
+
+@test "sem chave pública de release recusa antes de baixar qualquer coisa" {
+	tui_release
+	run env PREFIX="$PREFIX" PATH="$MOCKBIN:$PATH" CURL_LOG="$CURL_LOG" TUI_DIR="$TUI_DIR" \
+		NPASS_TUI_KEY="$BATS_TEST_TMPDIR/nao-existe.asc" "$PROJECT_DIR/install.sh" --tui
+	[ "$status" -ne 0 ]
+	[ ! -e "$PREFIX/bin/npass-tui" ]
+	[[ "$output" == *"chave pública de release não encontrada"* ]]
+	[ ! -s "$CURL_LOG" ]
+}
+
+@test "arquivo de chave com mais de uma chave pública é recusado" {
+	tui_release
+	local gh2
+	gh2="$(mktemp -d /tmp/npass-tui-gpg2.XXXXXX)"
+	chmod 700 "$gh2"
+	GNUPGHOME="$gh2" gpg --batch --quiet --passphrase '' --quick-generate-key 'Outra <o@example.invalid>' ed25519 sign never 2>/dev/null
+	GNUPGHOME="$gh2" gpg --batch --armor --export >>"$TUI_KEY"
+	GNUPGHOME="$gh2" gpgconf --kill gpg-agent 2>/dev/null || true
+	rm -rf -- "$gh2"
+	run_tui_install
+	[ "$status" -ne 0 ]
+	[ ! -e "$PREFIX/bin/npass-tui" ]
+	[[ "$output" == *"UMA chave pública"* ]]
+}
+
+@test "binário assinado mas com sintaxe inválida não é instalado" {
+	tui_release
+	printf 'if then\n' >"$TUI_DIR/npass-tui"
+	rm -f "$TUI_DIR/npass-tui.asc"
+	GNUPGHOME="$TUI_GH" gpg --batch --armor --detach-sign --output "$TUI_DIR/npass-tui.asc" "$TUI_DIR/npass-tui"
+	run_tui_install
+	[ "$status" -ne 0 ]
 	[ ! -e "$PREFIX/bin/npass-tui" ]
 	[[ "$output" == *"sintaxe inválida"* ]]
 }
 
+@test "o instalador não usa nem altera o chaveiro do usuário" {
+	tui_release
+	local home_gpg="$BATS_TEST_TMPDIR/gnupg-usuario"
+	mkdir -m 700 "$home_gpg"
+	run env GNUPGHOME="$home_gpg" PREFIX="$PREFIX" PATH="$MOCKBIN:$PATH" CURL_LOG="$CURL_LOG" TUI_DIR="$TUI_DIR" \
+		NPASS_TUI_KEY="$TUI_KEY" "$PROJECT_DIR/install.sh" --tui
+	[ "$status" -eq 0 ]
+	[ -z "$(ls -A "$home_gpg" | grep -v '^S\.\|^\.#\|^random_seed$' || true)" ]
+}
+
 @test "--no-tui não baixa nem instala a interface" {
-	run env PREFIX="$PREFIX" "$PROJECT_DIR/install.sh" --no-tui
+	tui_release
+	run env PREFIX="$PREFIX" PATH="$MOCKBIN:$PATH" CURL_LOG="$CURL_LOG" "$PROJECT_DIR/install.sh" --no-tui
 	[ "$status" -eq 0 ]
 	[ ! -e "$PREFIX/bin/npass-tui" ]
+	[ ! -s "$CURL_LOG" ]
 }
 
 @test "--uninstall remove npass-tui quando instalado" {
-	local mockbin="$BATS_TEST_TMPDIR/mockbin"
-	local fixture="$BATS_TEST_TMPDIR/npass-tui.fixture"
-	mkdir -p "$mockbin"
-	printf '#!/usr/bin/env bash\ncat "$TUI_FIXTURE"\n' > "$mockbin/curl"
-	chmod +x "$mockbin/curl"
-	printf '#!/usr/bin/env bash\nexit 0\n' > "$fixture"
-	env PREFIX="$PREFIX" PATH="$mockbin:$PATH" TUI_FIXTURE="$fixture" "$PROJECT_DIR/install.sh" --tui >/dev/null
+	tui_release
+	run_tui_install
 	[ -x "$PREFIX/bin/npass-tui" ]
 	run env PREFIX="$PREFIX" "$PROJECT_DIR/install.sh" --uninstall
 	[ "$status" -eq 0 ]

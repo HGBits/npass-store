@@ -39,6 +39,14 @@
 #      signed) is printed, because what you accept here is signed with YOUR key
 #      and then runs with access to your secrets: read it first.
 #
+# npass-tui is NOT built here. It is a signed binary published as a release of
+# HGBits/npass-tui (files npass-tui and npass-tui.asc). The installer downloads
+# both over https, verifies the detached signature in a throwaway GnuPG home that
+# holds ONLY the release public key (packaging/npass-release.asc), requires the
+# signing key to be exactly that key, and only then installs the binary. Any
+# failure (download, key, signature, syntax) installs nothing; with --tui it also
+# makes install.sh exit non-zero at the end.
+#
 # Usage:
 #   sudo ./install.sh                  install under /usr (bin/npass), then offer extensions
 #   sudo ./install.sh --bindir=/usr/sbin   put the binary in /usr/sbin instead
@@ -46,7 +54,10 @@
 #   sudo ./install.sh --uninstall      remove what a prior install put there
 #   ./install.sh --prefix=/usr/local [--uninstall]
 #   ./install.sh --no-extensions       never offer extensions
-#   ./install.sh --tui                  install npass-tui from HGBits/npass-tui
+#   ./install.sh --tui                  download, VERIFY and install npass-tui (signed release)
+#   ./install.sh --tui-ref=TAG          release tag to download (default: the latest release)
+#   ./install.sh --tui-key=FILE         public key to verify npass-tui with (replaces the
+#                                       trust root packaging/npass-release.asc; $NPASS_TUI_KEY)
 #   ./install.sh --no-tui               do not offer or install npass-tui
 #   ./install.sh --extensions          offer extensions even if stdin is not a terminal
 #   ./install.sh --extensions-only     skip npass itself, only offer the extensions
@@ -71,6 +82,10 @@ ext_src="${NPASS_EXTENSIONS_SRC:-}"
 ext_ref=""
 ext_repo="${NPASS_EXTENSIONS_REPO:-https://github.com/HGBits/npass-extensions.git}"
 ext_tmp=""
+tui_ref=""
+tui_key="${NPASS_TUI_KEY:-}"
+tui_base="${NPASS_TUI_BASE_URL:-https://github.com/HGBits/npass-tui/releases}"
+tui_failed=0
 
 for arg in "$@"; do
 	case "$arg" in
@@ -80,6 +95,8 @@ for arg in "$@"; do
 	--no-extensions) ext_mode=no ;;
 	--tui) tui_mode=yes ;;
 	--no-tui) tui_mode=no ;;
+	--tui-ref=*) tui_ref="${arg#--tui-ref=}" ;;
+	--tui-key=*) tui_key="${arg#--tui-key=}" ;;
 	--extensions) ext_mode=yes ;;
 	--extensions-only) ext_mode=yes; ext_only=1 ;;
 	--sign-key=*) sign_key="${arg#--sign-key=}" ;;
@@ -344,43 +361,108 @@ offer_extensions() {
 # Optional npass-tui
 # --------------------------------------------------------------------------
 
-install_tui() {
-	local repo="https://github.com/HGBits/npass-tui.git"
-	local tmpdir src
-	if ! command -v git >/dev/null 2>&1; then
-		echo "aviso: git não encontrado; npass-tui não foi instalado." >&2
+# Download + verify + install, all inside "$1" (a private temp dir). Returns 0
+# only after the signature was verified AND the binary was installed.
+tui_fetch_verify() {
+	local work="$1" key url bin asc gh fpr nprim status_out line last f
+	key="${tui_key:-$PWD/packaging/npass-release.asc}"
+	if [[ ! -s "$key" ]]; then
+		echo "aviso: chave pública de release não encontrada: $key" >&2
+		echo "       sem ela não há como verificar o npass-tui; nada foi baixado nem instalado." >&2
 		return 1
 	fi
-	tmpdir="$(mktemp -d)" || {
-		echo "aviso: não foi possível criar diretório temporário para npass-tui." >&2
+	local tool
+	for tool in curl gpg; do
+		command -v "$tool" >/dev/null 2>&1 || {
+			echo "aviso: $tool não encontrado; npass-tui não foi instalado." >&2
+			return 1
+		}
+	done
+
+	# Keyring descartável: só a chave de release, nunca o chaveiro do usuário.
+	gh="$work/gnupg"
+	mkdir -m 700 "$gh"
+	if ! GNUPGHOME="$gh" gpg --batch --quiet --import "$key" 2>/dev/null; then
+		echo "aviso: não foi possível importar $key." >&2
+		return 1
+	fi
+	nprim="$(GNUPGHOME="$gh" gpg --batch --with-colons --list-keys 2>/dev/null | grep -c '^pub:' || true)"
+	if [[ "$nprim" != 1 ]]; then
+		echo "aviso: $key deve conter exatamente UMA chave pública (tem $nprim); recusado." >&2
+		return 1
+	fi
+	fpr="$(GNUPGHOME="$gh" gpg --batch --with-colons --list-keys 2>/dev/null | awk -F: '/^fpr:/ {print $10; exit}')"
+	[[ -n "$fpr" ]] || {
+		echo "aviso: não consegui ler o fingerprint da chave de release." >&2
 		return 1
 	}
-	src="$tmpdir/src"
-	if ! git clone --quiet --depth 1 -- "$repo" "$src"; then
-		rm -rf -- "$tmpdir"
-		echo "aviso: clone de npass-tui falhou; a CLI continua instalada." >&2
+
+	if [[ -n "$tui_ref" ]]; then
+		url="$tui_base/download/$tui_ref"
+	else
+		url="$tui_base/latest/download"
+	fi
+	bin="$work/npass-tui"
+	asc="$work/npass-tui.asc"
+	for f in "npass-tui:$bin" "npass-tui.asc:$asc"; do
+		if ! curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
+			--max-time 120 --max-filesize 16777216 -o "${f#*:}" -- "$url/${f%%:*}"; then
+			echo "aviso: falha ao baixar $url/${f%%:*}; npass-tui não instalado." >&2
+			return 1
+		fi
+	done
+	[[ -s "$bin" && -s "$asc" ]] || {
+		echo "aviso: download vazio; npass-tui não instalado." >&2
+		return 1
+	}
+
+	# Aceita só: gpg com status 0, GOODSIG e VALIDSIG cuja chave primária é a de
+	# release. Nada de BADSIG/ERRSIG/EXPKEYSIG/EXPSIG/REVKEYSIG.
+	if ! status_out="$(GNUPGHOME="$gh" gpg --batch --status-fd 1 --verify "$asc" "$bin" 2>/dev/null)"; then
+		echo "aviso: assinatura de npass-tui INVÁLIDA (ou de outra chave); nada instalado." >&2
 		return 1
 	fi
-	if ! bash "$src/build.sh" || [[ ! -s "$src/bin/npass-tui" ]] || ! bash -n "$src/bin/npass-tui"; then
-		rm -rf -- "$tmpdir"
-		echo "aviso: não foi possível construir npass-tui; não instalado." >&2
+	if grep -qE '^\[GNUPG:\] (BADSIG|ERRSIG|EXPKEYSIG|EXPSIG|REVKEYSIG)' <<<"$status_out" \
+		|| ! grep -q '^\[GNUPG:\] GOODSIG' <<<"$status_out"; then
+		echo "aviso: assinatura de npass-tui não é uma assinatura boa e vigente; nada instalado." >&2
 		return 1
 	fi
-	if ! install -m 755 -- "$src/bin/npass-tui" "$tui_target"; then
-		rm -rf -- "$tmpdir"
+	line="$(grep '^\[GNUPG:\] VALIDSIG' <<<"$status_out" | head -n1)"
+	last="${line##* }"
+	if [[ -z "$line" || "$last" != "$fpr" ]]; then
+		echo "aviso: npass-tui não foi assinado pela chave de release ($fpr); nada instalado." >&2
+		return 1
+	fi
+
+	if ! bash -n "$bin" 2>/dev/null; then
+		echo "aviso: npass-tui assinado, mas com sintaxe inválida; nada instalado." >&2
+		return 1
+	fi
+	if ! install -m 755 -- "$bin" "$tui_target"; then
 		echo "aviso: não foi possível instalar npass-tui em $tui_target." >&2
 		return 1
 	fi
-	rm -rf -- "$tmpdir"
-	echo "instalado: $tui_target (fonte: $repo; compilado com build.sh)"
+	echo "instalado: $tui_target (assinatura verificada; chave $fpr; origem: $url)"
+}
+
+install_tui() {
+	local work rc=0
+	work="$(mktemp -d "${TMPDIR:-/tmp}/npass-tui.XXXXXX")" || {
+		echo "aviso: não foi possível criar diretório temporário para npass-tui." >&2
+		return 1
+	}
+	tui_fetch_verify "$work" || rc=$?
+	GNUPGHOME="$work/gnupg" gpgconf --kill gpg-agent 2>/dev/null || true
+	rm -rf -- "$work"
+	return "$rc"
 }
 
 offer_tui() {
 	[[ -z "$DESTDIR" && "$tui_mode" != no ]] || return 0
 	if [[ "$tui_mode" == yes ]]; then
-		install_tui || true
-	elif [[ -t 0 && -t 1 ]] && ask "Instalar também a interface de terminal opcional npass-tui?"; then
-		install_tui || true
+		install_tui || { tui_failed=1; echo "aviso: a CLI continua instalada; npass-tui não." >&2; }
+	elif [[ -t 0 && -t 1 ]] && ask "Instalar também a interface de terminal opcional npass-tui (binário assinado, verificado)?"; then
+		install_tui || echo "aviso: a CLI continua instalada; npass-tui não." >&2
 	fi
 }
 
@@ -495,3 +577,5 @@ if [[ -z "$DESTDIR" && "$ext_mode" != no ]]; then
 		offer_extensions "$bin_target"
 	fi
 fi
+
+exit "$tui_failed"
