@@ -58,7 +58,8 @@ primary_count="$(GNUPGHOME="$tmp/gnupg" gpg --batch --with-colons --list-keys 2>
 [[ "$primary_count" == 1 ]] || { echo "release.sh: a chave deve conter exatamente uma chave primária." >&2; exit 1; }
 fingerprint="$(GNUPGHOME="$tmp/gnupg" gpg --batch --with-colons --list-keys 2>/dev/null | awk -F: '$1=="fpr"{print $10; exit}')"
 [[ "$fingerprint" =~ ^[A-Fa-f0-9]{40,64}$ ]] || { echo "release.sh: fingerprint inválida." >&2; exit 1; }
-gpg --batch --list-secret-keys "$fingerprint" >/dev/null 2>&1 || {
+secret_count="$(gpg --batch --with-colons --list-secret-keys "$fingerprint" 2>/dev/null | grep -c '^sec:' || true)"
+[[ "$secret_count" -ge 1 ]] || {
 	echo "release.sh: a chave privada correspondente à fingerprint $fingerprint não está disponível." >&2
 	exit 1
 }
