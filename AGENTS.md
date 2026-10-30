@@ -32,6 +32,7 @@ Este arquivo é o índice operacional do projeto. Use-o para localizar rapidamen
 | Extensões (import, passkey + daemon FIDO2, audit, clipboard X11/Windows) | repositório `npass-extensions`, ao lado deste (`../npass-extensions`; a pasta antiga `../npass_extensions` também vale) | cada uma tem testes e `AGENTS.md` lá; aqui ficam `install.sh` e os testes de instalação |
 | Instalação (de onde vêm as extensões; `npass-tui` e extensões oficiais = artefatos assinados e verificados com `packaging/npass-release.asc`) | `install.sh` | `tests/install.bats`, `tests/install-ext.bats`, `tests/install-passkey.bats`, `lib/11-extensions.bash` |
 | Build do executável | `build.sh` | `lib/*.bash`, `tests/install.bats` |
+| Geração e assinatura do pacote de Release | `release.sh` | `build.sh`, `install.sh`, `packaging/npass-release.asc` |
 | Testes de uma funcionalidade | `tests/<funcionalidade>.bats` | implementação correspondente |
 | Empacotamento Arch | `packaging/PKGBUILD` | `install.sh`, `build.sh` |
 | Documentação pública | `README.md`, `man/npass.1` | implementação/testes somente para verificar fatos |

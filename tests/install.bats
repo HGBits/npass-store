@@ -169,7 +169,7 @@ core_release() {
 	export CORE_RELEASE_DIR="$BATS_TEST_TMPDIR/core-release"
 	export CORE_KEY="$BATS_TEST_TMPDIR/core-release-key.asc"
 	export MOCKBIN="$BATS_TEST_TMPDIR/core-mockbin" CURL_LOG="$BATS_TEST_TMPDIR/core-curl.log"
-	local gh
+	local gh stage
 	gh="$(mktemp -d /tmp/npass-core-gpg.XXXXXX)"
 	chmod 700 "$gh"
 	mkdir -p "$CORE_RELEASE_DIR" "$MOCKBIN"
@@ -177,9 +177,17 @@ core_release() {
 	GNUPGHOME="$gh" gpg --batch --quiet --passphrase '' --quick-generate-key 'Core Release Teste <core-release@example.invalid>' ed25519 sign never 2>/dev/null
 	GNUPGHOME="$gh" gpg --batch --armor --export >"$CORE_KEY"
 	CORE_FPR="$(GNUPGHOME="$gh" gpg --batch --with-colons --list-keys | awk -F: '/^fpr:/ {print $10; exit}')"
-	printf '#!/usr/bin/env bash\necho core-release-test\n' >"$CORE_RELEASE_DIR/npass"
-	chmod +x "$CORE_RELEASE_DIR/npass"
-	GNUPGHOME="$gh" gpg --batch --yes --armor --detach-sign --output "$CORE_RELEASE_DIR/npass.asc" "$CORE_RELEASE_DIR/npass"
+	stage="$BATS_TEST_TMPDIR/core-stage"
+	mkdir -p "$stage/bin" "$stage/share/man/man1" "$stage/share/npass/encrypts_alternatives" "$stage/share/applications"
+	printf '#!/usr/bin/env bash\necho core-release-test\n' >"$stage/bin/npass"
+	chmod 755 "$stage/bin/npass"
+	printf '.TH NPASS 1\n' >"$stage/share/man/man1/npass.1"
+	printf '[large]\n11111\tabacus\n' >"$stage/share/npass/encrypts_alternatives/wordlist.txt"
+	printf '[Desktop Entry]\nExec=@NPASS@ open %%u\n' >"$stage/share/applications/npass-open.desktop.in"
+	install -m 644 "$CORE_KEY" "$stage/share/npass/extension-signing-key.asc"
+	tar -czf "$CORE_RELEASE_DIR/npass-core.tar.gz" -C "$stage" bin share
+	GNUPGHOME="$gh" gpg --batch --yes --armor --detach-sign --output "$CORE_RELEASE_DIR/npass-core.tar.gz.asc" "$CORE_RELEASE_DIR/npass-core.tar.gz"
+	cp "$CORE_KEY" "$CORE_RELEASE_DIR/npass-release.asc"
 	CORE_GH="$gh"
 	cat >"$MOCKBIN/curl" <<'MOCK'
 #!/usr/bin/env bash
@@ -214,8 +222,8 @@ core_cleanup() {
 	[ -x "$PREFIX/bin/npass" ]
 	[[ "$output" == *"release core verificada"* ]]
 	[ "$("$PREFIX/bin/npass")" = "core-release-test" ]
-	grep -qxF 'https://example.invalid/npass/releases/latest/download/npass' "$CURL_LOG"
-	grep -qxF 'https://example.invalid/npass/releases/latest/download/npass.asc' "$CURL_LOG"
+	grep -qxF 'https://example.invalid/npass/releases/latest/download/npass-core.tar.gz' "$CURL_LOG"
+	grep -qxF 'https://example.invalid/npass/releases/latest/download/npass-core.tar.gz.asc' "$CURL_LOG"
 	[[ "$output" == *"$CORE_FPR"* ]]
 }
 
@@ -225,18 +233,29 @@ core_cleanup() {
 		NPASS_CORE_KEY="$CORE_KEY" NPASS_CORE_BASE_URL="https://example.invalid/npass/releases" \
 		"$PROJECT_DIR/install.sh" --core-ref=v9.8 --no-extensions
 	[ "$status" -eq 0 ]
-	grep -qxF 'https://example.invalid/npass/releases/download/v9.8/npass' "$CURL_LOG"
+	grep -qxF 'https://example.invalid/npass/releases/download/v9.8/npass-core.tar.gz' "$CURL_LOG"
 }
 
 @test "core adulterado depois de assinado é recusado e nada é instalado" {
 	core_release
-	printf '#!/usr/bin/env bash\necho adulterado\n' >"$CORE_RELEASE_DIR/npass"
+	printf "adulterado" >>"$CORE_RELEASE_DIR/npass-core.tar.gz"
 	run env PREFIX="$PREFIX" PATH="$MOCKBIN:$PATH" CURL_LOG="$CURL_LOG" CORE_RELEASE_DIR="$CORE_RELEASE_DIR" \
 		NPASS_CORE_KEY="$CORE_KEY" NPASS_CORE_BASE_URL="https://example.invalid/npass/releases" \
 		"$PROJECT_DIR/install.sh" --no-extensions
 	[ "$status" -ne 0 ]
 	[ ! -e "$PREFIX/bin/npass" ]
-	[[ "$output" == *"assinatura do npass INVÁLIDA"* ]]
+	[[ "$output" == *"assinatura do pacote core INVÁLIDA"* ]]
+}
+
+@test "execução via stdin instala o pacote completo sem checkout" {
+	core_release
+	run bash -c 'env PREFIX="$PREFIX" PATH="$MOCKBIN:$PATH" CURL_LOG="$CURL_LOG" CORE_RELEASE_DIR="$CORE_RELEASE_DIR" NPASS_CORE_KEY="$CORE_KEY" NPASS_CORE_BASE_URL="https://example.invalid/npass/releases" bash -s -- --no-extensions --no-tui < "$PROJECT_DIR/install.sh"' _ 
+	[ "$status" -eq 0 ]
+	[ -x "$PREFIX/bin/npass" ]
+	[ -s "$PREFIX/share/man/man1/npass.1" ]
+	[ -s "$PREFIX/share/npass/encrypts_alternatives/wordlist.txt" ]
+	[ -s "$PREFIX/share/applications/npass-open.desktop" ]
+	[ -s "$PREFIX/share/npass/extension-signing-key.asc" ]
 }
 
 # --------------------------------------------------------------------------
