@@ -159,7 +159,7 @@ ext_valid_src() {
 # Local source only (no network). Prints the ABSOLUTE path. Returns 1 for an
 # explicit source that is unusable (hard error), 2 when there is no local copy.
 find_ext_src() {
-	local cand bundle
+	local cand bundle selected
 	ext_helper_src=""
 	if [[ -n "$ext_src" ]]; then
 		if [[ -d "$ext_src/extensions" ]] && ext_valid_src "$ext_src/extensions"; then
@@ -168,17 +168,24 @@ find_ext_src() {
 			return 0
 		fi
 		if [[ -d "$ext_src" ]] && ext_valid_src "$ext_src"; then
+			selected=""
 			for bundle in "$ext_src"/dist/*; do
 				[[ -d "$bundle/helpers" && -d "$bundle/extensions" ]] || continue
 				if ext_valid_src "$bundle/extensions"; then
-					if [[ -n "$ext_helper_src" ]]; then
+					if [[ -n "$selected" ]]; then
+						selected=""
 						ext_helper_src=""
 						break
 					fi
+					selected="$bundle"
 					ext_helper_src="$bundle/helpers"
 				fi
 			done
-			(cd "$ext_src" && pwd)
+			if [[ -n "$selected" ]]; then
+				(cd "$selected/extensions" && pwd)
+			else
+				(cd "$ext_src" && pwd)
+			fi
 			return 0
 		fi
 		echo "install.sh: sem extensões ou pacote de release válido em: $ext_src" >&2
@@ -188,23 +195,29 @@ find_ext_src() {
 	base="$(cd .. && pwd)"
 	for cand in "$base/npass-extensions"; do
 		if [[ -d "$cand" ]] && ext_valid_src "$cand"; then
+			selected=""
 			for bundle in "$cand"/dist/*; do
 				[[ -d "$bundle/helpers" && -d "$bundle/extensions" ]] || continue
 				if ext_valid_src "$bundle/extensions"; then
-					if [[ -n "$ext_helper_src" ]]; then
+					if [[ -n "$selected" ]]; then
+						selected=""
 						ext_helper_src=""
 						break
 					fi
+					selected="$bundle"
 					ext_helper_src="$bundle/helpers"
 				fi
 			done
-			printf '%s\n' "$cand"
+			if [[ -n "$selected" ]]; then
+				(cd "$selected/extensions" && pwd)
+			else
+				printf '%s\\n' "$cand"
+			fi
 			return 0
 		fi
 	done
 	return 2
 }
-
 extension_safe_parent_tree() {
 	local PATH=/usr/bin:/bin:/usr/sbin:/sbin
 	local path="$1" meta uid mode
