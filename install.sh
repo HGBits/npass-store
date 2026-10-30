@@ -173,7 +173,7 @@ detect_extensions_target() {
 # Local source only (no network). Prints the ABSOLUTE path. Returns 1 for an
 # explicit source that is unusable (hard error), 2 when there is no local copy.
 find_ext_src() {
-	local cand bundle selected
+	local cand selected
 	ext_helper_src=""
 	if [[ -n "$ext_src" ]]; then
 		if [[ -d "$ext_src/extensions" ]] && ext_valid_src "$ext_src/extensions"; then
@@ -182,26 +182,10 @@ find_ext_src() {
 			return 0
 		fi
 		if [[ -d "$ext_src" ]] && ext_valid_src "$ext_src"; then
-			selected=""
-			if detect_extensions_target && [[ -d "$ext_src/dist/$ext_target/extensions" && -d "$ext_src/dist/$ext_target/helpers" ]] &&
-				ext_valid_src "$ext_src/dist/$ext_target/extensions"; then
+			if detect_extensions_target && [[ -d "$ext_src/dist/$ext_target/extensions" &&
+				-d "$ext_src/dist/$ext_target/helpers" ]] && ext_valid_src "$ext_src/dist/$ext_target/extensions"; then
 				selected="$ext_src/dist/$ext_target"
 				ext_helper_src="$selected/helpers"
-			fi
-			for bundle in "$ext_src"/dist/*; do
-				[[ -z "$selected" ]] || break
-				[[ -d "$bundle/helpers" && -d "$bundle/extensions" ]] || continue
-				if ext_valid_src "$bundle/extensions"; then
-					if [[ -n "$selected" ]]; then
-						selected=""
-						ext_helper_src=""
-						break
-					fi
-					selected="$bundle"
-					ext_helper_src="$bundle/helpers"
-				fi
-			done
-			if [[ -n "$selected" ]]; then
 				(cd "$selected/extensions" && pwd)
 			else
 				(cd "$ext_src" && pwd)
@@ -215,26 +199,10 @@ find_ext_src() {
 	base="$(cd .. && pwd)"
 	for cand in "$base/npass-extensions"; do
 		if [[ -d "$cand" ]] && ext_valid_src "$cand"; then
-			selected=""
-			if detect_extensions_target && [[ -d "$cand/dist/$ext_target/extensions" && -d "$cand/dist/$ext_target/helpers" ]] &&
-				ext_valid_src "$cand/dist/$ext_target/extensions"; then
+			if detect_extensions_target && [[ -d "$cand/dist/$ext_target/extensions" &&
+				-d "$cand/dist/$ext_target/helpers" ]] && ext_valid_src "$cand/dist/$ext_target/extensions"; then
 				selected="$cand/dist/$ext_target"
 				ext_helper_src="$selected/helpers"
-			fi
-			for bundle in "$cand"/dist/*; do
-				[[ -z "$selected" ]] || break
-				[[ -d "$bundle/helpers" && -d "$bundle/extensions" ]] || continue
-				if ext_valid_src "$bundle/extensions"; then
-					if [[ -n "$selected" ]]; then
-						selected=""
-						ext_helper_src=""
-						break
-					fi
-					selected="$bundle"
-					ext_helper_src="$bundle/helpers"
-				fi
-			done
-			if [[ -n "$selected" ]]; then
 				(cd "$selected/extensions" && pwd)
 			else
 				printf '%s\n' "$cand"
