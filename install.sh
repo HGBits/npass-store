@@ -69,6 +69,7 @@ ext_mode=auto # auto = ask only on a terminal | yes | no
 tui_mode=auto # auto = ask only on a terminal | yes | no
 ext_only=0
 ext_src="${NPASS_EXTENSIONS_SRC:-}"
+ext_helper_src=""
 ext_ref=""
 ext_repo="${NPASS_EXTENSIONS_REPO:-https://github.com/HGBits/npass-extensions.git}"
 ext_tmp=""
@@ -155,19 +156,45 @@ ext_valid_src() {
 # Local source only (no network). Prints the ABSOLUTE path. Returns 1 for an
 # explicit source that is unusable (hard error), 2 when there is no local copy.
 find_ext_src() {
-	local cand
+	local cand bundle
+	ext_helper_src=""
 	if [[ -n "$ext_src" ]]; then
+		if [[ -d "$ext_src/extensions" ]] && ext_valid_src "$ext_src/extensions"; then
+			ext_helper_src="$ext_src/helpers"
+			(cd "$ext_src/extensions" && pwd)
+			return 0
+		fi
 		if [[ -d "$ext_src" ]] && ext_valid_src "$ext_src"; then
+			for bundle in "$ext_src"/dist/*; do
+				[[ -d "$bundle/helpers" && -d "$bundle/extensions" ]] || continue
+				if ext_valid_src "$bundle/extensions"; then
+					if [[ -n "$ext_helper_src" ]]; then
+						ext_helper_src=""
+						break
+					fi
+					ext_helper_src="$bundle/helpers"
+				fi
+			done
 			(cd "$ext_src" && pwd)
 			return 0
 		fi
-		echo "install.sh: sem extensões (arquivos npass-*) em: $ext_src" >&2
+		echo "install.sh: sem extensões ou pacote de release válido em: $ext_src" >&2
 		return 1
 	fi
 	local base
 	base="$(cd .. && pwd)"
 	for cand in "$base/npass-extensions"; do
 		if [[ -d "$cand" ]] && ext_valid_src "$cand"; then
+			for bundle in "$cand"/dist/*; do
+				[[ -d "$bundle/helpers" && -d "$bundle/extensions" ]] || continue
+				if ext_valid_src "$bundle/extensions"; then
+					if [[ -n "$ext_helper_src" ]]; then
+						ext_helper_src=""
+						break
+					fi
+					ext_helper_src="$bundle/helpers"
+				fi
+			done
 			printf '%s\n' "$cand"
 			return 0
 		fi
