@@ -230,7 +230,7 @@ core_cleanup() {
 
 @test "core adulterado depois de assinado é recusado e nada é instalado" {
 	core_release
-	printf '#!/usr/bin/env bash\\necho adulterado\\n' >"$CORE_RELEASE_DIR/npass"
+	printf '#!/usr/bin/env bash\necho adulterado\n' >"$CORE_RELEASE_DIR/npass"
 	run env PREFIX="$PREFIX" PATH="$MOCKBIN:$PATH" CURL_LOG="$CURL_LOG" CORE_RELEASE_DIR="$CORE_RELEASE_DIR" \
 		NPASS_CORE_KEY="$CORE_KEY" NPASS_CORE_BASE_URL="https://example.invalid/npass/releases" \
 		"$PROJECT_DIR/install.sh" --no-extensions
