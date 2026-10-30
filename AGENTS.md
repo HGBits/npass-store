@@ -31,10 +31,10 @@ Este arquivo é o índice operacional do projeto. Use-o para localizar rapidamen
 | Sistema de extensões (assinatura, contrato com o core) | `lib/11-extensions.bash` | `tests/extensions.bats`, `tests/batch-ext.bats` |
 | Extensões (import, passkey + daemon FIDO2, audit, clipboard X11/Windows) | repositório `npass-extensions`, ao lado deste (`../npass-extensions`; a pasta antiga `../npass_extensions` também vale) | cada uma tem testes e `AGENTS.md` lá; aqui ficam `install.sh` e os testes de instalação |
 | Instalação (de onde vêm as extensões; `npass-tui` e extensões oficiais = artefatos assinados e verificados com `packaging/npass-release.asc`) | `install.sh` | `tests/install.bats`, `tests/install-ext.bats`, `tests/install-passkey.bats`, `lib/11-extensions.bash` |
-| Build do executável | `build.sh` | `lib/*.bash`, `tests/install.bats` |
-| Geração e assinatura do pacote de Release | `release.sh` | `build.sh`, `install.sh`, `packaging/npass-release.asc` |
+| Geração do executável | `release.sh --build-only` | `lib/*.bash`, `tests/install.bats` |
+| Geração e assinatura do pacote de Release | `release.sh` | `install.sh`, `packaging/npass-release.asc` |
 | Testes de uma funcionalidade | `tests/<funcionalidade>.bats` | implementação correspondente |
-| Empacotamento Arch | `packaging/PKGBUILD` | `install.sh`, `build.sh` |
+| Empacotamento Arch | `packaging/PKGBUILD` | `release.sh --build-only` |
 | Documentação pública | `README.md`, `man/npass.1` | implementação/testes somente para verificar fatos |
 
 ## Cadeia de dependência conceitual
@@ -67,14 +67,14 @@ lib/00-main.bash
              |
              +--> tests/*
 
-build.sh ---> gera bin/npass a partir de lib/
+release.sh --build-only ---> gera bin/npass a partir de lib/
 ```
 
 ## Regras para agentes
 
 1. `bin/npass` é artefato gerado. Não editar diretamente.
 2. Alterações de implementação devem partir de `lib/`. As extensões moram no repositório `npass-extensions` e têm o `AGENTS.md` delas; se uma mudança aqui altera um comando ou o md1 que elas usam, é mudança de contrato: ajuste lá também.
-3. Depois de alterar `lib/`, executar `./build.sh` antes de validar o executável.
+3. Depois de alterar `lib/`, executar `bash release.sh --build-only` antes de validar o executável.
 4. Ao alterar uma funcionalidade, localizar primeiro o teste correspondente em `tests/`.
 5. Não modificar fixtures GPG só para fazer um teste passar sem entender o motivo.
 6. Em segurança, distinguir claramente comportamento observado de inferência.
