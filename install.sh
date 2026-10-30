@@ -211,7 +211,7 @@ find_ext_src() {
 			if [[ -n "$selected" ]]; then
 				(cd "$selected/extensions" && pwd)
 			else
-				printf '%s\\n' "$cand"
+				printf '%s\n' "$cand"
 			fi
 			return 0
 		fi
