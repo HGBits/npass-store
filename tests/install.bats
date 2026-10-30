@@ -162,6 +162,84 @@ setup() {
 }
 
 # --------------------------------------------------------------------------
+# Core npass: release assinado, baixado e VERIFICADO antes de instalar
+# --------------------------------------------------------------------------
+
+core_release() {
+	export CORE_RELEASE_DIR="$BATS_TEST_TMPDIR/core-release"
+	export CORE_KEY="$BATS_TEST_TMPDIR/core-release-key.asc"
+	export MOCKBIN="$BATS_TEST_TMPDIR/core-mockbin" CURL_LOG="$BATS_TEST_TMPDIR/core-curl.log"
+	local gh
+	gh="$(mktemp -d /tmp/npass-core-gpg.XXXXXX)"
+	chmod 700 "$gh"
+	mkdir -p "$CORE_RELEASE_DIR" "$MOCKBIN"
+	: >"$CURL_LOG"
+	GNUPGHOME="$gh" gpg --batch --quiet --passphrase '' --quick-generate-key 'Core Release Teste <core-release@example.invalid>' ed25519 sign never 2>/dev/null
+	GNUPGHOME="$gh" gpg --batch --armor --export >"$CORE_KEY"
+	CORE_FPR="$(GNUPGHOME="$gh" gpg --batch --with-colons --list-keys | awk -F: '/^fpr:/ {print $10; exit}')"
+	printf '#!/usr/bin/env bash\necho core-release-test\n' >"$CORE_RELEASE_DIR/npass"
+	chmod +x "$CORE_RELEASE_DIR/npass"
+	GNUPGHOME="$gh" gpg --batch --yes --armor --detach-sign --output "$CORE_RELEASE_DIR/npass.asc" "$CORE_RELEASE_DIR/npass"
+	CORE_GH="$gh"
+	cat >"$MOCKBIN/curl" <<'MOCK'
+#!/usr/bin/env bash
+out="" url=""
+while [ $# -gt 0 ]; do
+	case "$1" in
+		-o) out="$2"; shift ;;
+		--) shift; url="$1"; break ;;
+	esac
+	shift
+done
+printf '%s\n' "$url" >>"$CURL_LOG"
+src="$CORE_RELEASE_DIR/${url##*/}"
+[ -f "$src" ] || exit 22
+cp "$src" "$out"
+MOCK
+	chmod +x "$MOCKBIN/curl"
+}
+
+core_cleanup() {
+	[[ -n ${CORE_GH:-} ]] || return 0
+	GNUPGHOME="$CORE_GH" gpgconf --kill gpg-agent 2>/dev/null || true
+	rm -rf -- "$CORE_GH"
+}
+
+@test "instala core baixado de release somente depois de validar assinatura" {
+	core_release
+	run env PREFIX="$PREFIX" PATH="$MOCKBIN:$PATH" CURL_LOG="$CURL_LOG" CORE_RELEASE_DIR="$CORE_RELEASE_DIR" \
+		NPASS_CORE_KEY="$CORE_KEY" NPASS_CORE_BASE_URL="https://example.invalid/npass/releases" \
+		"$PROJECT_DIR/install.sh" --no-extensions
+	[ "$status" -eq 0 ]
+	[ -x "$PREFIX/bin/npass" ]
+	[[ "$output" == *"release core verificada"* ]]
+	[ "$("$PREFIX/bin/npass")" = "core-release-test" ]
+	grep -qxF 'https://example.invalid/npass/releases/latest/download/npass' "$CURL_LOG"
+	grep -qxF 'https://example.invalid/npass/releases/latest/download/npass.asc' "$CURL_LOG"
+	[[ "$output" == *"$CORE_FPR"* ]]
+}
+
+@test "core-ref seleciona release especifica" {
+	core_release
+	run env PREFIX="$PREFIX" PATH="$MOCKBIN:$PATH" CURL_LOG="$CURL_LOG" CORE_RELEASE_DIR="$CORE_RELEASE_DIR" \
+		NPASS_CORE_KEY="$CORE_KEY" NPASS_CORE_BASE_URL="https://example.invalid/npass/releases" \
+		"$PROJECT_DIR/install.sh" --core-ref=v9.8 --no-extensions
+	[ "$status" -eq 0 ]
+	grep -qxF 'https://example.invalid/npass/releases/download/v9.8/npass' "$CURL_LOG"
+}
+
+@test "core adulterado depois de assinado é recusado e nada é instalado" {
+	core_release
+	printf '#!/usr/bin/env bash\\necho adulterado\\n' >"$CORE_RELEASE_DIR/npass"
+	run env PREFIX="$PREFIX" PATH="$MOCKBIN:$PATH" CURL_LOG="$CURL_LOG" CORE_RELEASE_DIR="$CORE_RELEASE_DIR" \
+		NPASS_CORE_KEY="$CORE_KEY" NPASS_CORE_BASE_URL="https://example.invalid/npass/releases" \
+		"$PROJECT_DIR/install.sh" --no-extensions
+	[ "$status" -ne 0 ]
+	[ ! -e "$PREFIX/bin/npass" ]
+	[[ "$output" == *"assinatura do npass INVÁLIDA"* ]]
+}
+
+# --------------------------------------------------------------------------
 # npass-tui: release assinado, baixado e VERIFICADO antes de instalar
 # --------------------------------------------------------------------------
 
@@ -209,7 +287,7 @@ tui_cleanup() {
 	rm -rf -- "$TUI_GH"
 }
 
-teardown() { tui_cleanup; }
+teardown() { tui_cleanup; core_cleanup; }
 
 run_tui_install() {
 	run env PREFIX="$PREFIX" PATH="$MOCKBIN:$PATH" CURL_LOG="$CURL_LOG" TUI_DIR="$TUI_DIR" \
