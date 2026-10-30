@@ -10,8 +10,8 @@ Testes Bats do projeto. Use-os como índice de comportamento esperado antes de a
 |---|---|
 | `identity.bats` | identidades |
 | `install.bats` | instalação (inclui `npass-tui`: release assinado de mentira, verificação GPG, adulteração, chave errada/dupla/ausente) |
-| `install-ext.bats` | instalação de extensões: de onde vêm (`--extensions-src`, `../npass-extensions`, clone com pergunta), assinatura, destino |
-| `install-passkey.bats` | instalação do `npass-passkey`: o cargo (de mentira) só roda se a extensão for escolhida; helper instalado, assinado e selado |
+| `install-ext.bats` | instalação compartilhada XDG, chave pública de confiança, recusa de artefatos sem assinatura ou assinados por terceiros, desinstalação |
+| `install-passkey.bats` | garante que o instalador não compila helpers nem aceita extensões passkey sem assinatura oficial |
 | `extensions.bats` | execução/contrato de extensões |
 | `batch-ext.bats` | execução em lote de extensões |
 | `otp.bats` | OTP |

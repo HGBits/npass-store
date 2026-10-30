@@ -12,6 +12,7 @@ setup() {
 	[ "$status" -eq 0 ]
 	[ -x "$PREFIX/bin/npass" ]
 	[ -f "$PREFIX/share/man/man1/npass.1" ]
+	[ -f "$PREFIX/share/npass/extension-signing-key.asc" ]
 }
 
 @test "binario instalado executa e responde ao help" {
@@ -26,6 +27,8 @@ setup() {
 	run stat -c '%a' "$PREFIX/bin/npass"
 	[ "$output" = "755" ]
 	run stat -c '%a' "$PREFIX/share/man/man1/npass.1"
+	[ "$output" = "644" ]
+	run stat -c '%a' "$PREFIX/share/npass/extension-signing-key.asc"
 	[ "$output" = "644" ]
 }
 
@@ -42,6 +45,7 @@ setup() {
 	[ "$status" -eq 0 ]
 	[ ! -e "$PREFIX/bin/npass" ]
 	[ ! -e "$PREFIX/share/man/man1/npass.1" ]
+	[ ! -e "$PREFIX/share/npass/extension-signing-key.asc" ]
 }
 
 @test "--uninstall sem nada instalado nao falha, so avisa" {
@@ -65,6 +69,7 @@ setup() {
 	[ "$status" -eq 0 ]
 	[ -x "$destdir/usr/bin/npass" ]
 	[ -f "$destdir/usr/share/man/man1/npass.1" ]
+	[ -f "$destdir/usr/share/npass/extension-signing-key.asc" ]
 	after="$(stat -c '%i %Y %s' /usr/bin/npass 2>/dev/null || echo ausente)"
 	[ "$before" = "$after" ]
 }

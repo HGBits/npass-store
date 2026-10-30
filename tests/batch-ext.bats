@@ -102,12 +102,17 @@ commits() { git -C "$NPASS_STORE" rev-list --count HEAD; }
 # --- NPASS_BIN -----------------------------------------------------------------
 
 @test "a extensao recebe NPASS_BIN apontando para o npass que a executou" {
+	[[ "$EUID" -eq 0 ]] || skip "testa extensao em diretório root-owned"
+	local base="$BATS_TEST_TMPDIR/share" dir="$BATS_TEST_TMPDIR/share/npass/extensions"
+	export XDG_DATA_DIRS="$base"
+	mkdir -p "$dir"
+	gpg --batch --export "$FPR" >"$base/npass/extension-signing-key.asc"
+	chmod 644 "$base/npass/extension-signing-key.asc"
 	printf '#!/bin/bash\nprintf "%%s" "$NPASS_BIN"\n' >"$BATS_TEST_TMPDIR/npass-quem"
 	chmod 755 "$BATS_TEST_TMPDIR/npass-quem"
-	mkdir -p "$NPASS_EXTENSIONS_DIR"
-	install -m 755 "$BATS_TEST_TMPDIR/npass-quem" "$NPASS_EXTENSIONS_DIR/npass-quem"
-	"$NPASS" extension sign "$NPASS_EXTENSIONS_DIR/npass-quem" "$FPR" >/dev/null
-	NPASS_ENABLE_EXTENSIONS=1 run "$NPASS" quem
+	install -m 755 "$BATS_TEST_TMPDIR/npass-quem" "$dir/npass-quem"
+	gpg --batch --yes --default-key "$FPR" --detach-sign -o "$dir/npass-quem.sig" "$dir/npass-quem"
+	run "$NPASS" quem
 	[ "$status" -eq 0 ]
 	[ "$output" = "$(readlink -f "$NPASS")" ]
 }

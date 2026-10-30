@@ -111,18 +111,23 @@ npass_test_ext_src() {
 	export NPASS_EXTENSIONS_SRC="$dst"
 }
 
-# npass_test_install_ext ARQUIVO - instala a extensao ARQUIVO (sem o sufixo .bash,
-# que o comando nao usa) em $NPASS_EXTENSIONS_DIR, assina com a chave de teste e liga
-# as extensoes. Faz o que o install.sh faz quando voce aceita a extensao, sem prompt.
-# Requer NPASS, FPR e NPASS_EXTENSIONS_DIR ja definidos (e GNUPGHOME).
+# npass_test_install_ext ARQUIVO - prepara uma extensao assinada com a chave
+# de teste no diretorio XDG compartilhado. Os testes exigem root para reproduzir
+# a propriedade e as permissoes exigidas em producao.
 npass_test_install_ext() {
+	[[ "$EUID" -eq 0 ]] || skip "extensoes oficiais exigem arvore root-owned"
 	npass_test_ext_src "$1" || return 1
-	local src="$NPASS_EXTENSIONS_SRC/$1" name="${1%.bash}" dest
-	dest="$NPASS_EXTENSIONS_DIR/$name"
-	mkdir -p "$NPASS_EXTENSIONS_DIR"
+	local src="$NPASS_EXTENSIONS_SRC/$1" name="${1%.bash}" base dir dest
+	base="$BATS_TEST_TMPDIR/share"
+	dir="$base/npass/extensions"
+	dest="$dir/$name"
+	export XDG_DATA_DIRS="$base"
+	export NPASS_EXTENSIONS_DIR="$dir"
+	mkdir -p "$dir"
+	gpg --batch --export "$FPR" >"$base/npass/extension-signing-key.asc"
+	chmod 644 "$base/npass/extension-signing-key.asc"
 	install -m 755 "$src" "$dest"
-	"$NPASS" extension sign "$dest" "$FPR" >/dev/null || return 1
-	export NPASS_ENABLE_EXTENSIONS=1
+	gpg --batch --yes --default-key "$FPR" --detach-sign -o "$dest.sig" "$dest"
 }
 
 # md1_doc SENHA [CHAVE: VALOR]... -> documento md1 (sem \n final) com os campos dados.

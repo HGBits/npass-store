@@ -94,8 +94,7 @@ NPASS_DICEWARE_SEP
 NPASS_WORDLIST
 NPASS_WORDLIST_SRC
 NPASS_CLIP_TIME
-NPASS_ENABLE_EXTENSIONS
-NPASS_EXTENSIONS_DIR
+XDG_DATA_DIRS
 ```
 
 ## Ajuda
@@ -429,42 +428,34 @@ Qualquer falha não instala nada; com `--tui` o `install.sh` termina com status 
 
 ## Extensões
 
-As extensões são desativadas por padrão.
+Extensões oficiais são executáveis externos, mas a autorização é centralizada no mantenedor do NPASS. Não existe ativação por variável de ambiente nem assinatura feita pelo usuário.
 
-Para habilitá-las:
+O NPASS procura `npass-*` em cada diretório de dados de `XDG_DATA_DIRS`, sob `npass/extensions`. Se a variável não estiver definida, usa `/usr/local/share:/usr/share`. O caminho padrão do pacote é:
 
-```bash
-export NPASS_ENABLE_EXTENSIONS=1
+Se usar um `PREFIX` personalizado, inclua também o respectivo diretório `share` em `XDG_DATA_DIRS` para que todas as contas encontrem as extensões.
+
+```text
+/usr/share/npass/extensions/
 ```
 
-Extensões precisam ser arquivos regulares, possuir permissões restritivas e uma assinatura GPG válida, feita por uma chave **sua** (`npass extension sign ARQUIVO`; confira com `npass extension list`). A extensão recebe `NPASS_STORE`, `NPASS_GPG`, `NPASS_LANG` e `NPASS_BIN` (o `npass` exato que a executou).
+A chave pública de confiança é instalada em `/usr/share/npass/extension-signing-key.asc`. Ela corresponde à chave pública de release do projeto em `packaging/npass-release.asc`. A verificação usa um chaveiro GPG temporário que contém exclusivamente essa chave, confere a fingerprint da chave primária e não consulta nem altera o chaveiro do usuário.
 
-### Instalando as extensões (repositório `npass-extensions`)
+Para executar, o executável, sua assinatura `.sig`, a chave e os diretórios da árvore precisam ser arquivos/diretórios reais, pertencentes a root e sem escrita por grupo ou outros usuários. Diretórios XDG controlados pelo usuário não são fontes confiáveis. Arquivos sem assinatura oficial, adulterados ou assinados por outra chave são recusados.
 
-O `install.sh` **não instala nenhuma extensão por padrão**. Rodando num terminal, depois de instalar o npass ele oferece cada extensão do repositório [`npass-extensions`](https://github.com/HGBits/npass-extensions), uma por uma e com uma descrição curta; as que você aceitar já vão direto para o destino final (`~/.local/share/npass/extensions`) e são assinadas com a sua chave. Instalar É o ato de confiar: leia antes.
+O instalador **não assina código**. Quando solicitado, oferece os artefatos encontrados no repositório [`npass-extensions`](https://github.com/HGBits/npass-extensions), mas instala somente os que já possuem uma assinatura válida da chave oficial:
+
+A origem pode ser definida por `--extensions-src=DIR` (ou `NPASS_EXTENSIONS_SRC`); sem isso, o instalador procura `../npass-extensions` e, se não encontrar, pergunta antes de clonar `NPASS_EXTENSIONS_REPO` (padrão: `https://github.com/HGBits/npass-extensions.git`). `--extensions-ref=REF` fixa branch ou tag. O commit Git é apenas origem do download: a autorização vem exclusivamente da assinatura individual do artefato.
 
 ```bash
-sudo ./install.sh                  # instala o npass e, num terminal, oferece as extensões
-./install.sh --extensions-only     # só as extensões (ex.: você usa o pacote do AUR)
-./install.sh --no-extensions       # nunca oferece
-./install.sh --sign-key=KEYID      # chave usada para assinar (padrão: a padrão do gpg)
-./install.sh --extensions-src=DIR  # usa este checkout do npass-extensions
-./install.sh --extensions-ref=REF  # branch ou tag a baixar, se for baixar
+sudo ./install.sh                  # instala npass e oferece extensões oficiais no terminal
+sudo ./install.sh --extensions-only # instala somente extensões oficiais
+sudo ./install.sh --no-extensions   # não oferece extensões
+sudo ./install.sh --extensions-src=DIR  # usa este checkout como origem
+sudo ./install.sh --extensions-ref=REF   # branch/tag a baixar
+npass extension list               # lista e verifica extensões instaladas
 ```
 
-**De onde vêm:** de `--extensions-src=DIR` (ou `$NPASS_EXTENSIONS_SRC`); senão de `../npass-extensions`, ao lado do clone do npass; senão o instalador avisa e **pergunta antes de baixar** (`git clone --depth 1` de `$NPASS_EXTENSIONS_REPO`, por padrão `https://github.com/HGBits/npass-extensions.git`, feito como o seu usuário num diretório temporário que some ao final). Uma origem passada à mão que não tem extensões é erro: o instalador nunca troca por rede escondido. O commit baixado (e se ele é assinado) é mostrado, porque o que você aceita é assinado com a SUA chave e depois roda com acesso aos seus segredos: leia antes, e prefira um `--extensions-ref` fixo (tag).
-
-- Sob `sudo`, o destino e a assinatura são do usuário que chamou o `sudo` (`SUDO_USER`), não do root.
-- Nada é perguntado quando a entrada não é um terminal nem com `DESTDIR` (empacotamento). O PKGBUILD usa `--no-extensions`.
-- `--uninstall` remove só o npass; as suas extensões ficam onde estão.
-- Se a assinatura falhar, o arquivo fica no lugar e o instalador mostra o comando exato (`npass extension sign ...`).
-- Para uma extensão sua aparecer no instalador, coloque nas 20 primeiras linhas `# npass-extension-desc: descrição curta` e, opcionalmente, `# npass-extension-needs: comando1 comando2` (avisa se faltar). Um arquivo `npass-foo.bash` é instalado como `npass-foo` e roda como `npass foo`.
-
-Extensões que acompanham:
-
-- **`npass-import`**: importa de outros gerenciadores e de stores `pass`/`pass-secrets` (abaixo). Precisa de `python3`.
-- **`npass-clip-x11`**: copia a senha ou um campo para o clipboard do X11, para quem ainda usa sessão gráfica X11 (o `clip` do core é Wayland). `npass clip-x11 [CAMPO] ID DIR/PASS`. Precisa de `xclip`.
-- **`npass-wclip`**: copia a senha ou um campo para o clipboard do windows, Por favor ler a [documentação](https://github.com/HGBits/npass-extensions/blob/master/docs/windows_Requisitos.md)
+`NPASS_ENABLE_EXTENSIONS` e `NPASS_EXTENSIONS_DIR` não fazem mais parte da configuração e não alteram o comportamento. O comando `npass extension sign` foi removido. A chave privada de release nunca deve ser armazenada neste repositório nem distribuída aos usuários.
 
 ### npass-import: importar de outros gerenciadores
 

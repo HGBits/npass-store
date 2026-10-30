@@ -113,8 +113,7 @@ npass_help_data() {
 
 @cat extensoes|Extensões
 @sub gerenciar|Gerenciar
-  extension sign CAMINHO [KEYID]   assina um executável de extensão
-  extension list           lista extensões e se cada uma passaria nas checagens
+  extension list           lista extensões oficiais e o estado da verificação
 @sub disponiveis|Disponíveis (instale com ./install.sh --extensions-only)
   import                   importa de outros gerenciadores e de stores pass (npass import --help)
   audit                    audita senhas por vazamentos, força e reutilização

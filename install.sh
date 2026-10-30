@@ -19,25 +19,18 @@
 # On Arch /usr/sbin is a symlink to /usr/bin, so /usr/bin/npass is
 # reachable as /usr/sbin/npass too.
 #
-# Extensions are OPTIONAL and nothing about them is installed unless you say
-# yes. They live in their own repository (npass-extensions), not in this one.
-# Run from a terminal, the installer offers them after installing npass, one
-# by one, with a short description, and puts each accepted one straight into
-# its final place (your extensions directory) and signs it with your key.
-# Nothing is asked when stdin is not a terminal, when DESTDIR is set
-# (packaging), or with --no-extensions / --no-tui.
+# Extensions are optional. When requested, only artifacts already signed by the
+# packaged NPASS release key are installed to the system-wide XDG data directory.
+# The installer never signs code and never uses the invoking user's private key.
 #
 # Where the extensions come from, in this order:
 #   1. --extensions-src=DIR (or $NPASS_EXTENSIONS_SRC): a checkout of
 #      npass-extensions. If it is given and has no npass-* files, that is an
 #      error: the installer never falls back to the network behind your back.
 #   2. ../npass-extensions, next to this repository, if it exists.
-#   3. Otherwise it says so and ASKS before downloading: git clone --depth 1
-#      of $NPASS_EXTENSIONS_REPO (default https://github.com/HGBits/npass-extensions.git),
-#      as your user, into a temporary directory removed on exit. Pin a branch
-#      or tag with --extensions-ref=REF. The commit it got (and whether it is
-#      signed) is printed, because what you accept here is signed with YOUR key
-#      and then runs with access to your secrets: read it first.
+#   3. Otherwise it asks before downloading the official source repository.
+#      Every candidate must already carry a detached signature from the
+#      packaged release key; unsigned and third-party artifacts are refused.
 #
 # npass-tui is NOT built here. It is a signed binary published as a release of
 # HGBits/npass-tui (files npass-tui and npass-tui.asc). The installer downloads
@@ -64,8 +57,6 @@
 #                                      (for the AUR package, or to add one later)
 #   ./install.sh --extensions-src=DIR  take the extensions from this checkout
 #   ./install.sh --extensions-ref=REF  branch or tag to clone when downloading
-#   ./install.sh --sign-key=KEYID      key used to sign accepted extensions
-#                                      (default: gpg's default key)
 
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
@@ -77,7 +68,6 @@ uninstall=0
 ext_mode=auto # auto = ask only on a terminal | yes | no
 tui_mode=auto # auto = ask only on a terminal | yes | no
 ext_only=0
-sign_key=""
 ext_src="${NPASS_EXTENSIONS_SRC:-}"
 ext_ref=""
 ext_repo="${NPASS_EXTENSIONS_REPO:-https://github.com/HGBits/npass-extensions.git}"
@@ -99,7 +89,6 @@ for arg in "$@"; do
 	--tui-key=*) tui_key="${arg#--tui-key=}" ;;
 	--extensions) ext_mode=yes ;;
 	--extensions-only) ext_mode=yes; ext_only=1 ;;
-	--sign-key=*) sign_key="${arg#--sign-key=}" ;;
 	--extensions-src=*) ext_src="${arg#--extensions-src=}" ;;
 	--extensions-ref=*) ext_ref="${arg#--extensions-ref=}" ;;
 	-h | --help)
@@ -123,6 +112,7 @@ man_target="$mandir/npass.1"
 # into the user's tree ($NPASS_STORE/wordlist.txt), which is where it is read from.
 words_dir="$DESTDIR$PREFIX/share/npass/encrypts_alternatives"
 words_target="$words_dir/wordlist.txt"
+trust_key_target="$DESTDIR$PREFIX/share/npass/extension-signing-key.asc"
 # Handler do esquema npass:// (links do `npass show` renderizado -> `npass open`).
 # O Exec leva o caminho ABSOLUTO do binario instalado: a sessao grafica nem sempre
 # tem ~/.local/bin no PATH.
@@ -185,176 +175,183 @@ find_ext_src() {
 	return 2
 }
 
+extension_safe_parent_tree() {
+	local PATH=/usr/bin:/bin:/usr/sbin:/sbin
+	local path="$1" meta uid mode
+	[[ "$path" != *"/../"* && "$path" != */.. && "$path" != *"/./"* && "$path" != */. && "$path" != *"//"* ]] || return 1
+	while [[ "$path" != "/" ]]; do
+		[[ -d "$path" && ! -L "$path" ]] || return 1
+		meta="$(stat -c '%u:%a' -- "$path" 2>/dev/null)" || return 1
+		uid="${meta%%:*}"; mode="${meta#*:}"
+		[[ "$uid" == 0 && "$mode" =~ ^[0-7]{3,4}$ ]] || return 1
+		(( (8#$mode & 0022) == 0 || (8#$mode & 01000) != 0 )) || return 1
+		path="${path%/*}"; [[ -n "$path" ]] || path="/"
+	done
+	return 0
+}
+
 offer_extensions() {
-	local signer="$1"
+	local PATH=/usr/bin:/bin:/usr/sbin:/sbin
 	local -a candidates=()
 	local f src rc=0
+	local -a clone_args=()
 	src="$(find_ext_src)" || rc=$?
 	((rc == 1)) && return 1
 
 	echo
-	echo "Extensões opcionais:"
-	echo "  Rodam como programas seus, com acesso aos seus segredos. Por isso só funcionam"
-	echo "  depois de assinadas por VOCÊ e com NPASS_ENABLE_EXTENSIONS=1. Nada é instalado"
-	echo "  sem você confirmar."
-	ask "Ver e instalar extensões agora?" || return 0
-
-	# The final place is the extensions directory of the user who will RUN npass
-	# (under sudo that is SUDO_USER, not root), so ownership and the signing key
-	# are theirs.
-	local ext_user="${SUDO_USER:-$(id -un)}" ext_home extdir
-	ext_home="$(getent passwd "$ext_user" | cut -d: -f6)"
-	[[ -n "$ext_home" ]] || ext_home="$HOME"
-	if [[ -n "${SUDO_USER:-}" && $EUID -eq 0 ]]; then
-		extdir="$ext_home/.local/share/npass/extensions"
-	else
-		extdir="${NPASS_EXTENSIONS_DIR:-${XDG_DATA_HOME:-$ext_home/.local/share}/npass/extensions}"
-	fi
-
-	as_user() {
-		if [[ $EUID -eq 0 && "$ext_user" != root ]]; then
-			runuser -u "$ext_user" -- env -u GNUPGHOME HOME="$ext_home" "$@"
-		else
-			"$@"
-		fi
-	}
-
-	# Shell para checar/compilar com o cargo de QUEM vai rodar o npass: ao trocar de
-	# usuário (sudo), um login shell carrega o PATH dele (~/.cargo/bin etc.); sem troca,
-	# vale o ambiente atual.
-	as_user_sh() {
-		if [[ $EUID -eq 0 && "$ext_user" != root ]]; then
-			as_user bash -lc "$1"
-		else
-			bash -c "$1"
-		fi
-	}
+	echo "Extensões oficiais:"
+	echo "  Somente artefatos com assinatura válida da chave de release do NPASS serão instalados."
+	echo "  A instalação é compartilhada pelo sistema e requer privilégios administrativos."
+	ask "Verificar e instalar extensões oficiais agora?" || return 0
 
 	if ((rc == 2)); then
-		echo
-		echo "  As extensões moram em outro repositório e não achei uma cópia local"
-		echo "  (procurei em $(cd .. && pwd)/npass-extensions; --extensions-src=DIR aponta outra)."
+		echo "  Não achei um checkout local de npass-extensions."
 		echo "  Repositório: $ext_repo${ext_ref:+ (ref: $ext_ref)}"
-		ask "  Baixar agora (git clone --depth 1, como $ext_user, em diretório temporário)?" || return 0
-		command -v git >/dev/null 2>&1 || {
-			echo "install.sh: git não encontrado; não dá para baixar as extensões." >&2
-			return 1
-		}
-		ext_tmp="$(as_user mktemp -d "${TMPDIR:-/tmp}/npass-ext.XXXXXX")" || return 1
+		ask "  Baixar a origem para verificar os artefatos?" || return 0
+		command -v git >/dev/null 2>&1 || { echo "install.sh: git não encontrado." >&2; return 1; }
+		ext_tmp="$(mktemp -d "${TMPDIR:-/tmp}/npass-ext-src.XXXXXX")" || return 1
 		trap 'rm -rf -- "$ext_tmp"' EXIT
 		src="$ext_tmp/src"
-		if ! as_user git clone --quiet --depth 1 ${ext_ref:+--branch "$ext_ref"} -- "$ext_repo" "$src"; then
-			echo "install.sh: falha ao baixar $ext_repo${ext_ref:+ (ref: $ext_ref)}." >&2
-			return 1
+		local ext_user="${SUDO_USER:-$(id -un)}" ext_home
+		ext_home="$(getent passwd "$ext_user" 2>/dev/null | cut -d: -f6)"
+		[[ -n "$ext_home" ]] || ext_home="$HOME"
+		if [[ $EUID -eq 0 && "$ext_user" != root ]]; then chown "$ext_user" "$ext_tmp"; fi
+		clone_args=(--quiet --depth 1)
+		[[ -n "$ext_ref" ]] && clone_args+=(--branch "$ext_ref")
+		if [[ $EUID -eq 0 && "$ext_user" != root ]] && command -v runuser >/dev/null 2>&1; then
+			if ! runuser -u "$ext_user" -- env HOME="$ext_home" GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null GIT_TERMINAL_PROMPT=0 git clone "${clone_args[@]}" -- "$ext_repo" "$src"; then
+				echo "install.sh: falha ao baixar $ext_repo${ext_ref:+ (ref: $ext_ref)}." >&2
+				return 1
+			fi
+		else
+			if ! GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null GIT_TERMINAL_PROMPT=0 git clone "${clone_args[@]}" -- "$ext_repo" "$src"; then
+				echo "install.sh: falha ao baixar $ext_repo${ext_ref:+ (ref: $ext_ref)}." >&2
+				return 1
+			fi
 		fi
-		local sig
-		sig="$(as_user git -C "$src" log -1 --format='%G?' 2>/dev/null || true)"
-		case "$sig" in
-		G | U) sig="commit assinado (assinatura confere)" ;;
-		N | "") sig="commit SEM assinatura" ;;
-		*) sig="assinatura do commit NÃO verificada ($sig)" ;;
-		esac
-		echo "  Baixado: $(as_user git -C "$src" log -1 --format='%h %s' 2>/dev/null) - $sig"
-		ext_valid_src "$src" || {
-			echo "install.sh: o repositório baixado não tem extensões (npass-*)." >&2
-			return 1
-		}
+		ext_valid_src "$src" || { echo "install.sh: o repositório baixado não contém extensões npass-*." >&2; return 1; }
+		echo "  Commit de origem: $(git -C "$src" rev-parse --short HEAD)"
+	fi
+
+	if [[ -z "$DESTDIR" && $EUID -ne 0 ]]; then
+		echo "install.sh: a instalação compartilhada de extensões requer root." >&2
+		return 1
+	fi
+	local extdir="$DESTDIR$PREFIX/share/npass/extensions"
+	local trust_key="$PWD/packaging/npass-release.asc"
+	local installed_key="$DESTDIR$PREFIX/share/npass/extension-signing-key.asc"
+	if [[ ! -s "$trust_key" ]]; then
+		echo "install.sh: chave pública oficial ausente: $trust_key" >&2
+		return 1
 	fi
 	for f in "$src"/npass-*; do
-		[[ -f "$f" ]] && candidates+=("$f")
+		[[ -f "$f" && "$f" != *.sig ]] && candidates+=("$f")
 	done
-	[[ ${#candidates[@]} -gt 0 ]] || return 0
+	(("${#candidates[@]}" > 0)) || {
+		echo "install.sh: nenhuma extensão encontrada em $src."
+		return 0
+	}
 
-	echo "Origem: $src"
-	echo "Destino: $extdir (usuário: $ext_user)"
-	local installed=0 name desc needs n dest keyargs tty_dev cargo_spec manifest helper_name built helper_built hdir qsrc qman
-	tty_dev="$(tty 2>/dev/null || true)"
-	[[ "$tty_dev" == /dev/* ]] || tty_dev=""
-	for f in "${candidates[@]}"; do
-		name="${f##*/}"
-		name="${name%.bash}" # npass-foo.bash is run as `npass foo`, from a file named npass-foo
-		desc="$(ext_field "$f" desc)"
-		needs="$(ext_field "$f" needs)"
-		echo
-		echo "  $name - ${desc:-(sem descrição)}"
-		if [[ -n "$needs" ]]; then
-			for n in $needs; do
-				command -v "$n" >/dev/null 2>&1 || echo "    aviso: requer '$n', que não foi encontrado no PATH."
-			done
-		fi
-		cargo_spec="$(ext_field "$f" cargo)"
-		ask "  Instalar $name?" || continue
-
-		# Extensão com helper nativo (Rust): só aqui, só porque foi escolhida,
-		# o cargo do usuário que vai RODAR o npass compila o código-fonte atual.
-		helper_built=""
-		if [[ -n "$cargo_spec" ]]; then
-			read -r manifest helper_name <<<"$cargo_spec"
-			manifest="$src/$manifest" # o caminho do cabeçalho é relativo à raiz do repo de extensões
-			if ! as_user_sh 'command -v cargo' >/dev/null 2>&1; then
-				echo "    erro: $name precisa do cargo (Rust) no ambiente de $ext_user, e ele não foi encontrado. Não instalada." >&2
-				continue
-			fi
-			built="$(dirname "$manifest")/target/release/$helper_name"
-			# nunca reaproveita binário antigo: apaga o que houver e exige um novo
-			rm -f -- "$built" "bin/$helper_name"
-			echo "    compilando $helper_name (cargo build --release --locked)..."
-			printf -v qsrc '%q' "$src"
-			printf -v qman '%q' "$manifest"
-			if ! as_user_sh "cd $qsrc && cargo build --release --locked --manifest-path $qman" >&2 || [[ ! -x "$built" ]]; then
-				echo "    erro: a compilação de $helper_name falhou. $name não instalada." >&2
-				continue
-			fi
-			helper_built="$built"
-		fi
-
-		dest="$extdir/$name"
-		if [[ -z "$helper_built" && -f "$dest" && -f "$dest.sig" ]] && cmp -s "$f" "$dest"; then
-			echo "    já instalada, idêntica e assinada: $dest"
-			((++installed))
-			continue
-		fi
-		as_user mkdir -p "$extdir"
-		as_user chmod 700 "$extdir" 2>/dev/null || true
-		as_user rm -f -- "$dest" "$dest.sig"
-		as_user install -m 755 -- "$f" "$dest"
-		echo "    instalada: $dest"
-		((++installed))
-
-		keyargs=()
-		[[ -n "$sign_key" ]] && keyargs=("$sign_key")
-		if as_user env ${tty_dev:+GPG_TTY="$tty_dev"} "$signer" extension sign "$dest" ${keyargs[@]+"${keyargs[@]}"} >/dev/null; then
-			echo "    assinada com a sua chave."
-		else
-			echo "    aviso: NÃO foi possível assinar. A extensão está no lugar, mas não roda até ser assinada:" >&2
-			echo "      npass extension sign $dest" >&2
-			continue
-		fi
-
-		# Helper nativo: copia, e o PRÓPRIO npass-passkey o sela (selo de compatibilidade
-		# + assinatura GPG do helper) - roda pelas portas normais de extensão.
-		if [[ -n "$helper_built" ]]; then
-			hdir="$(dirname "$extdir")/helpers"
-			[[ -n "${NPASS_HELPERS_DIR:-}" ]] && hdir="$NPASS_HELPERS_DIR"
-			as_user mkdir -p "$hdir"
-			as_user chmod 700 "$hdir" 2>/dev/null || true
-			as_user rm -f -- "$hdir/$helper_name" "$hdir/$helper_name.sig" "$hdir/$helper_name.stamp" "$hdir/$helper_name.stamp.sig"
-			as_user install -m 755 -- "$helper_built" "$hdir/$helper_name"
-			echo "    helper instalado: $hdir/$helper_name"
-			if as_user env NPASS_ENABLE_EXTENSIONS=1 NPASS_EXTENSIONS_DIR="$extdir" NPASS_HELPERS_DIR="$hdir" \
-				${tty_dev:+GPG_TTY="$tty_dev"} "$signer" "${name#npass-}" seal ${keyargs[@]+"${keyargs[@]}"} >/dev/null; then
-				echo "    helper selado e assinado com a sua chave."
-			else
-				echo "    aviso: NÃO foi possível selar o helper; 'npass passkey serve' recusa até: npass passkey seal" >&2
-			fi
-		fi
-	done
-
-	if [[ $installed -gt 0 ]]; then
-		echo
-		echo "Para ativar: export NPASS_ENABLE_EXTENSIONS=1   (por exemplo no seu shell rc)"
-		echo "Confira com: npass extension list"
+	local work gh nprim fpr status_out line primary name desc sig stage installed=0 gpg_bin gpgconf_bin
+	local -a status_fields=()
+	gpg_bin="$(PATH=/usr/bin:/bin command -v gpg)" || { echo "install.sh: gpg não encontrado." >&2; return 1; }
+	gpgconf_bin="$(PATH=/usr/bin:/bin command -v gpgconf)" || true
+	work="$(mktemp -d "${TMPDIR:-/tmp}/npass-ext-install.XXXXXX")" || return 1
+	gh="$work/gnupg"
+	mkdir -m 700 "$gh"
+	if ! GNUPGHOME="$gh" "$gpg_bin" --batch --quiet --import "$trust_key" 2>/dev/null; then
+		echo "install.sh: não foi possível importar a chave pública oficial." >&2
+		rm -rf -- "$work"; return 1
 	fi
+	nprim="$(GNUPGHOME="$gh" "$gpg_bin" --batch --with-colons --list-keys 2>/dev/null | grep -c '^pub:' || true)"
+	if [[ "$nprim" != 1 ]]; then
+		echo "install.sh: a chave oficial deve conter exatamente uma chave primária." >&2
+		if [[ -n "$gpgconf_bin" ]]; then GNUPGHOME="$gh" "$gpgconf_bin" --kill all 2>/dev/null || true; fi
+		rm -rf -- "$work"; return 1
+	fi
+	fpr="$(GNUPGHOME="$gh" "$gpg_bin" --batch --with-colons --list-keys 2>/dev/null | awk -F: '$1=="fpr"{print $10; exit}')"
+	[[ -n "$fpr" ]] || { rm -rf -- "$work"; return 1; }
+
+	local share_dir="$DESTDIR$PREFIX/share" npass_dir="$DESTDIR$PREFIX/share/npass"
+	if ! extension_safe_parent_tree "$share_dir"; then
+		echo "install.sh: PREFIX/share precisa existir em uma árvore root-owned e não gravável por outros usuários." >&2
+		rm -rf -- "$work"
+		return 1
+	fi
+	if [[ -e "$npass_dir" || -L "$npass_dir" ]] && ! extension_safe_parent_tree "$npass_dir"; then
+		echo "install.sh: diretório compartilhado do NPASS tem proprietário, link ou permissões inseguras." >&2
+		rm -rf -- "$work"
+		return 1
+	fi
+	if [[ -e "$extdir" || -L "$extdir" ]] && ! extension_safe_parent_tree "$extdir"; then
+		echo "install.sh: diretório de extensões tem proprietário, link ou permissões inseguras." >&2
+		rm -rf -- "$work"
+		return 1
+	fi
+	mkdir -p "$npass_dir" "$extdir"
+	if [[ -L "$installed_key" || ( -e "$installed_key" && ! -f "$installed_key" ) ]]; then
+		echo "install.sh: destino da chave de confiança não é um arquivo regular; recusado." >&2
+		rm -rf -- "$work"
+		return 1
+	fi
+	local key_tmp
+	key_tmp="$(mktemp "$npass_dir/.extension-key.XXXXXX")" || { rm -rf -- "$work"; return 1; }
+	install -m 644 "$trust_key" "$key_tmp"
+	chown root:root "$key_tmp"
+	mv -f -- "$key_tmp" "$installed_key"
+	chmod 755 "$npass_dir" "$extdir"
+	chown root:root "$npass_dir" "$extdir" "$installed_key"
+	echo "Origem: $src"
+	echo "Destino: $extdir"
+	for f in "${candidates[@]}"; do
+		name="${f##*/}"; name="${name%.bash}"
+		sig="$f.sig"
+		if [[ ! "$name" =~ ^npass-[a-z0-9][a-z0-9-]*$ ]]; then
+			echo "    recusada: nome de extensão inválido."
+			continue
+		fi
+		desc="$(ext_field "$f" desc)"
+		echo "  $name - ${desc:-(sem descrição)}"
+		if [[ -L "$f" || ! -f "$f" || -L "$sig" || ! -f "$sig" ]]; then
+			echo "    recusada: executável ou assinatura ausente/não regular."
+			continue
+		fi
+		# Copy first, then verify the staged bytes. The source checkout is user-controlled
+		# and must not be able to swap the executable after signature verification.
+		stage="$(mktemp -d "$extdir/.stage.XXXXXX")" || continue
+		if ! install -m 755 -- "$f" "$stage/npass-$name" ||
+			! install -m 644 -- "$sig" "$stage/npass-$name.sig"; then
+			rm -rf -- "$stage"; continue
+		fi
+		status_out="$(GNUPGHOME="$gh" "$gpg_bin" --batch --no-auto-key-retrieve --status-fd=1 --verify "$stage/npass-$name.sig" "$stage/npass-$name" 2>/dev/null)" || {
+			echo "    recusada: assinatura inválida."
+			rm -rf -- "$stage"
+			continue
+		}
+		line="$(grep '^\[GNUPG:\] VALIDSIG ' <<<"$status_out" | head -n1)"
+		read -r -a status_fields <<<"$line"
+		primary="${status_fields[11]:-${status_fields[2]:-}}"
+		if [[ "$primary" != "$fpr" ]] || grep -qE '^\[GNUPG:\] (BADSIG|ERRSIG|EXPKEYSIG|EXPSIG|REVKEYSIG|KEYREVOKED)' <<<"$status_out"; then
+			echo "    recusada: assinatura não pertence à chave oficial."
+			rm -rf -- "$stage"
+			continue
+		fi
+		chown -R root:root "$stage" 2>/dev/null || true
+		if [[ -L "$extdir/npass-$name" || -L "$extdir/npass-$name.sig" || ( -e "$extdir/npass-$name" && ! -f "$extdir/npass-$name" ) || ( -e "$extdir/npass-$name.sig" && ! -f "$extdir/npass-$name.sig" ) ]]; then
+			echo "    recusada: destino existente não é arquivo regular."
+			rm -rf -- "$stage"
+			continue
+		fi
+		mv -f -- "$stage/npass-$name" "$extdir/npass-$name"
+		mv -f -- "$stage/npass-$name.sig" "$extdir/npass-$name.sig"
+		rmdir -- "$stage"
+		echo "    instalada e verificada."
+		((++installed))
+	done
+	if [[ -n "$gpgconf_bin" ]]; then GNUPGHOME="$gh" "$gpgconf_bin" --kill all 2>/dev/null || true; fi
+	rm -rf -- "$work"
+	echo "Extensões oficiais instaladas: $installed"
+	echo "Confira com: npass extension list"
 }
 
 # --------------------------------------------------------------------------
@@ -364,7 +361,8 @@ offer_extensions() {
 # Download + verify + install, all inside "$1" (a private temp dir). Returns 0
 # only after the signature was verified AND the binary was installed.
 tui_fetch_verify() {
-	local work="$1" key url bin asc gh fpr nprim status_out line last f
+	local work="$1" key url bin asc gh fpr nprim status_out line last f gpg_bin
+	gpg_bin="$(command -v gpg)" || return 1
 	key="${tui_key:-$PWD/packaging/npass-release.asc}"
 	if [[ ! -s "$key" ]]; then
 		echo "aviso: chave pública de release não encontrada: $key" >&2
@@ -382,16 +380,16 @@ tui_fetch_verify() {
 	# Keyring descartável: só a chave de release, nunca o chaveiro do usuário.
 	gh="$work/gnupg"
 	mkdir -m 700 "$gh"
-	if ! GNUPGHOME="$gh" gpg --batch --quiet --import "$key" 2>/dev/null; then
+	if ! GNUPGHOME="$gh" "$gpg_bin" --batch --quiet --import "$key" 2>/dev/null; then
 		echo "aviso: não foi possível importar $key." >&2
 		return 1
 	fi
-	nprim="$(GNUPGHOME="$gh" gpg --batch --with-colons --list-keys 2>/dev/null | grep -c '^pub:' || true)"
+	nprim="$(GNUPGHOME="$gh" "$gpg_bin" --batch --with-colons --list-keys 2>/dev/null | grep -c '^pub:' || true)"
 	if [[ "$nprim" != 1 ]]; then
 		echo "aviso: $key deve conter exatamente UMA chave pública (tem $nprim); recusado." >&2
 		return 1
 	fi
-	fpr="$(GNUPGHOME="$gh" gpg --batch --with-colons --list-keys 2>/dev/null | awk -F: '/^fpr:/ {print $10; exit}')"
+	fpr="$(GNUPGHOME="$gh" "$gpg_bin" --batch --with-colons --list-keys 2>/dev/null | awk -F: '/^fpr:/ {print $10; exit}')"
 	[[ -n "$fpr" ]] || {
 		echo "aviso: não consegui ler o fingerprint da chave de release." >&2
 		return 1
@@ -418,7 +416,7 @@ tui_fetch_verify() {
 
 	# Aceita só: gpg com status 0, GOODSIG e VALIDSIG cuja chave primária é a de
 	# release. Nada de BADSIG/ERRSIG/EXPKEYSIG/EXPSIG/REVKEYSIG.
-	if ! status_out="$(GNUPGHOME="$gh" gpg --batch --status-fd 1 --verify "$asc" "$bin" 2>/dev/null)"; then
+	if ! status_out="$(GNUPGHOME="$gh" "$gpg_bin" --batch --status-fd 1 --verify "$asc" "$bin" 2>/dev/null)"; then
 		echo "aviso: assinatura de npass-tui INVÁLIDA (ou de outra chave); nada instalado." >&2
 		return 1
 	fi
@@ -470,28 +468,24 @@ offer_tui() {
 # --extensions-only: do not touch npass itself
 # --------------------------------------------------------------------------
 if [[ $ext_only -eq 1 ]]; then
-	if [[ -x "$bin_target" ]]; then
-		signer="$bin_target"
-	else
-		signer="$(command -v npass 2>/dev/null || true)"
-	fi
-	if [[ -z "$signer" ]]; then
+	if [[ ! -x "$bin_target" ]] && ! command -v npass >/dev/null 2>&1; then
 		echo "install.sh: npass não encontrado. Instale-o antes (sudo ./install.sh)." >&2
 		exit 1
 	fi
-	offer_extensions "$signer"
+	offer_extensions
 	exit 0
 fi
 
 if [[ $uninstall -eq 1 ]]; then
 	removed=0
-	for f in "$bin_target" "$tui_target" "$man_target" "$words_target" "$desktop_target"; do
+	for f in "$bin_target" "$tui_target" "$man_target" "$words_target" "$desktop_target" "$trust_key_target"; do
 		if [[ -e "$f" ]]; then
 			rm -f -- "$f"
 			echo "removido: $f"
 			removed=1
 		fi
 	done
+	rm -rf -- "$DESTDIR$PREFIX/share/npass/extensions"
 	rmdir -- "$words_dir" "$DESTDIR$PREFIX/share/npass" 2>/dev/null || true
 	[[ $removed -eq 0 ]] && echo "nada instalado em ${BINDIR:-$PREFIX/bin} (DESTDIR=${DESTDIR:-<vazio>}) para remover."
 	exit 0
@@ -528,7 +522,14 @@ bash build.sh
 old_umask="$(umask)"
 umask 022
 
-mkdir -p "$bindir" "$mandir" "$words_dir" "$desktop_dir"
+mkdir -p "$bindir" "$mandir" "$words_dir" "$desktop_dir" "$DESTDIR$PREFIX/share/npass"
+if [[ -L "$DESTDIR$PREFIX/share" || -L "$DESTDIR$PREFIX/share/npass" || -L "$trust_key_target" || ( -e "$trust_key_target" && ! -f "$trust_key_target" ) ]]; then
+	echo "install.sh: destino da chave de confiança contém link ou não é arquivo regular." >&2
+	exit 1
+fi
+key_tmp="$(mktemp "$DESTDIR$PREFIX/share/npass/.extension-key.XXXXXX")"
+install -m 644 packaging/npass-release.asc "$key_tmp"
+mv -f -- "$key_tmp" "$trust_key_target"
 install -m 755 bin/npass "$bin_target"
 install -m 644 man/npass.1 "$man_target"
 install -m 644 encrypts_alternatives/wordlist.txt "$words_target"
@@ -537,6 +538,7 @@ chmod 644 "$desktop_target"
 echo "instalado: $bin_target"
 echo "instalado: $man_target"
 echo "instalado: $words_target"
+echo "instalada chave de confiança das extensões: $trust_key_target"
 echo "instalado: $desktop_target"
 # Registra o handler npass:// (so fora de empacotamento; o pacote faz isso no hook).
 if [[ -z "$DESTDIR" ]] && command -v update-desktop-database >/dev/null 2>&1; then
@@ -574,7 +576,7 @@ fi
 
 if [[ -z "$DESTDIR" && "$ext_mode" != no ]]; then
 	if [[ "$ext_mode" == yes || ( -t 0 && -t 1 ) ]]; then
-		offer_extensions "$bin_target"
+		offer_extensions
 	fi
 fi
 
