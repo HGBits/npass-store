@@ -121,7 +121,7 @@ npass_gpg_encrypt() {
 }
 
 # npass_gpg_detach_sign FILE SIG_OUT [KEYID]
-# Shared by .gpg-id signing and extension signing - same operation,
+# Shared by .gpg-id signing and other detached-signature operations - same operation,
 # different target file.
 npass_gpg_detach_sign() {
 	local file="$1" sig_out="$2" keyid="$3"

@@ -30,7 +30,7 @@ Este arquivo é o índice operacional do projeto. Use-o para localizar rapidamen
 | Assinatura de identidades/artefatos | `lib/10-signing.bash` | `tests/signing.bats` |
 | Sistema de extensões (assinatura, contrato com o core) | `lib/11-extensions.bash` | `tests/extensions.bats`, `tests/batch-ext.bats` |
 | Extensões (import, passkey + daemon FIDO2, audit, clipboard X11/Windows) | repositório `npass-extensions`, ao lado deste (`../npass-extensions`; a pasta antiga `../npass_extensions` também vale) | cada uma tem testes e `AGENTS.md` lá; aqui ficam `install.sh` e os testes de instalação |
-| Instalação (de onde vêm as extensões; `npass-tui` = release assinado, baixado e verificado com `packaging/npass-release.asc`) | `install.sh` | `tests/install.bats`, `tests/install-ext.bats`, `tests/install-passkey.bats`, `lib/11-extensions.bash` |
+| Instalação (de onde vêm as extensões; `npass-tui` e extensões oficiais = artefatos assinados e verificados com `packaging/npass-release.asc`) | `install.sh` | `tests/install.bats`, `tests/install-ext.bats`, `tests/install-passkey.bats`, `lib/11-extensions.bash` |
 | Build do executável | `build.sh` | `lib/*.bash`, `tests/install.bats` |
 | Testes de uma funcionalidade | `tests/<funcionalidade>.bats` | implementação correspondente |
 | Empacotamento Arch | `packaging/PKGBUILD` | `install.sh`, `build.sh` |
