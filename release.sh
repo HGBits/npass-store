@@ -4,7 +4,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 
 usage() {
 	cat <<'EOF'
-Uso: ./release.sh [DIRETORIO_DE_SAIDA]
+Uso: bash release.sh [DIRETORIO_DE_SAIDA]
 
 Gera o pacote completo de release e o assina com a chave privada de release
 já presente no chaveiro GPG do mantenedor.
