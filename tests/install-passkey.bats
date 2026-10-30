@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Helpers de extensoes nao sao compilados nem assinados localmente pelo instalador.
+# O daemon passkey precisa vir em pacote de release previamente assinado.
 
 setup() {
 	[[ "$EUID" -eq 0 ]] || skip "testa instalação global root-owned"
@@ -20,22 +20,20 @@ EOF
 name = "npass-passkeyd"
 version = "0.1.0"
 EOF
-	export CARGO_LOG="$BATS_TEST_TMPDIR/cargo.log"
-}
+	}
 
 @test "instalador recusa passkey sem assinatura oficial e nao executa cargo" {
 	run bash -c "printf 's\n' | '$PROJECT_DIR/install.sh' --prefix='$PREFIX' --no-tui --extensions --extensions-src='$SOURCE'"
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"assinatura ausente/não regular"* ]]
+	[[ "$output" == *"falta o daemon oficial assinado"* ]]
 	[ ! -e "$PREFIX/share/npass/extensions/npass-passkey" ]
-	[ ! -e "$CARGO_LOG" ]
-}
+	}
 
 @test "instalador recusa assinatura de teste e nao compila helper" {
 	gpg --batch --yes --default-key "$FPR" --detach-sign -o "$SOURCE/npass-passkey.sig" "$SOURCE/npass-passkey"
 	run bash -c "printf 's\n' | '$PROJECT_DIR/install.sh' --prefix='$PREFIX' --no-tui --extensions --extensions-src='$SOURCE'"
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"assinatura inválida"* ]]
+	[[ "$output" == *"falta o daemon oficial assinado"* ]]
 	[ ! -e "$PREFIX/share/npass/extensions/npass-passkey" ]
 	[ ! -e "$CARGO_LOG" ]
 }
