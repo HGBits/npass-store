@@ -28,6 +28,7 @@ npass_main() {
 	loglong) cmd_loglong "$@" ;;
 	sign) cmd_sign "$@" ;;
 	extension) cmd_extension "$@" ;;
+	xclip) npass_try_extension clip-x11 "$@" || npass_die "$(npass_t erro_comando_desconhecido "$cmd")" ;;
 	clip) cmd_clip "$@" ;;
 	get) cmd_get "$@" ;;
 	pin) cmd_pin "$@" ;;
