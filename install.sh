@@ -523,6 +523,8 @@ offer_extensions() {
 		fi
 		mv -f -- "$stage/npass-$name" "$extdir/npass-$name"
 		mv -f -- "$stage/npass-$name.sig" "$extdir/npass-$name.sig"
+		# Remove the exact stale double-prefixed artifact produced by older installers.
+		rm -f -- "$extdir/npass-npass-$name" "$extdir/npass-npass-$name.sig"
 		rmdir -- "$stage"
 		echo "    instalada e verificada."
 		((++installed))
