@@ -381,7 +381,7 @@ offer_extensions() {
 		return 0
 	}
 
-	local work gh nprim fpr status_out line primary name desc sig stage installed=0 gpg_bin gpgconf_bin helper_stage helper_ready=0 passkey_installed=0 helperdir helper_tmp artifact proto hsha esha
+	local work gh nprim fpr status_out line primary name desc sig stage installed=0 gpg_bin gpgconf_bin helper_stage helper_ready=0 passkey_installed=0 helperdir helper_tmp artifact proto hsha esha stale
 	local -a status_fields=()
 	gpg_bin="$(PATH=/usr/bin:/bin command -v gpg)" || { echo "install.sh: gpg não encontrado." >&2; return 1; }
 	gpgconf_bin="$(PATH=/usr/bin:/bin command -v gpgconf)" || true
@@ -524,7 +524,9 @@ offer_extensions() {
 		mv -f -- "$stage/npass-$name" "$extdir/npass-$name"
 		mv -f -- "$stage/npass-$name.sig" "$extdir/npass-$name.sig"
 		# Remove the exact stale double-prefixed artifact produced by older installers.
-		rm -f -- "$extdir/npass-npass-$name" "$extdir/npass-npass-$name.sig"
+		for stale in "$extdir/npass-npass-$name" "$extdir/npass-npass-$name.sig"; do
+			if [[ -f "$stale" || -L "$stale" ]]; then rm -f -- "$stale"; fi
+		done
 		rmdir -- "$stage"
 		echo "    instalada e verificada."
 		((++installed))
