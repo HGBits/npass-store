@@ -158,3 +158,15 @@ EOF
 		[ "$status" -ne 0 ]
 	done
 }
+
+@test "npass xclip e alias publico para a extensao clip-x11" {
+	cat >"$NPASS_TEST_EXT_DIR/npass-clip-x11" <<'EOF'
+#!/usr/bin/env bash
+printf 'xclip direto: %s\\n' "$*"
+EOF
+	chmod 755 "$NPASS_TEST_EXT_DIR/npass-clip-x11"
+	sign_with_official_test_key "$NPASS_TEST_EXT_DIR/npass-clip-x11"
+	run "$NPASS" xclip login pessoal email/gmail
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"xclip direto: login pessoal email/gmail"* ]]
+}
