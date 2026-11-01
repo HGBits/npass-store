@@ -3,7 +3,7 @@ name: extension-contract
 on:
   pull_request:
     paths:
-      - "install.sh"
+      - "release.sh"\n      - "install.sh"
       - "lib/**"
       - "tests/**"
       - ".github/workflows/extension-contract.yml"
