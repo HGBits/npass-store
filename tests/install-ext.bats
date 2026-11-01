@@ -43,6 +43,7 @@ inst() { "$PROJECT_DIR/install.sh" --prefix="$PREFIX" --no-tui "$@"; }
 @test "extensions-only instala a chave de confianca e nao assina codigo com chave do usuario" {
 	inst --no-extensions >/dev/null
 	run bash -c "printf 's\n' | '$PROJECT_DIR/install.sh' --prefix='$PREFIX' --no-tui --extensions-only --extensions-src='$SOURCE'"
+	if [ "$status" -ne 0 ]; then printf '%s\n' "$output" >&3; fi
 	[ "$status" -eq 0 ]
 	[ -f "$PREFIX/share/npass/extension-signing-key.asc" ]
 	[ ! -e "$PREFIX/share/npass/extensions/npass-test.sig" ]
@@ -84,6 +85,7 @@ inst() { "$PROJECT_DIR/install.sh" --prefix="$PREFIX" --no-tui "$@"; }
 		gpg --batch --yes --default-key "$FPR" --detach-sign -o "$SOURCE/$artifact.sig" "$SOURCE/$artifact"
 	done
 	run bash -c "printf 's\\n' | '$fixture/install.sh' --prefix='$PREFIX' --no-tui --extensions-only --extensions-src='$SOURCE'"
+	if [ "$status" -ne 0 ]; then printf '%s\n' "$output" >&3; fi
 	[ "$status" -eq 0 ]
 	[ -x "$PREFIX/share/npass/extensions/npass-audit" ]
 	[ -x "$PREFIX/share/npass/extensions/npass-clip-x11" ]
@@ -108,6 +110,7 @@ inst() { "$PROJECT_DIR/install.sh" --prefix="$PREFIX" --no-tui "$@"; }
 		gpg --batch --yes --default-key "$FPR" --detach-sign -o "$SOURCE/$artifact.sig" "$SOURCE/$artifact"
 	done
 	run bash -c "printf 's\\n' | '$fixture/install.sh' --prefix='$PREFIX' --no-tui --extensions-only --extensions-src='$SOURCE'"
+	if [ "$status" -ne 0 ]; then printf '%s\n' "$output" >&3; fi
 	[ "$status" -eq 0 ]
 	[ ! -e "$PREFIX/share/npass/extensions/npass-npass-audit" ]
 	[ ! -e "$PREFIX/share/npass/extensions/npass-Audit" ]
