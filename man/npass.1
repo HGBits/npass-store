@@ -496,6 +496,13 @@ file in the extensions directory with its status: \c
 naming the specific gate that failed. Checks only \- never executes
 anything.
 .TP
+.B "extension NAME"
+Run the named installed extension with the remaining arguments. For example,
+.B "npass extension audit ID"
+runs the official audit extension. Extension names are logical names without the
+.B npass-
+artifact prefix. Direct legacy extension commands remain accepted for compatibility.
+.TP
 .BR help " [" CATEGORY " [" SECTION ]]
 Without arguments, show the essential commands and the list of help categories.
 .B help
