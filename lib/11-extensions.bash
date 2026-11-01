@@ -105,7 +105,7 @@ npass_extension_check() {
 npass_try_extension() {
 	local name="$1" base dir key path
 	shift
-	[[ "$name" =~ ^[a-z0-9][a-z0-9-]*$ ]] || return 1
+	npass_extension_name_valid "$name" || return 1
 	while IFS= read -r base; do
 		dir="$base/npass/extensions"; path="$dir/npass-$name"
 		[[ -e "$path" || -L "$path" ]] || continue
@@ -140,7 +140,7 @@ cmd_extension_list() {
 			[[ "$f" == *.sig || ( ! -f "$f" && ! -L "$f" ) ]] && continue
 			found=1
 			name="${f##*/npass-}"
-			if [[ ! "$name" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
+			if ! npass_extension_name_valid "$name"; then
 				printf '%s: recusada (nome_invalido)\n' "$name"
 				continue
 			fi
@@ -162,6 +162,7 @@ cmd_extension() {
 	local sub="${1-}"; shift || true
 	case "$sub" in
 		list) cmd_extension_list "$@" ;;
-		*) npass_die "uso: npass extension list" ;;
+		'') npass_die "uso: npass extension list|NOME [ARGUMENTOS]" ;;
+		*) npass_try_extension "$sub" "$@" || npass_die "$(npass_t erro_comando_desconhecido "extension $sub")" ;;
 	esac
 }
