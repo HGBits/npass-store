@@ -77,7 +77,22 @@ else
 	source_root="$PWD"
 fi
 release_key="$source_root/packaging/npass-release.asc"
-source "$source_root/lib/extension-names.bash"
+if [[ -r "$source_root/lib/extension-names.bash" ]]; then
+	source "$source_root/lib/extension-names.bash"
+else
+	# Remote install.sh is piped to bash and has no checkout beside it.
+	npass_extension_name_valid() {
+		[[ ${1-} =~ ^[a-z0-9][a-z0-9-]*$ && ${1-} != npass-* ]]
+	}
+	npass_extension_artifact_name() {
+		local filename=${1##*/} name
+		filename=${filename%.bash}
+		[[ "$filename" == npass-* ]] || return 1
+		name=${filename#npass-}
+		npass_extension_name_valid "$name" || return 1
+		printf '%s' "$name"
+	}
+fi
 
 
 : "${PREFIX:=/usr}"
