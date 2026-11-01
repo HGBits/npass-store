@@ -77,6 +77,7 @@ else
 	source_root="$PWD"
 fi
 release_key="$source_root/packaging/npass-release.asc"
+source "$source_root/lib/extension-names.bash"
 
 
 : "${PREFIX:=/usr}"
@@ -464,12 +465,11 @@ offer_extensions() {
 	echo "Origem: $src"
 	echo "Destino: $extdir"
 	for f in "${candidates[@]}"; do
-		name="${f##*/}"; name="${name%.bash}"
-		sig="$f.sig"
-		if [[ ! "$name" =~ ^npass-[a-z0-9][a-z0-9-]*$ ]]; then
-			echo "    recusada: nome de extensão inválido."
+		name="$(npass_extension_artifact_name "$f")" || {
+			echo "    recusada: nome de extensão inválido (esperado npass-NOME[.bash])."
 			continue
-		fi
+		}
+		sig="$f.sig"
 		desc="$(ext_field "$f" desc)"
 		echo "  $name - ${desc:-(sem descrição)}"
 		if [[ "$name" == npass-passkey && "$helper_ready" -ne 1 ]]; then
