@@ -66,3 +66,45 @@ inst() { "$PROJECT_DIR/install.sh" --prefix="$PREFIX" --no-tui "$@"; }
 	[ ! -e "$PREFIX/share/npass/extensions" ]
 	[ ! -e "$PREFIX/share/npass/helpers" ]
 }
+
+@test "instalador remove um único prefixo e o core lista os nomes lógicos" {
+	local fixture="$BATS_TEST_TMPDIR/project"
+	mkdir -p "$fixture/packaging" "$fixture/lib"
+	cp "$PROJECT_DIR/install.sh" "$fixture/install.sh"
+	cp "$PROJECT_DIR/lib/extension-names.bash" "$fixture/lib/extension-names.bash"
+	gpg --batch --export "$FPR" >"$fixture/packaging/npass-release.asc"
+	for artifact in npass-audit npass-clip-x11.bash; do
+		printf '#!/usr/bin/env bash\nexit 0\n' >"$SOURCE/$artifact"
+		chmod 755 "$SOURCE/$artifact"
+		gpg --batch --yes --default-key "$FPR" --detach-sign -o "$SOURCE/$artifact.sig" "$SOURCE/$artifact"
+	done
+	run bash -c "printf 's\\n' | '$fixture/install.sh' --prefix='$PREFIX' --no-tui --extensions-only --extensions-src='$SOURCE'"
+	[ "$status" -eq 0 ]
+	[ -x "$PREFIX/share/npass/extensions/npass-audit" ]
+	[ -x "$PREFIX/share/npass/extensions/npass-clip-x11" ]
+	[ ! -e "$PREFIX/share/npass/extensions/npass-npass-audit" ]
+	[ ! -e "$PREFIX/share/npass/extensions/npass-npass-clip-x11" ]
+	run env XDG_DATA_DIRS="$PREFIX/share" "$PROJECT_DIR/bin/npass" extension list
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"audit: ok"* ]]
+	[[ "$output" == *"clip-x11: ok"* ]]
+}
+
+@test "instalador recusa prefixo duplicado e formato de nome inválido" {
+	local fixture="$BATS_TEST_TMPDIR/project"
+	mkdir -p "$fixture/packaging" "$fixture/lib"
+	cp "$PROJECT_DIR/install.sh" "$fixture/install.sh"
+	cp "$PROJECT_DIR/lib/extension-names.bash" "$fixture/lib/extension-names.bash"
+	gpg --batch --export "$FPR" >"$fixture/packaging/npass-release.asc"
+	for artifact in npass-npass-audit npass-Audit npass-audit.bash.bash; do
+		printf '#!/usr/bin/env bash\nexit 0\n' >"$SOURCE/$artifact"
+		chmod 755 "$SOURCE/$artifact"
+		gpg --batch --yes --default-key "$FPR" --detach-sign -o "$SOURCE/$artifact.sig" "$SOURCE/$artifact"
+	done
+	run bash -c "printf 's\\n' | '$fixture/install.sh' --prefix='$PREFIX' --no-tui --extensions-only --extensions-src='$SOURCE'"
+	[ "$status" -eq 0 ]
+	[ ! -e "$PREFIX/share/npass/extensions/npass-npass-audit" ]
+	[ ! -e "$PREFIX/share/npass/extensions/npass-Audit" ]
+	[ ! -e "$PREFIX/share/npass/extensions/npass-audit.bash" ]
+	[[ "$output" == *"nome de extensão inválido"* ]]
+}
