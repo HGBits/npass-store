@@ -38,8 +38,10 @@ esac
 
 build_core() {
 	local out="bin/npass"
+	local tmp
 	mkdir -p "$(dirname "$out")"
-	{
+	tmp="$(mktemp "${out}.XXXXXX")"
+	if ! {
 		echo '#!/usr/bin/env bash'
 		echo '# GENERATED FILE - built by release.sh from lib/*.bash. Do not edit directly.'
 		for f in lib/*.bash; do
@@ -48,9 +50,16 @@ build_core() {
 			echo
 		done
 		tail -n +2 lib/00-main.bash
-	} >"$out"
-	chmod 755 "$out"
-	bash -n "$out"
+	} >"$tmp"; then
+		rm -f -- "$tmp"
+		return 1
+	fi
+	if ! chmod 755 "$tmp" || ! bash -n "$tmp"; then
+		rm -f -- "$tmp"
+		echo "release.sh: binário gerado falhou na validação; versão anterior preservada." >&2
+		return 1
+	fi
+	mv -f -- "$tmp" "$out"
 	echo "built: $out"
 }
 

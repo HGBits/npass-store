@@ -125,7 +125,7 @@ No ambiente do mantenedor, com a chave privada correspondente à chave pública
 `packaging/npass-release.asc` disponível no chaveiro GPG:
 
 ```bash
-bash release.sh
+./release.sh
 ```
 
 O script gera o executável diretamente a partir de `lib/*.bash`, monta `dist/npass-core.tar.gz`, gera a assinatura
@@ -144,7 +144,7 @@ O gerador do executável é `release.sh`. Para reconstruir somente `bin/npass`,
 sem assinar nem acessar a rede:
 
 ```bash
-bash release.sh --build-only
+./release.sh --build-only
 ```
 
 O `install.sh` não compila código nem instala builds locais: ele aceita somente
@@ -612,7 +612,7 @@ Não edite diretamente o arquivo gerado.
 Após alterar os arquivos-fonte:
 
 ```bash
-bash release.sh --build-only
+./release.sh --build-only
 ```
 
 A estrutura do projeto separa as responsabilidades entre módulos de identidade, armazenamento, clipboard e OTP.
