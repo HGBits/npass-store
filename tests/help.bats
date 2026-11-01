@@ -184,7 +184,7 @@ fn() { NPASS_SRC="$NPASS" "$BASH" -c 'source <(sed "\$d" "$NPASS_SRC"); "$@"' _ 
 	local out="$output" f name n=0
 	for f in "$NPASS_EXTENSIONS_SRC"/npass-*; do
 		[ -f "$f" ] || continue
-		name="$(basename "$f")"; name="${name#npass-}"; name="${name%.bash}"
+		name="$(basename "$f")"; name="${name#npass-}"; name="${name%.bash}"; [[ $name == clip-x11 ]] && name=xclip
 		[[ "$out" == *$'\n'"  $name "* ]] || { echo "extensao sem ajuda: $name" >&3; false; }
 		n=$((n + 1))
 	done
