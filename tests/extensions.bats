@@ -132,3 +132,29 @@ EOF
 	[ "$status" -ne 0 ]
 	[[ "$output" == *"comando desconhecido"* ]]
 }
+
+@test "extensao aceita tambem a forma namespaced npass extension NOME" {
+	sign_with_official_test_key "$NPASS_TEST_EXT_DIR/npass-hello"
+	run "$NPASS" extension hello "arg com espaco" segundo-arg
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"ola de uma extensao: arg com espaco segundo-arg"* ]]
+}
+
+@test "extension list recusa artefato com prefixo duplicado sem normalizar silenciosamente" {
+	cat >"$NPASS_TEST_EXT_DIR/npass-npass-hello" <<'EOF'
+#!/usr/bin/env bash
+echo nunca deveria rodar
+EOF
+	chmod 755 "$NPASS_TEST_EXT_DIR/npass-npass-hello"
+	run "$NPASS" extension list
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"npass-hello: recusada (nome_invalido)"* ]]
+	[[ "$output" != *"hello: ok"* ]]
+}
+
+@test "npass extension recusa nome de subcomando malformado antes de procurar executavel" {
+	for name in ../hello npass-hello Hello hello_1; do
+		run "$NPASS" extension "$name"
+		[ "$status" -ne 0 ]
+	done
+}
