@@ -162,6 +162,7 @@ cmd_extension() {
 	local sub="${1-}"; shift || true
 	case "$sub" in
 		list) cmd_extension_list "$@" ;;
+		sign) npass_die "uso: npass extension list|NOME [ARGUMENTOS]" ;;
 		'') npass_die "uso: npass extension list|NOME [ARGUMENTOS]" ;;
 		*) npass_try_extension "$sub" "$@" || npass_die "$(npass_t erro_comando_desconhecido "extension $sub")" ;;
 	esac
