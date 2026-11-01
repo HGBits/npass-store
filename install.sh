@@ -774,6 +774,7 @@ core_fetch_verify() {
 # --extensions-only: do not touch npass itself
 # --------------------------------------------------------------------------
 if [[ $ext_only -eq 1 ]]; then
+	core_work=""
 	if (( remote_stdin )) && [[ -z "$core_key" ]]; then
 		core_work="$(mktemp -d "${TMPDIR:-/tmp}/npass-core-key.XXXXXX")"
 		if [[ -n "$core_ref" ]]; then key_url="$core_base/download/$core_ref"; else key_url="$core_base/latest/download"; fi
