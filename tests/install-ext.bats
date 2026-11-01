@@ -71,6 +71,9 @@ inst() { "$PROJECT_DIR/install.sh" --prefix="$PREFIX" --no-tui "$@"; }
 @test "instalador remove um único prefixo e o core lista os nomes lógicos" {
 	local fixture="$BATS_TEST_TMPDIR/project"
 	mkdir -p "$fixture/packaging" "$fixture/lib" "$PREFIX/share"
+	mkdir -p "$PREFIX/bin"
+	printf '#!/usr/bin/env bash\nexit 0\n' >"$PREFIX/bin/npass"
+	chmod 755 "$PREFIX/bin/npass"
 	cp "$PROJECT_DIR/install.sh" "$fixture/install.sh"
 	cp "$PROJECT_DIR/lib/extension-names.bash" "$fixture/lib/extension-names.bash"
 	gpg --batch --export "$FPR" >"$fixture/packaging/npass-release.asc"
@@ -102,6 +105,9 @@ inst() { "$PROJECT_DIR/install.sh" --prefix="$PREFIX" --no-tui "$@"; }
 @test "instalador recusa prefixo duplicado e formato de nome inválido" {
 	local fixture="$BATS_TEST_TMPDIR/project"
 	mkdir -p "$fixture/packaging" "$fixture/lib" "$PREFIX/share"
+	mkdir -p "$PREFIX/bin"
+	printf '#!/usr/bin/env bash\nexit 0\n' >"$PREFIX/bin/npass"
+	chmod 755 "$PREFIX/bin/npass"
 	cp "$PROJECT_DIR/install.sh" "$fixture/install.sh"
 	gpg --batch --export "$FPR" >"$fixture/packaging/npass-release.asc"
 	for artifact in npass-npass-audit npass-Audit npass-audit.bash.bash; do
