@@ -73,6 +73,11 @@ inst() { "$PROJECT_DIR/install.sh" --prefix="$PREFIX" --no-tui "$@"; }
 	cp "$PROJECT_DIR/install.sh" "$fixture/install.sh"
 	cp "$PROJECT_DIR/lib/extension-names.bash" "$fixture/lib/extension-names.bash"
 	gpg --batch --export "$FPR" >"$fixture/packaging/npass-release.asc"
+	mkdir -p "$PREFIX/share/npass/extensions"
+	printf old >"$PREFIX/share/npass/extensions/npass-npass-audit"
+	printf old >"$PREFIX/share/npass/extensions/npass-npass-audit.sig"
+	printf old >"$PREFIX/share/npass/extensions/npass-npass-clip-x11"
+	printf old >"$PREFIX/share/npass/extensions/npass-npass-clip-x11.sig"
 	for artifact in npass-audit npass-clip-x11.bash; do
 		printf '#!/usr/bin/env bash\nexit 0\n' >"$SOURCE/$artifact"
 		chmod 755 "$SOURCE/$artifact"
@@ -84,6 +89,8 @@ inst() { "$PROJECT_DIR/install.sh" --prefix="$PREFIX" --no-tui "$@"; }
 	[ -x "$PREFIX/share/npass/extensions/npass-clip-x11" ]
 	[ ! -e "$PREFIX/share/npass/extensions/npass-npass-audit" ]
 	[ ! -e "$PREFIX/share/npass/extensions/npass-npass-clip-x11" ]
+	[ ! -e "$PREFIX/share/npass/extensions/npass-npass-audit.sig" ]
+	[ ! -e "$PREFIX/share/npass/extensions/npass-npass-clip-x11.sig" ]
 	run env XDG_DATA_DIRS="$PREFIX/share" "$PROJECT_DIR/bin/npass" extension list
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"audit: ok"* ]]
