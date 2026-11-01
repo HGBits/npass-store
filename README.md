@@ -513,9 +513,11 @@ sudo ./install.sh --extensions-src=DIR  # checkout com dist/ ou pacote de releas
 sudo ./install.sh --extensions-ref=TAG   # release específica (padrão: latest)
 sudo ./install.sh --extensions-target=TRIPLE  # target Rust, se não autodetectado
 npass extension list               # lista e verifica extensões instaladas
+npass extension audit ID            # executa uma extensão pelo namespace
+npass extension clip-x11 ID DIR/PASS
 ```
 
-`NPASS_ENABLE_EXTENSIONS` e `NPASS_EXTENSIONS_DIR` não fazem mais parte da configuração e não alteram o comportamento. O comando `npass extension sign` foi removido. A chave privada de release nunca deve ser armazenada neste repositório nem distribuída aos usuários.
+`NPASS_ENABLE_EXTENSIONS` e `NPASS_EXTENSIONS_DIR` não fazem mais parte da configuração e não alteram o comportamento. O comando `npass extension sign` foi removido. Extensões são executadas pelo namespace `npass extension NOME`; o formato antigo de comando direto continua como alias de compatibilidade. A chave privada de release nunca deve ser armazenada neste repositório nem distribuída aos usuários.
 
 ### npass-import: importar de outros gerenciadores
 
