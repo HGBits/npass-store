@@ -185,38 +185,7 @@ fn() { NPASS_SRC="$NPASS" "$BASH" -c 'source <(sed "\$d" "$NPASS_SRC"); "$@"' _ 
 	for f in "$NPASS_EXTENSIONS_SRC"/npass-*; do
 		[ -f "$f" ] || continue
 		name="$(basename "$f")"; name="${name#npass-}"; name="${name%.bash}"
-		[[ "$out" == * || { echo "extensao sem ajuda: $name" >&3; false; }
-		n=$((n + 1))
-	done
-	[ "$n" -ge 5 ]
-}
-
-# --- integridade dos dados ---------------------------------------------------------------------------------
-
-@test "slugs unicos: categorias entre si e secoes dentro de cada categoria" {
-	run bash -c "source <(sed '\$d' '$NPASS'); npass_help_slugs | sort | uniq -d"
-	[ -z "$output" ]
-	local c
-	for c in $CATS; do
-		run bash -c "source <(sed '\$d' '$NPASS'); npass_help_slugs '$c' | sort | uniq -d"
-		[ -z "$output" ]
-	done
-}
-
-@test "formato dos dados: toda linha de conteudo e indentada; marcadores tem slug|texto" {
-	run fn npass_help_data
-	local l bad=0
-	while IFS= read -r l; do
-		[[ -z "$l" ]] && continue
-		if [[ "$l" == @cat\ * || "$l" == @sub\ * ]]; then
-			[[ "$l" == *"|"* ]] || bad=$((bad + 1))
-		else
-			[[ "$l" == "  "* ]] || bad=$((bad + 1))
-		fi
-	done <<<"$output"
-	[ "$bad" -eq 0 ]
-}
-\n'"  extension $name "* ]] || { echo "extensao sem ajuda: $name" >&3; false; }
+		[[ "$out" == *$'\n' "  extension $name "* ]] || { echo "extensao sem ajuda: $name" >&3; false; }
 		n=$((n + 1))
 	done
 	[ "$n" -ge 5 ]
