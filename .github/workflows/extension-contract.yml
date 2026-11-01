@@ -3,7 +3,8 @@ name: extension-contract
 on:
   pull_request:
     paths:
-      - "release.sh"\n      - "install.sh"
+      - "release.sh"
+      - "install.sh"
       - "lib/**"
       - "tests/**"
       - ".github/workflows/extension-contract.yml"
@@ -19,8 +20,12 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y bats gnupg
+      - name: Validate release builder syntax
+        run: bash -n release.sh
       - name: Build core binary for tests
         run: bash release.sh --build-only
+      - name: Validate generated binary syntax
+        run: bash -n bin/npass
       - name: Validate extension naming and integration
         run: |
           sudo bats tests/extension-names.bats tests/extensions.bats tests/install-ext.bats tests/help.bats
