@@ -77,6 +77,22 @@ else
 	source_root="$PWD"
 fi
 release_key="$source_root/packaging/npass-release.asc"
+if [[ -r "$source_root/lib/extension-names.bash" ]]; then
+	source "$source_root/lib/extension-names.bash"
+else
+	# Remote install.sh is piped to bash and has no checkout beside it.
+	npass_extension_name_valid() {
+		[[ ${1-} =~ ^[a-z0-9][a-z0-9-]*$ && ${1-} != npass-* ]]
+	}
+	npass_extension_artifact_name() {
+		local filename=${1##*/} name
+		filename=${filename%.bash}
+		[[ "$filename" == npass-* ]] || return 1
+		name=${filename#npass-}
+		npass_extension_name_valid "$name" || return 1
+		printf '%s' "$name"
+	}
+fi
 
 
 : "${PREFIX:=/usr}"
@@ -365,7 +381,7 @@ offer_extensions() {
 		return 0
 	}
 
-	local work gh nprim fpr status_out line primary name desc sig stage installed=0 gpg_bin gpgconf_bin helper_stage helper_ready=0 passkey_installed=0 helperdir helper_tmp artifact proto hsha esha
+	local work gh nprim fpr status_out line primary name desc sig stage installed=0 gpg_bin gpgconf_bin helper_stage helper_ready=0 passkey_installed=0 helperdir helper_tmp artifact proto hsha esha stale
 	local -a status_fields=()
 	gpg_bin="$(PATH=/usr/bin:/bin command -v gpg)" || { echo "install.sh: gpg não encontrado." >&2; return 1; }
 	gpgconf_bin="$(PATH=/usr/bin:/bin command -v gpgconf)" || true
@@ -464,12 +480,11 @@ offer_extensions() {
 	echo "Origem: $src"
 	echo "Destino: $extdir"
 	for f in "${candidates[@]}"; do
-		name="${f##*/}"; name="${name%.bash}"
-		sig="$f.sig"
-		if [[ ! "$name" =~ ^npass-[a-z0-9][a-z0-9-]*$ ]]; then
-			echo "    recusada: nome de extensão inválido."
+		name="$(npass_extension_artifact_name "$f")" || {
+			echo "    recusada: nome de extensão inválido (esperado npass-NOME[.bash])."
 			continue
-		fi
+		}
+		sig="$f.sig"
 		desc="$(ext_field "$f" desc)"
 		echo "  $name - ${desc:-(sem descrição)}"
 		if [[ "$name" == npass-passkey && "$helper_ready" -ne 1 ]]; then
@@ -508,6 +523,10 @@ offer_extensions() {
 		fi
 		mv -f -- "$stage/npass-$name" "$extdir/npass-$name"
 		mv -f -- "$stage/npass-$name.sig" "$extdir/npass-$name.sig"
+		# Remove the exact stale double-prefixed artifact produced by older installers.
+		for stale in "$extdir/npass-npass-$name" "$extdir/npass-npass-$name.sig"; do
+			if [[ -f "$stale" || -L "$stale" ]]; then rm -f -- "$stale"; fi
+		done
 		rmdir -- "$stage"
 		echo "    instalada e verificada."
 		((++installed))
@@ -755,6 +774,7 @@ core_fetch_verify() {
 # --extensions-only: do not touch npass itself
 # --------------------------------------------------------------------------
 if [[ $ext_only -eq 1 ]]; then
+	core_work=""
 	if (( remote_stdin )) && [[ -z "$core_key" ]]; then
 		core_work="$(mktemp -d "${TMPDIR:-/tmp}/npass-core-key.XXXXXX")"
 		if [[ -n "$core_ref" ]]; then key_url="$core_base/download/$core_ref"; else key_url="$core_base/latest/download"; fi

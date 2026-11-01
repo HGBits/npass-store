@@ -444,8 +444,8 @@ Os caminhos lógicos das senhas não são utilizados nas mensagens desses commit
 Toda a importação vive na extensão opcional `npass-import` (veja "Extensões"), inclusive a migração de stores do `pass`:
 
 ```bash
-npass import pass pessoal ~/.password-store                  # store pass tradicional
-npass import pass-secrets pessoal /caminho/da/identidade     # layout pass-secrets-redesign
+npass extension import pass pessoal ~/.password-store                  # store pass tradicional
+npass extension import pass-secrets pessoal /caminho/da/identidade     # layout pass-secrets-redesign
 ```
 
 - Se a identidade `pessoal` ainda não existir e a origem tiver `.gpg-id`, ela é criada com os mesmos destinatários, e já **assinada** se a origem tiver `.gpg-id.sig`. Uma identidade que já existia nunca é assinada como efeito colateral (isso continua sendo `npass sign`).
@@ -453,7 +453,7 @@ npass import pass-secrets pessoal /caminho/da/identidade     # layout pass-secre
 - No `pass-secrets` o codinome continua sendo o caminho lógico (para não ir parar no histórico do shell nem em `/proc/*/cmdline`); o nome real e o alias de e-mail viram os campos `- nome-real: ...` e `- email-alias: ...` dentro do segredo cifrado.
 - O corpo de cada `.gpg` de um store `pass` é texto puro (linha 1 = senha, depois `chave: valor`); o import o **converte para md1** na hora, pelas regras de "Como o corpo de um store pass vira md1" abaixo.
 
-> `npass migrate` e `npass migrate-secrets` não existem mais no core: viraram `npass import pass` e `npass import pass-secrets`. Rodar o comando antigo mostra esse aviso.
+> `npass migrate` e `npass migrate-secrets` não existem mais no core: viraram `npass extension import pass` e `npass extension import pass-secrets`. Rodar o comando antigo mostra esse aviso.
 
 ### Como o corpo de um store pass vira md1
 
@@ -513,9 +513,11 @@ sudo ./install.sh --extensions-src=DIR  # checkout com dist/ ou pacote de releas
 sudo ./install.sh --extensions-ref=TAG   # release específica (padrão: latest)
 sudo ./install.sh --extensions-target=TRIPLE  # target Rust, se não autodetectado
 npass extension list               # lista e verifica extensões instaladas
+npass extension audit ID            # executa uma extensão pelo namespace
+npass extension clip-x11 ID DIR/PASS
 ```
 
-`NPASS_ENABLE_EXTENSIONS` e `NPASS_EXTENSIONS_DIR` não fazem mais parte da configuração e não alteram o comportamento. O comando `npass extension sign` foi removido. A chave privada de release nunca deve ser armazenada neste repositório nem distribuída aos usuários.
+`NPASS_ENABLE_EXTENSIONS` e `NPASS_EXTENSIONS_DIR` não fazem mais parte da configuração e não alteram o comportamento. O comando `npass extension sign` foi removido. Extensões são executadas pelo namespace `npass extension NOME`; o formato antigo de comando direto continua como alias de compatibilidade. A chave privada de release nunca deve ser armazenada neste repositório nem distribuída aos usuários.
 
 ### npass-import: importar de outros gerenciadores
 
@@ -534,8 +536,8 @@ npass import firefox pessoal logins.csv --dry-run            # mostra o que fari
 npass import csv pessoal dados.csv --cols 'url,login,,password' --skip-header
 npass import aegis pessoal aegis-plain.json                  # vira URIs otpauth:// (npass otp)
 npass import bitwarden pessoal export.csv.gpg                # .gpg é decifrado em memória
-npass import pass pessoal ~/.password-store                  # store pass tradicional
-npass import pass-secrets pessoal /caminho/da/identidade     # layout pass-secrets-redesign
+npass extension import pass pessoal ~/.password-store                  # store pass tradicional
+npass extension import pass-secrets pessoal /caminho/da/identidade     # layout pass-secrets-redesign
 ```
 
 Formatos: `csv` (genérico), `bitwarden` (csv/json), `keepassxc`/`keepass`, `firefox`, `chrome`, `lastpass`, `1password`, `aegis`, `andotp`, `pass` e `pass-secrets`.

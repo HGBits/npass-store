@@ -43,6 +43,7 @@ inst() { "$PROJECT_DIR/install.sh" --prefix="$PREFIX" --no-tui "$@"; }
 @test "extensions-only instala a chave de confianca e nao assina codigo com chave do usuario" {
 	inst --no-extensions >/dev/null
 	run bash -c "printf 's\n' | '$PROJECT_DIR/install.sh' --prefix='$PREFIX' --no-tui --extensions-only --extensions-src='$SOURCE'"
+	if [ "$status" -ne 0 ]; then printf '%s\n' "$output" >&3; fi
 	[ "$status" -eq 0 ]
 	[ -f "$PREFIX/share/npass/extension-signing-key.asc" ]
 	[ ! -e "$PREFIX/share/npass/extensions/npass-test.sig" ]
@@ -65,4 +66,60 @@ inst() { "$PROJECT_DIR/install.sh" --prefix="$PREFIX" --no-tui "$@"; }
 	[ ! -e "$PREFIX/share/npass/extension-signing-key.asc" ]
 	[ ! -e "$PREFIX/share/npass/extensions" ]
 	[ ! -e "$PREFIX/share/npass/helpers" ]
+}
+
+@test "instalador remove um único prefixo e o core lista os nomes lógicos" {
+	local fixture="$BATS_TEST_TMPDIR/project"
+	mkdir -p "$fixture/packaging" "$fixture/lib" "$PREFIX/share"
+	mkdir -p "$PREFIX/bin"
+	printf '#!/usr/bin/env bash\nexit 0\n' >"$PREFIX/bin/npass"
+	chmod 755 "$PREFIX/bin/npass"
+	cp "$PROJECT_DIR/install.sh" "$fixture/install.sh"
+	cp "$PROJECT_DIR/lib/extension-names.bash" "$fixture/lib/extension-names.bash"
+	gpg --batch --export "$FPR" >"$fixture/packaging/npass-release.asc"
+	mkdir -p "$PREFIX/share/npass/extensions"
+	printf old >"$PREFIX/share/npass/extensions/npass-npass-audit"
+	printf old >"$PREFIX/share/npass/extensions/npass-npass-audit.sig"
+	printf old >"$PREFIX/share/npass/extensions/npass-npass-clip-x11"
+	printf old >"$PREFIX/share/npass/extensions/npass-npass-clip-x11.sig"
+	for artifact in npass-audit npass-clip-x11.bash; do
+		printf '#!/usr/bin/env bash\nexit 0\n' >"$SOURCE/$artifact"
+		chmod 755 "$SOURCE/$artifact"
+		gpg --batch --yes --default-key "$FPR" --detach-sign -o "$SOURCE/$artifact.sig" "$SOURCE/$artifact"
+	done
+	run bash -c "printf 's\\n' | '$fixture/install.sh' --prefix='$PREFIX' --no-tui --extensions-only --extensions-src='$SOURCE'"
+	if [ "$status" -ne 0 ]; then printf '%s\n' "$output" >&3; fi
+	[ "$status" -eq 0 ]
+	[ -x "$PREFIX/share/npass/extensions/npass-audit" ]
+	[ -x "$PREFIX/share/npass/extensions/npass-clip-x11" ]
+	[ ! -e "$PREFIX/share/npass/extensions/npass-npass-audit" ]
+	[ ! -e "$PREFIX/share/npass/extensions/npass-npass-clip-x11" ]
+	[ ! -e "$PREFIX/share/npass/extensions/npass-npass-audit.sig" ]
+	[ ! -e "$PREFIX/share/npass/extensions/npass-npass-clip-x11.sig" ]
+	run env XDG_DATA_DIRS="$PREFIX/share" "$PROJECT_DIR/bin/npass" extension list
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"audit: ok"* ]]
+	[[ "$output" == *"clip-x11: ok"* ]]
+}
+
+@test "instalador recusa prefixo duplicado e formato de nome inválido" {
+	local fixture="$BATS_TEST_TMPDIR/project"
+	mkdir -p "$fixture/packaging" "$fixture/lib" "$PREFIX/share"
+	mkdir -p "$PREFIX/bin"
+	printf '#!/usr/bin/env bash\nexit 0\n' >"$PREFIX/bin/npass"
+	chmod 755 "$PREFIX/bin/npass"
+	cp "$PROJECT_DIR/install.sh" "$fixture/install.sh"
+	gpg --batch --export "$FPR" >"$fixture/packaging/npass-release.asc"
+	for artifact in npass-npass-audit npass-Audit npass-audit.bash.bash; do
+		printf '#!/usr/bin/env bash\nexit 0\n' >"$SOURCE/$artifact"
+		chmod 755 "$SOURCE/$artifact"
+		gpg --batch --yes --default-key "$FPR" --detach-sign -o "$SOURCE/$artifact.sig" "$SOURCE/$artifact"
+	done
+	run bash -c "printf 's\\n' | '$fixture/install.sh' --prefix='$PREFIX' --no-tui --extensions-only --extensions-src='$SOURCE'"
+	if [ "$status" -ne 0 ]; then printf '%s\n' "$output" >&3; fi
+	[ "$status" -eq 0 ]
+	[ ! -e "$PREFIX/share/npass/extensions/npass-npass-audit" ]
+	[ ! -e "$PREFIX/share/npass/extensions/npass-Audit" ]
+	[ ! -e "$PREFIX/share/npass/extensions/npass-audit.bash" ]
+	[[ "$output" == *"nome de extensão inválido"* ]]
 }

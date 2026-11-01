@@ -1,0 +1,26 @@
+name: extension-contract
+
+on:
+  pull_request:
+    paths:
+      - "install.sh"
+      - "lib/**"
+      - "tests/**"
+      - ".github/workflows/extension-contract.yml"
+  push:
+    branches: [master, fix/extension-artifact-names]
+
+jobs:
+  extension-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bats gnupg
+      - name: Build core binary for tests
+        run: bash release.sh --build-only
+      - name: Validate extension naming and integration
+        run: |
+          sudo bats tests/extension-names.bats tests/extensions.bats tests/install-ext.bats tests/help.bats

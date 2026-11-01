@@ -114,12 +114,18 @@ npass_help_data() {
 @cat extensoes|Extensões
 @sub gerenciar|Gerenciar
   extension list           lista extensões oficiais e o estado da verificação
+  extension NOME           executa uma extensão oficial (ex.: extension audit ID)
 @sub disponiveis|Disponíveis (instale com ./install.sh --extensions-only)
-  import                   importa de outros gerenciadores e de stores pass (npass import --help)
-  audit                    audita senhas por vazamentos, força e reutilização
-  passkey                  passkeys (WebAuthn/FIDO2) guardadas só no npass
-  clip-x11                 copia senha ou campo para o clipboard do X11 (xclip)
-  wclip                    copia senha ou campo para o clipboard do Windows
+  import                   alias antigo: npass import --help
+  audit                    alias antigo: npass audit ID
+  passkey                  alias antigo: npass passkey
+  clip-x11                 alias antigo: npass clip-x11
+  wclip                    alias antigo: npass wclip
+  extension import         importa de outros gerenciadores e de stores pass
+  extension audit          audita senhas por vazamentos, força e reutilização
+  extension passkey        passkeys (WebAuthn/FIDO2) guardadas só no npass
+  extension clip-x11       copia senha ou campo para o clipboard do X11 (xclip)
+  extension wclip          copia senha ou campo para o clipboard do Windows
 EOF
 }
 
