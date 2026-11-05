@@ -9,13 +9,8 @@
 # NÃO TESTADO com makepkg/namcap de verdade - este ambiente de build
 # não tem ferramentas Arch disponíveis. Rode `makepkg -si` e
 # `namcap PKGBUILD` (e `namcap npass-git-*.pkg.tar.zst` depois de
-# empacotar) antes de publicar. Dois campos abaixo são placeholder
-# de propósito e PRECISAM ser preenchidos por você:
-#   - url=: o endereço público do seu Forgejo/repositório
-#   - license=: este projeto não tem nenhum arquivo LICENSE ainda -
-#     escolha uma (GPL-3.0-or-later seria a mais próxima do pass/
-#     pass-otp originais que foram usados como base de partida, mas a
-#     decisão é sua) e crie o arquivo LICENSE no repo antes de publicar.
+# empacotar) antes de publicar. Confira o campo url= (endereço público
+# do repositório) antes de publicar.
 
 pkgname=npass-git
 pkgver=r0.0
@@ -23,7 +18,7 @@ pkgrel=1
 pkgdesc="Wayland-native password store com resolução de identidade (fork reescrito do pass)"
 arch=('any')
 url="https://github.com/HGBits/npass-store.git"
-license=('gplv3')
+license=('GPL-3.0-or-later')
 # glow: o renderizador do 'npass show' em terminal (markdown, links). Sem ele o show ainda
 # funciona (avisa e imprime o texto cru), mas a proposta do md1 depende dele, entao e dependencia.
 depends=('bash' 'gnupg' 'glow')
@@ -32,7 +27,7 @@ optdepends=(
 	'python: para a extensão opcional npass-import (instale com ./install.sh --extensions-only)'
 	'wl-clipboard: para "npass clip" e "npass otp clip" (Wayland; para X11 use a extensão opcional npass-clip-x11)'
 	'xclip: para a extensão opcional npass-clip-x11 (clipboard em sessões X11)'
-	'oathtool: para "npass otp" (ou otptool)'
+	'oath-toolkit: fornece o oathtool, necessario para "npass otp" (>= 2.6.5, le o secret via stdin)'
 	'otptool: alternativa ao oathtool para "npass otp"'
 	'qrencode: para "npass otp uri -q" (QR code no terminal)'
 )
