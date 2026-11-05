@@ -63,7 +63,7 @@ e não o contrário.
 ## Após alteração
 
 ```bash
-./build.sh
+bash release.sh --build-only
 ```
 
 Depois execute os testes diretamente relacionados à mudança.

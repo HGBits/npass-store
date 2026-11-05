@@ -25,15 +25,15 @@ npass_test_gen() {
 }
 
 # Garante um bin/npass atual. bin/ esta no .gitignore, entao num clone novo
-# ele nao existe ate alguem rodar ./build.sh; sem isso, quase toda a suite
+# ele nao existe ate alguem rodar release.sh --build-only; sem isso, quase toda a suite
 # falha com "bin/npass: Arquivo ou diretorio inexistente". Tambem reconstroi
-# se algum lib/*.bash ou o build.sh for mais novo que o binario.
+# se algum lib/*.bash ou o release.sh for mais novo que o binario.
 npass_test_build() {
 	local root="$BATS_TEST_DIRNAME/.." bin="$BATS_TEST_DIRNAME/../bin/npass" stale=0 f
 	if [[ ! -x "$bin" ]]; then
 		stale=1
 	else
-		for f in "$root"/lib/*.bash "$root/build.sh"; do
+		for f in "$root"/lib/*.bash "$root/release.sh"; do
 			[[ "$f" -nt "$bin" ]] && { stale=1; break; }
 		done
 	fi
@@ -41,9 +41,9 @@ npass_test_build() {
 	(
 		flock 8
 		# outro processo pode ter construido enquanto esperavamos o lock
-		cd "$root" && bash build.sh >/dev/null 2>&1
+		cd "$root" && bash release.sh --build-only >/dev/null 2>&1
 	) 8>"$BATS_TEST_DIRNAME/.keys.lock"
-	[[ -x "$bin" ]] || { echo "falha ao construir bin/npass (rode ./build.sh)" >&2; return 1; }
+	[[ -x "$bin" ]] || { echo "falha ao construir bin/npass (rode bash release.sh --build-only)" >&2; return 1; }
 }
 
 # Normaliza o ambiente para que a suite nao dependa do shell de quem roda:
