@@ -1,0 +1,13 @@
+# Allowlist de pacotes do Arch citados em packaging/PKGBUILD (depends,
+# makedepends, optdepends). Em maquina Arch, tests/deps.bats confere cada um
+# com `pacman -Si`. Atencao: o nome do pacote nem sempre e o do binario
+# (oathtool -> oath-toolkit; wl-copy -> wl-clipboard).
+bash
+gnupg
+glow
+git
+python
+wl-clipboard
+xclip
+oath-toolkit
+qrencode

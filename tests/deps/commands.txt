@@ -1,0 +1,19 @@
+# Allowlist de comandos externos sondados com `command -v` / `type -P` em
+# lib/*.bash, install.sh e release.sh. Um comando novo faz tests/deps.bats falhar:
+# confirme que ele existe de verdade (pacote do Arch, `pacman -Si`/`pacman -F`)
+# ANTES de adicionar aqui.
+gpg
+gpgconf
+git
+curl
+tar
+gzip
+npass                    # o proprio projeto
+wl-copy                  # pacote wl-clipboard
+oathtool                 # pacote oath-toolkit
+qrencode
+glow
+update-desktop-database  # pacote desktop-file-utils
+shuf                     # coreutils
+setsid                   # util-linux
+ldd                      # glibc

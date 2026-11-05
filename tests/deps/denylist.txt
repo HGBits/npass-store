@@ -1,0 +1,5 @@
+# Nomes que NUNCA devem aparecer no projeto (codigo, docs, manifests, workflows).
+# Formato: nome | motivo/fonte. Apenas casos COMPROVADOS; cresca a lista quando
+# uma dependencia inexistente for descoberta, nao com palpites.
+otptool         | nao ha gerador TOTP com esse nome no Arch/AUR (pacman -Ss/paru -Ss vazios); o crates.io homonimo migra segredos do Google Authenticator. Removido do core em 2026-11
+huggingface-cli | pacote PyPI inexistente, alucinado por LLMs e registrado como armadilha (Lanyado, 2023; >30k downloads em 3 meses). O correto e huggingface_hub[cli]
