@@ -106,7 +106,9 @@ npass_try_extension() {
 	local name="$1" base dir key path
 	shift
 	npass_extension_name_valid "$name" || return 1
-	while IFS= read -r base; do
+	local -a bases
+	mapfile -t bases < <(npass_xdg_data_dirs)
+	for base in "${bases[@]}"; do
 		dir="$base/npass/extensions"; path="$dir/npass-$name"
 		[[ -e "$path" || -L "$path" ]] || continue
 		key="$base/npass/extension-signing-key.asc"
@@ -125,7 +127,7 @@ npass_try_extension() {
 		[[ -x "$self" ]] && export NPASS_BIN="$self"
 		npass_tmp_cleanup
 		exec "$path" "$@"
-	done < <(npass_xdg_data_dirs)
+	done
 	return 1
 }
 

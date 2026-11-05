@@ -170,3 +170,15 @@ EOF
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"xclip direto: login pessoal email/gmail"* ]]
 }
+
+@test "extensao recebe o stdin do chamador (nao o pipe interno da lista de diretorios)" {
+	cat >"$NPASS_TEST_EXT_DIR/npass-eco" <<'EOF'
+#!/usr/bin/env bash
+printf 'stdin=%s\n' "$(cat)"
+EOF
+	chmod 755 "$NPASS_TEST_EXT_DIR/npass-eco"
+	sign_with_official_test_key "$NPASS_TEST_EXT_DIR/npass-eco"
+	run bash -c "printf 'segredo' | '$NPASS' eco"
+	[ "$status" -eq 0 ]
+	[ "$output" = "stdin=segredo" ]
+}
