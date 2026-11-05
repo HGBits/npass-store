@@ -487,7 +487,7 @@ offer_extensions() {
 		sig="$f.sig"
 		desc="$(ext_field "$f" desc)"
 		echo "  $name - ${desc:-(sem descrição)}"
-		if [[ "$name" == npass-passkey && "$helper_ready" -ne 1 ]]; then
+		if [[ "$name" == passkey && "$helper_ready" -ne 1 ]]; then
 			echo "    ignorada: falta o daemon oficial assinado para este target."
 			continue
 		fi
@@ -530,7 +530,7 @@ offer_extensions() {
 		rmdir -- "$stage"
 		echo "    instalada e verificada."
 		((++installed))
-		[[ "$name" == npass-passkey ]] && passkey_installed=1
+		[[ "$name" == passkey ]] && passkey_installed=1
 	done
 
 	if ((passkey_installed)); then
