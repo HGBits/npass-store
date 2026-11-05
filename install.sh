@@ -901,8 +901,8 @@ command -v wl-copy >/dev/null 2>&1 || missing+=(wl-clipboard)
 if [[ ${#missing[@]} -gt 0 ]]; then
 	echo "aviso: não encontrado no PATH: ${missing[*]} - npass precisa deles em tempo de uso (wl-clipboard só para 'clip'/'otp clip')." >&2
 fi
-command -v oathtool >/dev/null 2>&1 || command -v otptool >/dev/null 2>&1 \
-	|| echo "aviso: nem oathtool nem otptool encontrados - 'npass otp' não vai funcionar até um dos dois ser instalado." >&2
+command -v oathtool >/dev/null 2>&1 \
+	|| echo "aviso: oathtool não encontrado - 'npass otp' não vai funcionar até instalar o oath-toolkit." >&2
 command -v qrencode >/dev/null 2>&1 \
 	|| echo "aviso: qrencode não encontrado - 'npass otp uri -q' (QR no terminal) não vai funcionar." >&2
 command -v glow >/dev/null 2>&1 \

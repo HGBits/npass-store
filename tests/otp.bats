@@ -112,3 +112,16 @@ setup() {
 	run cat "$BATS_TEST_TMPDIR/leak_scan.log"
 	[ -z "$output" ]
 }
+
+@test "um executavel chamado otptool no PATH e ignorado: o secret segue so por stdin no oathtool" {
+	local fakebin="$BATS_TEST_TMPDIR/fakebin"
+	mkdir -p "$fakebin"
+	printf '#!/bin/sh\necho CHAMADO >"%s/otptool.chamado"\nexit 0\n' "$BATS_TEST_TMPDIR" >"$fakebin/otptool"
+	chmod 755 "$fakebin/otptool"
+	local uri="otpauth://hotp/test?secret=${TEST_SECRET_B32}&counter=0"
+	printf '%s\n%s\n' "$uri" "$uri" | "$NPASS" otp insert -f personal aws/hotp
+	PATH="$fakebin:$PATH" run "$NPASS" otp personal aws/hotp
+	[ "$status" -eq 0 ]
+	[ "$output" = "287082" ]
+	[ ! -e "$BATS_TEST_TMPDIR/otptool.chamado" ]
+}

@@ -449,9 +449,7 @@ Generate the current TOTP/HOTP code for an entry. For HOTP, also
 increments and persists the stored counter. The OTP secret is never
 passed as a command\-line argument to the code generator (see
 .B SECURITY
-below); if neither
-.B otptool
-nor a sufficiently recent
+below); if no sufficiently recent
 .B oathtool
 is available,
 .B npass
@@ -857,9 +855,7 @@ carries no information, since blob names are random.
 Command\-line arguments are visible to every user on the system via
 .IR /proc/*/cmdline " or " ps .
 .B npass
-always pipes the OTP secret to the code generator over stdin. If
-.B otptool
-is unavailable and the installed
+always pipes the OTP secret to the code generator over stdin. If the installed
 .B oathtool
 is too old to read a base32 secret from stdin,
 .B npass

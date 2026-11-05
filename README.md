@@ -64,7 +64,7 @@ Isso permite alterar o nome lógico sem modificar o ciphertext do segredo.
 * `git` (opcional)
 * `wl-copy` / `wl-paste` para clipboard
 * `glow` para `npass show` renderizado no terminal (sem ele, o `show` avisa e imprime o texto cru)
-* `oathtool` ou `otptool` para OTP
+* `oathtool` (pacote `oath-toolkit`, >= 2.6.5) para OTP
 * `qrencode` para QR Code
 * `curl`, `gpg` e `sha256sum` para baixar e verificar o pacote oficial assinado (e o `npass-tui`, opcional)
 

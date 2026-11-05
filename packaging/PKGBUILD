@@ -28,7 +28,6 @@ optdepends=(
 	'wl-clipboard: para "npass clip" e "npass otp clip" (Wayland; para X11 use a extensão opcional npass-clip-x11)'
 	'xclip: para a extensão opcional npass-clip-x11 (clipboard em sessões X11)'
 	'oath-toolkit: fornece o oathtool, necessario para "npass otp" (>= 2.6.5, le o secret via stdin)'
-	'otptool: alternativa ao oathtool para "npass otp"'
 	'qrencode: para "npass otp uri -q" (QR code no terminal)'
 )
 makedepends=('git')

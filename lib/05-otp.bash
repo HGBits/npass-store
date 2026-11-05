@@ -9,12 +9,11 @@
 # reaches two digits (2.6.5 vs 2.6.11: sort -n puts 2.6.11 first). We
 # tested this: it makes pass-otp take the unsafe argv path on ANY
 # oathtool 2.6.10+, even though those versions support reading the
-# secret from stdin. We do not carry that fallback at all: if neither
-# otptool nor a stdin-capable oathtool is available, npass refuses.
+# secret from stdin. We do not carry that fallback at all: if
+# a stdin-capable oathtool is unavailable, npass refuses.
 
 readonly NPASS_OATH_MIN_STDIN_VERSION="2.6.5"
 OATH="$(command -v oathtool || true)"
-OTPTOOL="$(command -v otptool || true)"
 
 # Robust dotted-version compare, replacing the sort -n bug outright.
 # Returns 0 (true) if $1 >= $2.
@@ -128,14 +127,8 @@ npass_otp_read_secret() {
 }
 
 # Pick how to invoke the code generator WITHOUT ever putting the secret
-# on argv. Sets NPASS_OTP_CMD (array) and NPASS_OTP_STDIN (0/1: whether
-# the secret must be piped to it).
+# on argv. Sets NPASS_OTP_CMD (array); the secret is always piped to it.
 npass_otp_pick_backend() {
-	if [[ -n "$OTPTOOL" ]]; then
-		NPASS_OTP_CMD=("$OTPTOOL" "$otp_uri")
-		NPASS_OTP_STDIN=0
-		return 0
-	fi
 	[[ -z "$OATH" ]] && npass_die "$(npass_t erro_sem_gerador_otp)"
 	local ver
 	ver="$("$OATH" --version | head -n1 | awk '{print $NF}')"
@@ -158,17 +151,12 @@ npass_otp_pick_backend() {
 	esac
 	[[ -n "$otp_digits" ]] && NPASS_OTP_CMD+=(--digits="$otp_digits")
 	NPASS_OTP_CMD+=(-) # secret read from stdin, never from argv
-	NPASS_OTP_STDIN=1
 }
 
 npass_otp_generate() {
 	npass_otp_pick_backend
 	local out
-	if [[ $NPASS_OTP_STDIN -eq 1 ]]; then
-		out="$("${NPASS_OTP_CMD[@]}" <<<"$otp_secret")" || npass_die "$(npass_t erro_gerar_otp)"
-	else
-		out="$("${NPASS_OTP_CMD[@]}")" || npass_die "$(npass_t erro_gerar_otp)"
-	fi
+	out="$("${NPASS_OTP_CMD[@]}" <<<"$otp_secret")" || npass_die "$(npass_t erro_gerar_otp)"
 	printf '%s\n' "$out"
 }
 
